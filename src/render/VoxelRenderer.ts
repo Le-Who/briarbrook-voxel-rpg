@@ -1,0 +1,1492 @@
+import * as THREE from 'three';
+import { areas } from '../data/areas';
+import { buildPieces, itemDefs } from '../data/items';
+import { CameraController } from '../game/CameraController';
+import type { AreaId, BuildPieceDef, Entity, GameState, IconDescriptor, Projectile, Vec3 } from '../game/types';
+import { AreaManager } from '../world/AreaManager';
+import { areaAmbient, MaterialLibrary } from './Materials';
+import { VoxelKit } from './VoxelKit';
+
+interface EntityRecord {
+  group: THREE.Group;
+  kind: string;
+}
+
+export class VoxelRenderer {
+  readonly scene = new THREE.Scene();
+  readonly camera = new THREE.OrthographicCamera(-8, 8, 5, -5, 0.1, 1000);
+  readonly renderer: THREE.WebGLRenderer;
+  readonly cameraController = new CameraController(this.camera);
+
+  private mats = new MaterialLibrary();
+  private kit = new VoxelKit({
+    box: (parent, x, y, z, sx, sy, sz, material, rotation) => this.box(parent, x, y, z, sx, sy, sz, material, rotation),
+    material: (name, color, options) => this.mats.get(name, color, options)
+  });
+  private boxGeometries = new Map<string, THREE.BoxGeometry>();
+  private staticGroup = new THREE.Group();
+  private entityGroup = new THREE.Group();
+  private effectGroup = new THREE.Group();
+  private ghostGroup = new THREE.Group();
+  private records = new Map<string, EntityRecord>();
+  private currentArea: AreaId | null = null;
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
+  private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private targetRing: THREE.Mesh | null = null;
+  private hoverRing: THREE.Mesh | null = null;
+  private roofMeshes: THREE.Mesh[] = [];
+  private roofZones: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
+  private litKey: string | null = null;
+
+  constructor(private canvas: HTMLCanvasElement, private areaManager: AreaManager) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.scene.add(this.staticGroup, this.entityGroup, this.effectGroup, this.ghostGroup);
+    this.camera.position.set(9, 11, 9);
+    this.camera.lookAt(0, 0, 0);
+    this.resize();
+  }
+
+  resize(): void {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    this.renderer.setSize(width, height, false);
+    this.cameraController.resize(width, height);
+  }
+
+  render(state: GameState): void {
+    if (this.currentArea !== state.player.currentArea) {
+      this.currentArea = state.player.currentArea;
+      this.rebuildStaticArea(state.player.currentArea);
+      this.records.clear();
+      this.clearGroup(this.entityGroup);
+    }
+    this.applyLighting(state.player.currentArea, state.world.time.phase);
+    this.mats.animate(state.clock);
+    this.cameraController.update(state);
+    this.updateEntities(state);
+    this.updateEffects(state);
+    this.updateBuildGhost(state);
+    this.updateRoofCutaway(state);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  screenToWorld(clientX: number, clientY: number): Vec3 {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hit = new THREE.Vector3();
+    this.raycaster.ray.intersectPlane(this.groundPlane, hit);
+    return { x: hit.x, y: 0, z: hit.z };
+  }
+
+  pickEntity(clientX: number, clientY: number): string | null {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const meshes: THREE.Object3D[] = [];
+    this.records.forEach((record) => meshes.push(...record.group.children));
+    const hits = this.raycaster.intersectObjects(meshes, true);
+    const object = hits[0]?.object;
+    if (!object) return null;
+    let cursor: THREE.Object3D | null = object;
+    while (cursor) {
+      const entityId = cursor.userData.entityId as string | undefined;
+      if (entityId) return entityId;
+      cursor = cursor.parent;
+    }
+    return null;
+  }
+
+  worldToScreen(position: Vec3): { x: number; y: number; visible: boolean } {
+    const vector = new THREE.Vector3(position.x, position.y, position.z).project(this.camera);
+    const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+    return { x, y, visible: vector.z > -1 && vector.z < 1 };
+  }
+
+  getRenderStats(state: GameState): GameState['dev']['renderStats'] {
+    const visibleEntityCount =
+      1 +
+      Object.values(state.entities).filter((entity) => {
+        if (entity.area !== state.player.currentArea) return false;
+        if (entity.kind === 'enemy' && entity.state === 'dead') return false;
+        if (entity.kind === 'resource' && entity.depleted) return false;
+        if (entity.kind === 'container' && (entity.hidden || entity.opened)) return false;
+        return entity.kind !== 'building';
+      }).length +
+      state.world.placedBuildings.filter((building) => building.area === state.player.currentArea).length;
+    return {
+      frame: state.realtime.tick,
+      entityCount: Object.keys(state.entities).length + 1 + state.world.placedBuildings.length,
+      visibleEntityCount,
+      roughDrawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles
+    };
+  }
+
+  dispose(): void {
+    this.clearGroup(this.scene);
+    this.boxGeometries.forEach((geometry) => geometry.dispose());
+    this.boxGeometries.clear();
+    this.mats.dispose();
+    this.renderer.dispose();
+  }
+
+  private rebuildStaticArea(areaId: AreaId): void {
+    this.clearGroup(this.staticGroup);
+    this.roofMeshes = [];
+    this.roofZones = [];
+    const ambient = areaAmbient[areaId];
+    this.scene.background = new THREE.Color(ambient.bg);
+    const fogRange: Record<AreaId, [number, number]> = {
+      town: [18, 58],
+      bank: [8, 24],
+      blacksmith: [7, 24],
+      forest: [10, 38],
+      crypt: [6, 27],
+      road: [10, 40],
+      housing: [14, 46]
+    };
+    const [near, far] = fogRange[areaId];
+    this.scene.fog = new THREE.Fog(ambient.fog, near, far);
+    this.buildTerrain(areaId);
+    if (areaId === 'town') this.buildTown();
+    if (areaId === 'bank') this.buildBankInterior();
+    if (areaId === 'blacksmith') this.buildSmithy();
+    if (areaId === 'forest') this.buildForest();
+    if (areaId === 'crypt') this.buildCrypt();
+    if (areaId === 'road') this.buildRoad();
+    if (areaId === 'housing') this.buildHousingPlot();
+  }
+
+  private applyLighting(areaId: AreaId, phase: GameState['world']['time']['phase']): void {
+    const key = `${areaId}:${phase}`;
+    if (this.litKey === key) return;
+    this.litKey = key;
+    const existing = this.scene.children.filter((child) => child.userData.light);
+    existing.forEach((child) => this.scene.remove(child));
+    const ambient = areaAmbient[areaId];
+    const darkness = phase === 'night' ? 0.58 : phase === 'dusk' ? 0.34 : phase === 'dawn' ? 0.2 : 0;
+    const intensityScale = phase === 'night' ? 0.48 : phase === 'dusk' ? 0.68 : phase === 'dawn' ? 0.84 : 1;
+    const lampScale = phase === 'night' ? 1.35 : phase === 'dusk' ? 1.18 : 1;
+    this.scene.background = new THREE.Color(ambient.bg).lerp(new THREE.Color('#090d16'), darkness);
+    const hemi = new THREE.HemisphereLight(ambient.hemi, '#16120d', ambient.intensity * 0.55);
+    hemi.intensity *= intensityScale;
+    hemi.userData.light = true;
+    const sun = new THREE.DirectionalLight(ambient.sun, ambient.intensity);
+    sun.intensity *= intensityScale;
+    sun.position.set(-5, 12, 4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -22;
+    sun.shadow.camera.right = 22;
+    sun.shadow.camera.top = 22;
+    sun.shadow.camera.bottom = -22;
+    sun.userData.light = true;
+    this.scene.add(hemi, sun);
+    const point = (x: number, y: number, z: number, color: string, intensity: number, distance: number) => {
+      const light = new THREE.PointLight(color, intensity * lampScale, distance, 1.8);
+      light.position.set(x, y, z);
+      light.userData.light = true;
+      this.scene.add(light);
+    };
+    const areaLights: Partial<Record<AreaId, Array<[number, number, number, string, number, number]>>> = {
+      town: [
+        [-8, 2.2, -2, '#ffb35a', 0.9, 8],
+        [6, 2.2, -3, '#ffb35a', 0.9, 8],
+        [0, 2.4, 12, '#ffd27d', 0.75, 8],
+        [13, 2.2, 4, '#ffb35a', 0.8, 8]
+      ],
+      bank: [
+        [-4, 2.4, -3, '#ffc56f', 1.3, 9],
+        [5, 2.2, -2, '#ffc56f', 1.0, 8],
+        [1.5, 1.8, -1, '#ffd890', 0.8, 7]
+      ],
+      blacksmith: [
+        [2, 1.6, -2, '#ff5b22', 2.3, 10],
+        [-5, 2.2, 4, '#ffc06d', 0.9, 7],
+        [5, 2.2, -3, '#ffc06d', 0.8, 7]
+      ],
+      forest: [
+        [-6, 4, 4, '#b7f08c', 0.55, 12],
+        [6, 2, -6, '#ffc062', 0.8, 8]
+      ],
+      crypt: [
+        [-8, 1.8, -4, '#ff8e39', 1.5, 8],
+        [-5, 1.8, 6, '#ff8e39', 1.4, 8],
+        [5, 1.8, -6, '#ff8e39', 1.5, 8],
+        [8, 1.8, 4, '#ff8e39', 1.4, 8],
+        [0, 1.5, 10, '#ff8e39', 1.0, 7]
+      ],
+      road: [
+        [1, 2, 2, '#ffb45f', 1.1, 8],
+        [-5, 2, -1, '#ffb45f', 1.0, 8],
+        [6, 1.5, -1, '#e45132', 0.55, 7]
+      ],
+      housing: [
+        [-8, 2, 5, '#ffd18a', 0.8, 8],
+        [8, 2, 0, '#ffd18a', 0.65, 8]
+      ]
+    };
+    areaLights[areaId]?.forEach((entry) => point(...entry));
+  }
+
+  private updateEntities(state: GameState): void {
+    const visible = new Set<string>();
+    const playerRecord = this.ensureEntity('player', 'player', () => this.makeCharacter('#6d4a2c', '#2f5841', '#d0d0c8'));
+    const playerMoving = state.player.actionState.kind === 'moving' || Math.hypot(state.player.movement.velocity.x, state.player.movement.velocity.z) > 0.08;
+    const playerBob = this.animateActor(playerRecord.group, state.clock, 'player', playerMoving, Boolean(state.combat.hitFlashes.player));
+    playerRecord.group.position.set(state.player.position.x, state.player.position.y + playerBob, state.player.position.z);
+    const actionScale = state.player.actionState.kind === 'attacking' ? 1.06 : state.player.actionState.kind === 'casting' ? 1.03 : 1;
+    playerRecord.group.scale.setScalar((state.combat.hitFlashes.player ? 1.08 : 1) * actionScale);
+    visible.add('player');
+
+    for (const entity of Object.values(state.entities)) {
+      if (entity.area !== state.player.currentArea) continue;
+      if (entity.kind === 'enemy' && entity.state === 'dead') continue;
+      if (entity.kind === 'resource' && entity.depleted) continue;
+      if (entity.kind === 'container' && (entity.hidden || entity.opened)) continue;
+      if (entity.kind === 'building') continue;
+      const record = this.ensureEntity(entity.id, entity.kind, () => this.makeEntity(entity));
+      const actorMoving = entity.kind === 'enemy' ? entity.state === 'chase' || entity.state === 'attack' : entity.kind === 'npc' || entity.kind === 'social';
+      const actorBob = actorMoving || entity.kind === 'enemy' || entity.kind === 'npc' || entity.kind === 'social'
+        ? this.animateActor(record.group, state.clock, entity.id, actorMoving, Boolean(state.combat.hitFlashes[entity.id]))
+        : 0;
+      record.group.position.set(entity.position.x, entity.position.y + actorBob, entity.position.z);
+      const gatherPulse = state.gathering?.entityId === entity.id ? 1 + Math.sin(state.clock * 18) * 0.025 : 1;
+      record.group.scale.setScalar((state.combat.hitFlashes[entity.id] ? 1.1 : 1) * gatherPulse);
+      record.group.userData.entityId = entity.id;
+      record.group.traverse((child) => {
+        child.userData.entityId = entity.id;
+      });
+      visible.add(entity.id);
+    }
+
+    for (const building of state.world.placedBuildings) {
+      if (building.area !== state.player.currentArea) continue;
+      const record = this.ensureEntity(building.id, 'placed-building', () => this.makeBuildPiece(building.pieceId, false));
+      record.group.position.set(building.position.x, building.position.y, building.position.z);
+      record.group.rotation.y = THREE.MathUtils.degToRad(building.rotation);
+      visible.add(building.id);
+    }
+
+    this.records.forEach((record, id) => {
+      if (visible.has(id)) return;
+      this.entityGroup.remove(record.group);
+      this.disposeObject(record.group);
+      this.records.delete(id);
+    });
+
+    this.updateTargetRing(state);
+  }
+
+  private animateActor(group: THREE.Group, clock: number, seedText: string, moving: boolean, hit: boolean): number {
+    const seed = seedText.length * 0.37;
+    const speed = moving ? 9.5 : 2.4;
+    const wave = Math.sin(clock * speed + seed);
+    const bob = hit ? 0.08 : moving ? Math.abs(wave) * 0.055 : Math.sin(clock * 2 + seed) * 0.018;
+    group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, hit ? Math.sin(clock * 30 + seed) * 0.12 : 0, 0.35);
+    const leftArm = group.getObjectByName('left-arm');
+    const rightArm = group.getObjectByName('right-arm');
+    const leftLeg = group.getObjectByName('left-leg');
+    const rightLeg = group.getObjectByName('right-leg');
+    const weapon = group.getObjectByName('weapon');
+    if (leftArm) leftArm.rotation.x = moving ? wave * 0.35 : Math.sin(clock * 1.7 + seed) * 0.08;
+    if (rightArm) rightArm.rotation.x = moving ? -wave * 0.35 : Math.sin(clock * 1.9 + seed) * 0.08;
+    if (leftLeg) leftLeg.rotation.x = moving ? -wave * 0.22 : 0;
+    if (rightLeg) rightLeg.rotation.x = moving ? wave * 0.22 : 0;
+    if (weapon) weapon.rotation.z = hit ? -0.95 : -0.6 + (moving ? -wave * 0.08 : 0);
+    return bob;
+  }
+
+  private updateTargetRing(state: GameState): void {
+    if (this.targetRing) {
+      this.entityGroup.remove(this.targetRing);
+      this.targetRing.geometry.dispose();
+      (this.targetRing.material as THREE.Material).dispose();
+      this.targetRing = null;
+    }
+    if (this.hoverRing) {
+      this.entityGroup.remove(this.hoverRing);
+      this.hoverRing.geometry.dispose();
+      (this.hoverRing.material as THREE.Material).dispose();
+      this.hoverRing = null;
+    }
+    const targetId = state.player.activeTargetId;
+    const target = targetId ? state.entities[targetId] : null;
+    if (target && target.area === state.player.currentArea && target.kind === 'enemy' && target.state !== 'dead') {
+      const ring = this.makeGroundRing(target.position, '#ff3333', 0.6, 0.78, 0.9);
+      this.targetRing = ring;
+      this.entityGroup.add(ring);
+    }
+    const hoverId = state.ui.hoverTarget?.kind === 'entity' ? state.ui.hoverTarget.entityId : null;
+    const hover = hoverId ? state.entities[hoverId] : null;
+    if (!hover || hover.id === targetId || hover.area !== state.player.currentArea || (hover.kind === 'enemy' && hover.state === 'dead')) return;
+    const color = hover.kind === 'enemy' ? '#ff8a33' : hover.kind === 'resource' ? '#79d66f' : hover.kind === 'loot' || hover.kind === 'container' ? '#f0c957' : '#8bd9ff';
+    const ring = this.makeGroundRing(hover.position, color, 0.48, 0.62, hover.kind === 'enemy' ? 0.8 : 0.58);
+    this.hoverRing = ring;
+    this.entityGroup.add(ring);
+  }
+
+  private makeGroundRing(position: Vec3, color: string, inner: number, outer: number, opacity: number): THREE.Mesh {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(inner, outer, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(position.x, 0.055, position.z);
+    return ring;
+  }
+
+  private updateEffects(state: GameState): void {
+    this.clearGroup(this.effectGroup);
+    state.projectiles.forEach((projectile) => this.effectGroup.add(this.makeProjectile(projectile)));
+    state.combat.telegraphs.forEach((telegraph) => {
+      const progress = 1 - telegraph.remaining / telegraph.duration;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(Math.max(0.18, telegraph.radius * 0.35), Math.max(0.28, telegraph.radius * (0.42 + progress * 0.18)), 32),
+        this.mats.get(`telegraph-${telegraph.color}`, telegraph.color, { transparent: true, opacity: 0.18 + progress * 0.24, emissive: telegraph.color, emissiveIntensity: 0.3 })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(telegraph.targetPosition.x, 0.065, telegraph.targetPosition.z);
+      this.effectGroup.add(ring);
+    });
+    state.world.magicFields.forEach((field) => {
+      if (field.area !== state.player.currentArea) return;
+      const color = field.kind === 'trap' ? '#ff8a2d' : field.kind === 'bridge' ? '#6fd4ff' : '#ffcf57';
+      const pulse = 0.5 + Math.sin(state.clock * 5 + field.createdAt) * 0.5;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.28 + pulse * 0.04, 0.58 + pulse * 0.08, 32),
+        this.mats.get(`magic-field-${field.kind}`, color, { transparent: true, opacity: 0.28 + pulse * 0.16, emissive: color, emissiveIntensity: 0.55 })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(field.position.x, 0.075, field.position.z);
+      this.effectGroup.add(ring);
+      if (field.kind === 'bridge') {
+        this.box(this.effectGroup, field.position.x, 0.055, field.position.z, 1.08, 0.04, 1.08, this.mats.get('magic-bridge-slab', '#6fd4ff', { transparent: true, opacity: 0.28, emissive: '#6fd4ff', emissiveIntensity: 0.35 }));
+      }
+      if (field.kind === 'trap') {
+        this.box(this.effectGroup, field.position.x, 0.25, field.position.z, 0.18, 0.35 + pulse * 0.16, 0.18, this.mats.get('magic-trap-core', '#ff8a2d', { transparent: true, opacity: 0.52, emissive: '#ff8a2d', emissiveIntensity: 0.8 }));
+      }
+    });
+    Object.entries(state.combat.hitFlashes).forEach(([id, until]) => {
+      if (until <= state.clock) return;
+      const position = id === 'player' ? state.player.position : state.entities[id]?.position;
+      if (!position) return;
+      const flash = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 1.35, 0.9),
+        this.mats.get('hit-flash', '#ff3c32', { transparent: true, opacity: 0.32, emissive: '#ff1f18', emissiveIntensity: 0.7 })
+      );
+      flash.position.set(position.x, position.y + 0.55, position.z);
+      this.effectGroup.add(flash);
+    });
+  }
+
+  private updateBuildGhost(state: GameState): void {
+    this.clearGroup(this.ghostGroup);
+    if (!state.buildMode.active || state.player.currentArea !== 'housing') return;
+    const ghost = this.makeBuildPiece(state.buildMode.selectedPieceId, true, state.buildMode.valid ? '#60d871' : '#e84a4a');
+    ghost.position.set(state.buildMode.ghostPosition.x, 0.08, state.buildMode.ghostPosition.z);
+    ghost.rotation.y = THREE.MathUtils.degToRad(state.buildMode.rotation);
+    this.ghostGroup.add(ghost);
+    const grid = new THREE.GridHelper(12, 12, state.buildMode.valid ? '#9af4a4' : '#ff7777', '#d7ffe0');
+    grid.position.y = 0.06;
+    grid.position.x = 0;
+    grid.position.z = 0.5;
+    (grid.material as THREE.Material).transparent = true;
+    (grid.material as THREE.Material).opacity = 0.55;
+    this.ghostGroup.add(grid);
+    const plot = this.areaManager.getBuildPlot();
+    const boundaryMat = this.mats.get(`plot-boundary-${state.buildMode.valid ? 'valid' : 'invalid'}`, state.buildMode.valid ? '#baf0a2' : '#ff8f7f', {
+      transparent: true,
+      opacity: 0.78,
+      emissive: state.buildMode.valid ? '#4a9d45' : '#a43a2e',
+      emissiveIntensity: 0.25
+    });
+    const width = plot.maxX - plot.minX + 1;
+    const depth = plot.maxZ - plot.minZ + 1;
+    const centerX = (plot.minX + plot.maxX) / 2;
+    const centerZ = (plot.minZ + plot.maxZ) / 2;
+    this.box(this.ghostGroup, centerX, 0.09, plot.minZ - 0.5, width, 0.05, 0.08, boundaryMat);
+    this.box(this.ghostGroup, centerX, 0.09, plot.maxZ + 0.5, width, 0.05, 0.08, boundaryMat);
+    this.box(this.ghostGroup, plot.minX - 0.5, 0.09, centerZ, 0.08, 0.05, depth, boundaryMat);
+    this.box(this.ghostGroup, plot.maxX + 0.5, 0.09, centerZ, 0.08, 0.05, depth, boundaryMat);
+  }
+
+  private buildTerrain(areaId: AreaId): void {
+    const bounds = this.areaManager.getAreaBounds(areaId);
+    const palette = areas[areaId].palette;
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+        const height = this.areaManager.getHeight(areaId, x, z);
+        const material = this.getGroundMaterial(areaId, x, z);
+        this.box(this.staticGroup, x, height - 0.08, z, 1, 0.16, 1, material);
+        this.decorateTerrainTile(areaId, x, z, height);
+        if (palette === 'forest' && height > 0) {
+          this.box(this.staticGroup, x, height - 0.7, z, 1, 1.2, 1, this.mats.get('dirt', '#5c4227'));
+        }
+      }
+    }
+  }
+
+  private getGroundMaterial(areaId: AreaId, x: number, z: number): THREE.Material {
+    if (areaId === 'crypt') return this.variedMaterial('crypt-floor', ['#282826', '#2e2d2b', '#242424', '#34302c'], x, z);
+    if (areaId === 'bank' || areaId === 'blacksmith') return this.variedMaterial('interior-stone', ['#5d564d', '#665f54', '#56514b', '#6b6255'], x, z);
+    if (areaId === 'road' && Math.abs(z - x * 0.08) < 3) return this.variedMaterial('road-cobble', ['#777368', '#837f72', '#6f6c63', '#8a8375'], x, z);
+    if (areaId === 'town' && x < -13 && z > 14) return this.mats.get('river', '#214f6c', { transparent: true, opacity: 0.82 });
+    if (
+      areaId === 'town' &&
+      (Math.abs(x) < 7 ||
+        Math.abs(z) < 7 ||
+        (z > 6 && Math.abs(x) < 3) ||
+        (x < -8 && z > 8) ||
+        (x > 8 && Math.abs(z - 4) < 3))
+    ) {
+      return this.variedMaterial('town-cobble', ['#787469', '#817d70', '#6e6a61', '#8a8375'], x, z);
+    }
+    if (areaId === 'housing' && z > 6) return this.mats.get('water', '#235d7c', { transparent: true, opacity: 0.82, roughness: 0.35 });
+    if (areaId === 'housing' && Math.abs(x) < 7 && Math.abs(z) < 6) return this.variedMaterial('plot-grass', ['#607f3d', '#658a42', '#557638', '#6f9148'], x, z);
+    if (areaId === 'forest' && Math.abs(x) < 2 && z > 4 && z < 10) return this.variedMaterial('forest-path', ['#746a4d', '#6a6045', '#7e724f', '#5f5942'], x, z);
+    if (areaId === 'forest' && z < -10 && x > -2 && x < 14) return this.variedMaterial('forest-rock', ['#67645d', '#5f5c56', '#706d65', '#57534e'], x, z);
+    if (areaId === 'forest') return this.variedMaterial('forest-grass', ['#496c35', '#52763c', '#426330', '#5a7b42'], x, z);
+    return this.variedMaterial('grass', ['#647f43', '#6c8a49', '#5d7740', '#718d4d'], x, z);
+  }
+
+  private variedMaterial(name: string, colors: string[], x: number, z: number, options: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.Material {
+    const index = Math.abs(Math.floor(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453)) % colors.length;
+    return this.mats.get(`${name}-${index}`, colors[index], options);
+  }
+
+  private tileHash(x: number, z: number): number {
+    return Math.abs(Math.floor(Math.sin(x * 127.1 + z * 311.7) * 10000));
+  }
+
+  private decorateTerrainTile(areaId: AreaId, x: number, z: number, height: number): void {
+    if ((areaId === 'town' && x < -13 && z > 14) || (areaId === 'housing' && z > 6)) return;
+    const hash = this.tileHash(x, z);
+    const y = height + 0.025;
+    if ((areaId === 'town' || areaId === 'road') && hash % 31 === 0) {
+      this.box(this.staticGroup, x + 0.05, y + 0.01, z - 0.02, 0.5, 0.025, 0.32, this.mats.get('wet-cobble', '#2f3f43', { transparent: true, opacity: 0.38 }), { ry: (hash % 8) * 0.18 });
+      return;
+    }
+    if (areaId === 'town' && hash % 19 === 0) {
+      this.box(this.staticGroup, x + 0.18, y, z - 0.22, 0.28, 0.04, 0.18, this.mats.get('cobble-chip', hash % 2 ? '#9a9382' : '#5e5a53'), { ry: (hash % 6) * 0.2 });
+      return;
+    }
+    if ((areaId === 'town' || areaId === 'housing') && hash % 23 === 0) {
+      this.box(this.staticGroup, x - 0.22, y + 0.08, z + 0.14, 0.1, 0.18, 0.1, this.mats.get('grass-tuft', '#78984b'));
+      return;
+    }
+    if (areaId === 'forest' && hash % 7 === 0) {
+      this.box(this.staticGroup, x + ((hash % 5) - 2) * 0.08, y + 0.1, z, 0.12, 0.26, 0.12, this.mats.get('forest-tuft', hash % 2 ? '#6f9548' : '#5b843c'));
+      return;
+    }
+    if (areaId === 'forest' && hash % 11 === 0) {
+      this.box(this.staticGroup, x - 0.15, y + 0.03, z + 0.18, 0.52, 0.06, 0.12, this.mats.get('forest-root', '#4e3420'), { ry: (hash % 10) * 0.25 });
+      return;
+    }
+    if (areaId === 'crypt' && hash % 17 === 0) {
+      this.box(this.staticGroup, x + 0.12, y, z - 0.1, 0.5, 0.035, 0.055, this.mats.get('floor-crack', '#151515'), { ry: (hash % 8) * 0.3 });
+      return;
+    }
+    if (areaId === 'crypt' && hash % 29 === 0) {
+      this.box(this.staticGroup, x - 0.18, y + 0.04, z + 0.06, 0.2, 0.08, 0.16, this.mats.get('crypt-rubble', '#5a5750'), { ry: (hash % 9) * 0.2 });
+      return;
+    }
+    if (areaId === 'road' && hash % 13 === 0) {
+      this.box(this.staticGroup, x + 0.2, y + 0.04, z + 0.12, 0.18, 0.08, 0.18, this.mats.get('road-pebble', hash % 2 ? '#868073' : '#5c574f'));
+    }
+  }
+
+  private buildTown(): void {
+    this.house(-9, -5, 4, 3, true);
+    this.house(5, -7, 5, 3, false);
+    this.house(9, 1, 4, 3, false);
+    this.house(-12, 6, 5, 4, true);
+    this.house(-20, -9, 5, 4, false);
+    this.house(-18, -3, 5, 4, true);
+    this.house(14, -10, 5, 4, true);
+    this.house(15, 6, 5, 4, false);
+    this.house(17, 12, 4, 3, false);
+    this.marketStall(7, 3, '#2c6bb8');
+    this.marketStall(-7, 3, '#a8483d');
+    this.marketStall(3, 8, '#3e8f52');
+    this.marketStall(-15, 10, '#c1a24a');
+    this.fountain(0, 0);
+    this.dock(-11, 9);
+    this.dock(-17, 15);
+    this.boat(-18, 16);
+    for (let i = 0; i < 26; i += 1) {
+      const x = -20 + (i % 7) * 6;
+      const z = -15 + Math.floor(i / 7) * 9;
+      if (Math.abs(x) < 8 && Math.abs(z) < 8) continue;
+      this.tree(x, z, 0.72 + (i % 3) * 0.08);
+    }
+    this.sign(2, 8, 'Briarbrook');
+    this.sign(0, 15, 'North Gate');
+    this.sign(14, 5, 'Old Road');
+    this.sign(-15, 13, 'Ferry');
+    this.wallLine(-21, -13, -21, 15);
+    this.wallLine(-21, 15, -15, 15);
+    this.wallLine(21, -12, 21, 13);
+    this.wallLine(13, 15, 21, 15);
+    this.lantern(-8, -2);
+    this.lantern(6, -3);
+    this.lantern(0, 12);
+    this.lantern(13, 4);
+    this.gardenPatch(-3, -10);
+    this.gardenPatch(12, 10);
+    this.cookingFire(-18, -5);
+    this.alchemyTable(-16, 0);
+    this.scribeDesk(15, -6);
+    this.loom(15, 8);
+    this.worktable(18, 10, '#8f5f2a');
+    this.worktable(-12, 2, '#a66b2e');
+    this.tinkerBench(13, 12);
+    this.well(-6, 8);
+    this.cart(10, 8, '#7f4a24');
+    this.cart(-14, -6, '#7f4a24');
+    this.bench(-3, 2);
+    this.bench(3, -2);
+    for (const [x, z] of [
+      [-9, -2],
+      [5, -4],
+      [12, 3],
+      [-16, 10],
+      [18, 8],
+      [-18, -8]
+    ]) {
+      this.barrel(x, z);
+      this.sack(x + 0.65, z + 0.25);
+    }
+    for (const [x, z] of [
+      [-10, -6],
+      [9, 0],
+      [15, 6],
+      [-18, -3]
+    ]) {
+      this.flowerBox(x, z);
+    }
+  }
+
+  private buildBankInterior(): void {
+    this.interiorShell('#49301d', '#796c5b');
+    this.counter(-2, -1, 5);
+    this.chest(2, -1);
+    this.banner(3, -4);
+    this.rug(0, 2, '#1e486e');
+    this.crates(-5, 1);
+    this.crates(5, 3);
+    this.barrel(-5.8, 2.3);
+    this.sack(4.6, 4.2);
+    this.lantern(-4, -3);
+    this.lantern(5, -2);
+  }
+
+  private buildSmithy(): void {
+    this.interiorShell('#4c2f1d', '#75695e');
+    this.forge(2, -2);
+    this.anvil(0, 1);
+    this.oreBins(-5, -2);
+    this.toolRack(-4, -4);
+    this.toolRack(5, 1);
+    this.banner(-2, -4);
+    this.worktable(-3, 3, '#a9773b');
+    this.barrel(5, 3);
+    this.sack(-5.4, -3.2);
+    this.lantern(-5, 4);
+    this.lantern(5, -3);
+  }
+
+  private buildForest(): void {
+    for (let i = 0; i < 48; i += 1) {
+      const x = -17 + ((i * 7) % 35);
+      const z = -15 + ((i * 11) % 31);
+      if (Math.abs(x) < 3 && z > 3) continue;
+      if (x > 4 && z < -5) continue;
+      this.tree(x, z, 0.95 + (i % 3) * 0.1);
+    }
+    this.mineEntrance(7, -8);
+    this.oreCluster(5, -2, '#9ba5a3');
+    this.oreCluster(-7, 3, '#b77745');
+    this.oreCluster(8, -3, '#9ba5a3');
+    this.oreCluster(12, -7, '#b77745');
+    for (let z = 2; z <= 12; z += 1) this.streamTile(-5 + Math.sin(z * 0.7) * 1.2, z);
+    this.bridge(0, 6);
+    this.bridge(-5, 8);
+    this.sign(0, 12, 'Briarbrook');
+    this.sign(7, -6, 'Mine');
+    this.torchPost(6, -6);
+    this.gardenPatch(-9, 8);
+    this.gardenPatch(3, 9);
+    for (const [x, z] of [
+      [-13, -5],
+      [-10, 3],
+      [-2, -8],
+      [2, 2],
+      [10, 6],
+      [14, 2]
+    ]) {
+      this.stump(x, z);
+      this.mushrooms(x + 0.8, z + 0.4);
+    }
+    this.logPile(-7, -7);
+    this.logPile(10, -1);
+    this.rockScatter(-13, 5);
+    this.rockScatter(12, -9);
+    this.fallenBranch(-2, 10);
+    this.fallenBranch(6, 5);
+    this.bushPatch(-12, 10);
+    this.bushPatch(11, 8);
+    this.flowers();
+  }
+
+  private buildCrypt(): void {
+    this.cryptWalls();
+    for (const [x, z] of [
+      [-4, -4],
+      [2, -5],
+      [6, -3],
+      [-6, 4],
+      [4, 4],
+      [0, 0],
+      [-10, -4],
+      [10, 2],
+      [4, 8]
+    ]) {
+      this.column(x, z);
+    }
+    for (const [x, z] of [
+      [-8, -4],
+      [-5, 6],
+      [5, -6],
+      [8, 4],
+      [-12, 9],
+      [12, -8],
+      [0, 10]
+    ]) {
+      this.torchPost(x, z);
+    }
+    this.bones(-1, 4);
+    this.bones(8, 7);
+    this.bones(-9, -7);
+    this.blood(5, 3);
+    this.blood(11, 8);
+    this.wallLine(-12, -4, -7, -4);
+    this.wallLine(8, 2, 13, 2);
+    this.wallLine(2, 8, 7, 8);
+    this.chest(11, 9);
+    this.chest(-12, -8);
+    this.tomb(-6, -8);
+    this.tomb(7, 9);
+    this.rubble(-11, 2);
+    this.rubble(12, -4);
+    this.candle(-2, -2);
+    this.candle(3, 6);
+    this.crackedWall(-14.8, 2);
+    this.crackedWall(14.8, -6);
+    this.chain(-13, -9);
+    this.chain(13, 9);
+    this.brokenWeapon(1, 6);
+    this.brokenWeapon(-8, -2);
+  }
+
+  private buildRoad(): void {
+    this.house(-11, -5, 4, 3, true);
+    this.wallLine(-12, 6, 12, 6);
+    this.wallLine(-12, 9, 12, 9);
+    for (const [x, z] of [
+      [-8, 3],
+      [8, -3],
+      [-13, 2],
+      [10, 4],
+      [2, -7]
+    ]) {
+      this.tree(x, z, 0.78);
+    }
+    this.torchPost(1, 2);
+    this.torchPost(-5, -1);
+    this.torchPost(7, 4);
+    this.sign(-7, 1, 'Town Gate');
+    this.sign(9, -4, 'Old Bridge');
+    this.wagonTracks(-2, -3);
+    this.wagonTracks(4, -2);
+    this.bushPatch(-9, 5);
+    this.bushPatch(6, 5);
+    this.logPile(-11, 4);
+    this.streamTile(6, 8);
+    this.bridge(6, 8);
+    this.waterEdge(9);
+  }
+
+  private buildHousingPlot(): void {
+    this.wallLine(-8, -7, 8, -7);
+    this.wallLine(-8, 7, 8, 7);
+    this.wallLine(-8, -7, -8, 7);
+    this.wallLine(8, -7, 8, 7);
+    this.dock(-9, 8);
+    this.boat(-5, 9);
+    this.house(10, -6, 4, 3, false);
+    this.tree(8, 0, 0.8);
+    this.bench(-5, -5);
+    this.barrel(-7, 6);
+    this.crates(6, -6);
+    this.flowerBox(9, -7);
+  }
+
+  private makeEntity(entity: Entity): THREE.Group {
+    if (entity.kind === 'npc' || entity.kind === 'social') {
+      const socialPalette = ['#345d45', '#294b6f', '#5a3d72', '#6a5130', '#2d5b64'];
+      const socialIndex = entity.name.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0) % socialPalette.length;
+      const palette = entity.role === 'banker'
+        ? ['#4c2d1b', '#1e2d3a']
+        : entity.role === 'blacksmith'
+          ? ['#7d4221', '#6f553d']
+          : entity.role === 'merchant'
+            ? ['#74412b', '#294b6f']
+            : entity.role === 'guard'
+              ? ['#2b241e', '#314b67']
+              : ['#4b3426', socialPalette[socialIndex]];
+      return this.makeCharacter(palette[0], palette[1], '#d9d2bf');
+    }
+    if (entity.kind === 'enemy') {
+      if (entity.enemyType === 'Undead') return this.makeSkeleton();
+      if (entity.enemyType === 'Beast') return this.makeWolf();
+      if (entity.enemyType === 'Cultist') return this.makeCharacter('#181218', '#42215a', '#7ad7ff');
+      if (entity.aiStyle === 'archer') return this.makeCharacter('#2d1913', '#3f3a29', '#d19a54');
+      return this.makeCharacter('#3b2119', '#4a2d24', '#b76535');
+    }
+    if (entity.kind === 'resource') {
+      if (entity.resourceType === 'tree') return this.makeTreeEntity();
+      if (entity.resourceType === 'herb') return this.makeHerbEntity();
+      return this.makeOreEntity(entity.yieldItemId === 'copper_ore' ? '#b77745' : '#9ba5a3');
+    }
+    if (entity.kind === 'loot') {
+      const group = new THREE.Group();
+      if (entity.gold) {
+        this.box(group, 0, 0.12, 0, 0.22, 0.12, 0.22, this.mats.get('gold', '#e7b52e', { metalness: 0.5 }));
+        this.box(group, 0.18, 0.16, 0.05, 0.18, 0.1, 0.18, this.mats.get('gold2', '#f2ca45', { metalness: 0.5 }));
+      } else {
+        this.iconVoxel(group, itemDefs[entity.item?.itemId ?? 'stone_block']?.icon ?? itemDefs.stone_block.icon, 0, 0.2, 0);
+      }
+      return group;
+    }
+    if (entity.kind === 'container') {
+      return this.kit.chestBuilder({ locked: entity.locked, trapped: Boolean(entity.trap?.armed), colorVariation: 0.04 });
+    }
+    if (entity.kind === 'portal') {
+      const group = new THREE.Group();
+      this.box(group, 0, 0.05, 0, 0.8, 0.1, 0.8, this.mats.get('portal', '#2b74b8', { emissive: '#113b6a', emissiveIntensity: 0.35 }));
+      return group;
+    }
+    return new THREE.Group();
+  }
+
+  private makeCharacter(hair: string, tunic: string, metal: string): THREE.Group {
+    const g = new THREE.Group();
+    g.userData.actor = true;
+    this.box(g, 0, 0.35, 0, 0.48, 0.7, 0.34, this.mats.get(`tunic-${tunic}`, tunic));
+    this.box(g, 0, 0.9, 0, 0.42, 0.42, 0.38, this.mats.get('skin', '#c48755'));
+    this.box(g, 0, 1.16, -0.04, 0.46, 0.22, 0.42, this.mats.get(`hair-${hair}`, hair));
+    this.box(g, -0.32, 0.4, 0, 0.16, 0.52, 0.18, this.mats.get(`sleeve-${tunic}`, tunic)).name = 'left-arm';
+    this.box(g, 0.32, 0.4, 0, 0.16, 0.52, 0.18, this.mats.get(`sleeve2-${tunic}`, tunic)).name = 'right-arm';
+    this.box(g, -0.14, -0.1, 0, 0.18, 0.42, 0.18, this.mats.get('pants', '#2d251e')).name = 'left-leg';
+    this.box(g, 0.14, -0.1, 0, 0.18, 0.42, 0.18, this.mats.get('pants2', '#2d251e')).name = 'right-leg';
+    this.box(g, 0.5, 0.35, -0.12, 0.12, 0.92, 0.08, this.mats.get(`weapon-${metal}`, metal, { metalness: 0.25 }), { rz: -0.6 }).name = 'weapon';
+    this.box(g, 0, 0.1, -0.2, 0.54, 0.12, 0.14, this.mats.get('belt', '#2b1a12'));
+    return g;
+  }
+
+  private makeSkeleton(): THREE.Group {
+    const g = new THREE.Group();
+    g.userData.actor = true;
+    const bone = this.mats.get('bone', '#c9c5b4');
+    this.box(g, 0, 0.34, 0, 0.35, 0.64, 0.25, bone);
+    this.box(g, 0, 0.9, 0, 0.42, 0.36, 0.36, bone);
+    this.box(g, -0.08, 0.94, -0.19, 0.08, 0.08, 0.06, this.mats.get('skel-eye', '#e23a31', { emissive: '#d71919', emissiveIntensity: 0.65 }));
+    this.box(g, 0.08, 0.94, -0.19, 0.08, 0.08, 0.06, this.mats.get('skel-eye2', '#e23a31', { emissive: '#d71919', emissiveIntensity: 0.65 }));
+    this.box(g, -0.28, 0.35, 0, 0.12, 0.6, 0.12, bone).name = 'left-arm';
+    this.box(g, 0.28, 0.35, 0, 0.12, 0.6, 0.12, bone).name = 'right-arm';
+    this.box(g, -0.12, -0.12, 0, 0.1, 0.42, 0.1, bone).name = 'left-leg';
+    this.box(g, 0.12, -0.12, 0, 0.1, 0.42, 0.1, bone).name = 'right-leg';
+    this.box(g, 0.44, 0.35, -0.1, 0.1, 0.86, 0.08, this.mats.get('rust', '#7d6b5b', { metalness: 0.2 }), { rz: -0.7 }).name = 'weapon';
+    this.box(g, -0.34, 0.4, 0.15, 0.16, 0.42, 0.34, this.mats.get('shield-wood', '#6a4a2e'));
+    return g;
+  }
+
+  private makeWolf(): THREE.Group {
+    const g = new THREE.Group();
+    g.userData.actor = true;
+    const fur = this.mats.get('wolf-fur', '#50524c');
+    const dark = this.mats.get('wolf-dark', '#2a2b28');
+    this.box(g, 0, 0.3, 0, 0.85, 0.42, 0.34, fur);
+    this.box(g, 0.48, 0.42, -0.02, 0.36, 0.3, 0.3, fur);
+    this.box(g, 0.67, 0.43, -0.12, 0.12, 0.1, 0.08, this.mats.get('wolf-eye', '#f0d05a', { emissive: '#e7b84c', emissiveIntensity: 0.3 }));
+    this.box(g, -0.55, 0.38, 0, 0.5, 0.16, 0.16, dark, { rz: -0.2 });
+    this.box(g, -0.28, 0.02, -0.12, 0.12, 0.38, 0.1, dark).name = 'left-leg';
+    this.box(g, 0.2, 0.02, -0.12, 0.12, 0.38, 0.1, dark).name = 'right-leg';
+    this.box(g, -0.28, 0.02, 0.12, 0.12, 0.38, 0.1, dark).name = 'left-arm';
+    this.box(g, 0.2, 0.02, 0.12, 0.12, 0.38, 0.1, dark).name = 'right-arm';
+    return g;
+  }
+
+  private makeTreeEntity(): THREE.Group {
+    return this.kit.treeBuilder({ props: true, colorVariation: 0.08 });
+  }
+
+  private makeOreEntity(color: string): THREE.Group {
+    return this.kit.oreVeinBuilder({ color, colorVariation: 0.06 });
+  }
+
+  private makeHerbEntity(): THREE.Group {
+    const g = new THREE.Group();
+    this.box(g, 0, 0.08, 0, 0.7, 0.08, 0.7, this.mats.get('herb-soil', '#4c3d25'));
+    this.box(g, -0.16, 0.26, 0.08, 0.16, 0.42, 0.14, this.mats.get('herb-leaf', '#6fb447'));
+    this.box(g, 0.12, 0.24, -0.1, 0.14, 0.38, 0.14, this.mats.get('herb-leaf2', '#83c954'));
+    this.box(g, 0.28, 0.2, 0.18, 0.1, 0.28, 0.1, this.mats.get('herb-flower', '#d9d2a1'));
+    return g;
+  }
+
+  private makeBuildPiece(pieceId: string, ghost: boolean, ghostColor = '#60d871'): THREE.Group {
+    const piece = buildPieces.find((candidate) => candidate.id === pieceId) ?? buildPieces[0];
+    const g = new THREE.Group();
+    const mat = ghost
+      ? this.mats.get(`ghost-${ghostColor}`, ghostColor, { transparent: true, opacity: 0.42, emissive: ghostColor, emissiveIntensity: 0.1 })
+      : this.materialForBuildPiece(piece);
+    if (piece.id === 'half_wall') {
+      this.box(g, 0, 0.28, 0, 1, 0.56, 0.32, mat);
+    } else if (piece.id === 'window_wall') {
+      this.box(g, -0.38, 0.55, 0, 0.22, 1.1, 0.32, mat);
+      this.box(g, 0.38, 0.55, 0, 0.22, 1.1, 0.32, mat);
+      this.box(g, 0, 1.04, 0, 1, 0.22, 0.32, mat);
+      this.box(g, 0, 0.18, 0, 1, 0.28, 0.32, mat);
+    } else if (piece.id.includes('wall')) {
+      this.box(g, 0, 0.55, 0, 1, 1.1, 0.32, mat);
+    } else if (piece.id === 'floor' || piece.id === 'stone_floor') {
+      this.box(g, 0, 0.08, 0, 1, 0.16, 1, mat);
+    } else if (piece.id === 'fence') {
+      if (ghost) {
+        this.box(g, 0, 0.35, -0.35, 0.16, 0.7, 0.16, mat);
+        this.box(g, 0, 0.35, 0.35, 0.16, 0.7, 0.16, mat);
+        this.box(g, 0, 0.55, 0, 1, 0.16, 0.14, mat);
+      } else {
+        g.add(this.kit.fenceBuilder({ colorVariation: 0.04 }));
+      }
+    } else if (piece.id === 'door') {
+      this.box(g, 0, 0.55, 0, 0.74, 1.1, 0.12, mat);
+      this.box(g, 0.24, 0.62, -0.08, 0.08, 0.08, 0.08, this.mats.get('door-knob', '#d9b25c'));
+    } else if (piece.id === 'roof') {
+      this.box(g, 0, 0.45, 0, 1.1, 0.42, 1.1, mat, { ry: Math.PI / 4 });
+    } else if (piece.id === 'torch') {
+      this.torchPost(0, 0, g);
+    } else if (piece.id === 'small_chest') {
+      if (ghost) this.box(g, 0, 0.32, 0, 0.8, 0.58, 0.62, mat);
+      else g.add(this.kit.chestBuilder({ seed: this.tileHash(piece.id.length, 2), colorVariation: 0.04 }));
+    } else if (piece.id === 'resource_crate' || piece.id === 'crate') {
+      this.box(g, 0, 0.35, 0, 0.82, 0.7, 0.82, mat);
+      this.box(g, 0, 0.72, 0, 0.94, 0.08, 0.94, ghost ? mat : this.mats.get('crate-lip', '#4f3321'));
+    } else if (piece.id === 'reagent_shelf') {
+      this.box(g, 0, 0.75, 0, 0.95, 1.3, 0.18, mat);
+      this.box(g, -0.28, 1.12, -0.16, 0.16, 0.28, 0.16, ghost ? mat : this.mats.get('reagent-red', '#cf2d35', { emissive: '#cf2d35', emissiveIntensity: 0.25 }));
+      this.box(g, 0.02, 1.0, -0.16, 0.16, 0.28, 0.16, ghost ? mat : this.mats.get('reagent-green', '#67c56b', { emissive: '#67c56b', emissiveIntensity: 0.2 }));
+      this.box(g, 0.32, 0.88, -0.16, 0.16, 0.28, 0.16, ghost ? mat : this.mats.get('reagent-blue', '#245ee9', { emissive: '#245ee9', emissiveIntensity: 0.2 }));
+    } else if (piece.id === 'weapon_rack') {
+      this.box(g, 0, 0.9, 0, 1.15, 0.16, 0.16, mat);
+      this.box(g, -0.34, 0.54, 0, 0.09, 0.78, 0.09, ghost ? mat : this.mats.get('rack-metal', '#a7aaa7'), { rz: 0.45 });
+      this.box(g, 0.34, 0.54, 0, 0.09, 0.78, 0.09, ghost ? mat : this.mats.get('rack-metal2', '#a7aaa7'), { rz: -0.45 });
+    } else if (piece.id === 'armor_stand') {
+      this.box(g, 0, 0.68, 0, 0.18, 1.15, 0.18, mat);
+      this.box(g, 0, 1.02, 0, 0.68, 0.5, 0.28, ghost ? mat : this.mats.get('stand-armor', '#8b4f2c'));
+      this.box(g, 0, 0.16, 0, 0.9, 0.12, 0.5, mat);
+    } else if (piece.id === 'basic_workbench' || piece.id === 'carpenter_bench_home' || piece.id === 'repair_station_home') {
+      this.box(g, 0, 0.42, 0, 1.55, 0.28, 0.9, mat);
+      this.box(g, -0.52, 0.18, -0.28, 0.16, 0.36, 0.16, mat);
+      this.box(g, 0.52, 0.18, 0.28, 0.16, 0.36, 0.16, mat);
+      this.box(g, 0.18, 0.68, 0, 0.58, 0.08, 0.18, ghost ? mat : this.mats.get('bench-tool', piece.id === 'repair_station_home' ? '#a7aaa7' : '#d9bd89'));
+    } else if (piece.id === 'small_forge_home') {
+      if (ghost) {
+        this.box(g, -0.25, 0.42, 0, 0.8, 0.72, 0.76, mat);
+        this.box(g, 0.42, 0.25, 0.12, 0.5, 0.28, 0.38, mat);
+      } else {
+        const forge = this.kit.forgeBuilder({ seed: 7, colorVariation: 0.035, props: true });
+        forge.scale.setScalar(0.78);
+        forge.position.x = -0.22;
+        g.add(forge);
+        this.box(g, 0.5, 0.25, 0.08, 0.52, 0.18, 0.32, this.mats.get('home-anvil', '#777c80', { metalness: 0.25 }));
+      }
+    } else if (piece.id === 'alchemy_table_home') {
+      this.box(g, 0, 0.42, 0, 1.4, 0.28, 0.82, mat);
+      this.box(g, -0.3, 0.72, 0, 0.2, 0.28, 0.2, ghost ? mat : this.mats.get('alchemy-home-red', '#cf2d35', { emissive: '#cf2d35', emissiveIntensity: 0.25 }));
+      this.box(g, 0.3, 0.72, 0.1, 0.2, 0.28, 0.2, ghost ? mat : this.mats.get('alchemy-home-blue', '#245ee9', { emissive: '#245ee9', emissiveIntensity: 0.25 }));
+    } else if (piece.id === 'scribe_desk_home' || piece.id === 'notice_board_home' || piece.id === 'sign_home') {
+      this.box(g, 0, 0.72, 0, piece.id === 'notice_board_home' ? 1.05 : 0.85, piece.id === 'notice_board_home' ? 0.75 : 0.48, 0.12, mat);
+      this.box(g, -0.38, 0.35, 0.02, 0.12, 0.7, 0.12, mat);
+      this.box(g, 0.38, 0.35, 0.02, 0.12, 0.7, 0.12, mat);
+      if (piece.id === 'scribe_desk_home') this.box(g, 0, 0.98, -0.08, 0.5, 0.04, 0.34, ghost ? mat : this.mats.get('scribe-home-scroll', '#d9bd89'));
+    } else if (piece.id === 'cooking_hearth_home' || piece.id === 'campfire_home') {
+      this.box(g, 0, 0.14, 0, 1.0, 0.22, 1.0, ghost ? mat : this.mats.get('home-hearth-stone', '#55524d'));
+      this.box(g, 0, 0.36, 0, 0.44, 0.36, 0.44, ghost ? mat : this.mats.get('home-hearth-fire', '#ff8a2e', { emissive: '#ff5c1f', emissiveIntensity: 1.2 }));
+      if (piece.id === 'cooking_hearth_home') this.box(g, 0, 0.78, 0, 0.65, 0.12, 0.65, ghost ? mat : this.mats.get('home-pot', '#343434', { metalness: 0.35 }));
+    } else if (piece.id === 'bedroll_home' || piece.id === 'rug_home') {
+      this.box(g, 0, 0.07, 0, piece.id === 'rug_home' ? 1.35 : 1.45, 0.08, 0.78, mat);
+      this.box(g, -0.42, 0.12, -0.16, 0.28, 0.08, 0.46, ghost ? mat : this.mats.get('bedroll-roll', '#d8d5c9'));
+    } else if (piece.id === 'home_marker') {
+      this.box(g, 0, 0.12, 0, 0.65, 0.18, 0.65, mat);
+      this.box(g, 0, 0.48, 0, 0.22, 0.62, 0.22, ghost ? mat : this.mats.get('home-marker-glow', '#6fd4ff', { emissive: '#6fd4ff', emissiveIntensity: 0.85 }));
+    } else if (piece.id === 'training_dummy_home') {
+      this.box(g, 0, 0.58, 0, 0.18, 1.1, 0.18, mat);
+      this.box(g, 0, 0.98, 0, 0.62, 0.44, 0.28, ghost ? mat : this.mats.get('dummy-cloth', '#c9b28a'));
+      this.box(g, 0, 0.18, 0, 0.78, 0.12, 0.44, mat);
+    } else if (piece.id === 'lamp_post_home') {
+      if (ghost) this.box(g, 0, 0.72, 0, 0.18, 1.45, 0.18, mat);
+      else g.add(this.kit.lampPostBuilder({ size: 0.78, seed: 9, color: '#ffbd55' }));
+    } else if (piece.id === 'herb_planter_home' || piece.id === 'garden_patch_home' || piece.id === 'plant_pot_home') {
+      this.box(g, 0, 0.12, 0, 0.82, 0.18, 0.82, ghost ? mat : this.mats.get('planter-soil', '#4c3d25'));
+      this.box(g, -0.2, 0.34, 0.05, 0.14, 0.42, 0.12, ghost ? mat : this.mats.get('planter-leaf', '#67c56b'));
+      this.box(g, 0.18, 0.3, -0.12, 0.12, 0.34, 0.12, ghost ? mat : this.mats.get('planter-leaf2', '#83c954'));
+      if (piece.id === 'garden_patch_home') this.box(g, 0.22, 0.27, 0.18, 0.12, 0.18, 0.12, ghost ? mat : this.mats.get('carrot-top', '#d9822f'));
+    } else if (piece.id === 'skull_trophy_home') {
+      this.box(g, 0, 0.18, 0, 0.5, 0.12, 0.5, mat);
+      this.box(g, 0, 0.5, 0, 0.36, 0.34, 0.32, ghost ? mat : this.mats.get('skull-bone', '#d8d5c9'));
+    } else if (piece.id === 'bandit_banner_home' || piece.id === 'wall_tapestry_home') {
+      if (ghost) this.box(g, 0, 0.78, 0, 0.9, 0.85, 0.08, mat);
+      else g.add(this.kit.bannerBuilder({ seed: piece.id === 'bandit_banner_home' ? 12 : 14, color: piece.id === 'bandit_banner_home' ? '#8f1f2d' : '#1f5a95', colorVariation: 0.035 }));
+    } else if (piece.id === 'ore_sample_display') {
+      this.box(g, 0, 0.22, 0, 0.72, 0.18, 0.52, mat);
+      this.box(g, -0.18, 0.48, 0.02, 0.22, 0.22, 0.22, ghost ? mat : this.mats.get('ore-sample-copper', '#bf7443'));
+      this.box(g, 0.18, 0.44, -0.04, 0.18, 0.18, 0.18, ghost ? mat : this.mats.get('ore-sample-iron', '#a8b1b0'));
+    } else if (piece.id === 'treasure_map_display') {
+      this.box(g, 0, 0.64, 0, 0.85, 0.68, 0.1, mat);
+      this.box(g, 0, 0.66, -0.06, 0.54, 0.44, 0.04, ghost ? mat : this.mats.get('map-display-paper', '#d7bf8d'));
+    } else if (piece.id === 'barrel') {
+      this.box(g, 0, 0.35, 0, 0.7, 0.68, 0.7, mat);
+      this.box(g, 0, 0.15, 0, 0.78, 0.1, 0.78, this.mats.get('barrel-band', '#4f3321'));
+      this.box(g, 0, 0.58, 0, 0.78, 0.1, 0.78, this.mats.get('barrel-band2', '#4f3321'));
+    } else {
+      this.box(g, 0, 0.35, 0, 0.8, 0.7, 0.8, mat);
+    }
+    return g;
+  }
+
+  private materialForBuildPiece(piece: BuildPieceDef): THREE.Material {
+    if (piece.id === 'half_wall') return this.mats.get('placed-stone', '#77756e');
+    if (piece.id.includes('stone')) return this.mats.get('placed-stone', '#77756e');
+    if (piece.id.includes('roof')) return this.mats.get('placed-roof', '#784019');
+    if (piece.id === 'door') return this.mats.get('placed-door', '#75451f');
+    if (piece.id === 'barrel') return this.mats.get('placed-barrel', '#7d4a24');
+    return this.mats.get('placed-wood', '#86552b');
+  }
+
+  private makeProjectile(projectile: Projectile): THREE.Object3D {
+    const t = Math.min(1, projectile.age / projectile.duration);
+    const x = THREE.MathUtils.lerp(projectile.from.x, projectile.to.x, t);
+    const y = THREE.MathUtils.lerp(projectile.from.y, projectile.to.y, t) + Math.sin(t * Math.PI) * 0.35;
+    const z = THREE.MathUtils.lerp(projectile.from.z, projectile.to.z, t);
+    const large = projectile.kind === 'firebolt' || projectile.kind === 'fireball' || projectile.kind === 'heal';
+    const emissiveIntensity = projectile.kind === 'arrow' ? 0.2 : projectile.kind === 'lightning' ? 2.2 : 1.35;
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(large ? 0.16 : 0.09, 8, 8),
+      this.mats.get(`proj-${projectile.color}`, projectile.color, { emissive: projectile.color, emissiveIntensity })
+    );
+    mesh.position.set(x, y, z);
+    mesh.scale.set(projectile.kind === 'arrow' || projectile.kind === 'lightning' ? 1.8 : 1, projectile.kind === 'lightning' ? 1.6 : 0.8, 0.8);
+    return mesh;
+  }
+
+  private ensureEntity(id: string, kind: string, create: () => THREE.Group): EntityRecord {
+    const existing = this.records.get(id);
+    if (existing && existing.kind === kind) return existing;
+    if (existing) {
+      this.entityGroup.remove(existing.group);
+      this.disposeObject(existing.group);
+    }
+    const group = create();
+    group.userData.entityId = id;
+    group.traverse((child) => {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      child.userData.entityId = id;
+    });
+    this.entityGroup.add(group);
+    const record = { group, kind };
+    this.records.set(id, record);
+    return record;
+  }
+
+  private box(
+    parent: THREE.Group,
+    x: number,
+    y: number,
+    z: number,
+    sx: number,
+    sy: number,
+    sz: number,
+    material: THREE.Material,
+    rotation: { rx?: number; ry?: number; rz?: number } = {}
+  ): THREE.Mesh {
+    const mesh = new THREE.Mesh(this.boxGeometry(sx, sy, sz), material);
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(rotation.rx ?? 0, rotation.ry ?? 0, rotation.rz ?? 0);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  private boxGeometry(sx: number, sy: number, sz: number): THREE.BoxGeometry {
+    const key = `${sx.toFixed(3)}:${sy.toFixed(3)}:${sz.toFixed(3)}`;
+    const existing = this.boxGeometries.get(key);
+    if (existing) return existing;
+    const geometry = new THREE.BoxGeometry(sx, sy, sz);
+    geometry.userData.sharedBox = true;
+    this.boxGeometries.set(key, geometry);
+    return geometry;
+  }
+
+  private trackRoof(mesh: THREE.Mesh): void {
+    mesh.userData.roof = true;
+    this.roofMeshes.push(mesh);
+  }
+
+  private addKitGroup(parent: THREE.Group, group: THREE.Group, x: number, z: number): THREE.Group {
+    group.position.set(x, 0, z);
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.userData.roof) this.trackRoof(child);
+    });
+    parent.add(group);
+    return group;
+  }
+
+  private updateRoofCutaway(state: GameState): void {
+    if (!this.roofMeshes.length) return;
+    const player = state.player.position;
+    const insideRoofZone =
+      state.player.currentArea === 'town' &&
+      this.roofZones.some((zone) => player.x >= zone.minX && player.x <= zone.maxX && player.z >= zone.minZ && player.z <= zone.maxZ);
+    const opacity = insideRoofZone ? 0.18 : 1;
+    for (const mesh of this.roofMeshes) {
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) {
+        material.transparent = opacity < 1;
+        material.opacity = opacity;
+        material.depthWrite = opacity >= 1;
+      }
+    }
+  }
+
+  private iconVoxel(parent: THREE.Group, icon: IconDescriptor, x: number, y: number, z: number): void {
+    const primary = this.mats.get(`icon-${icon.primary}`, icon.primary);
+    const secondary = this.mats.get(`icon-${icon.secondary ?? icon.primary}`, icon.secondary ?? icon.primary);
+    if (icon.shape === 'blade') {
+      this.box(parent, x, y + 0.15, z, 0.1, 0.75, 0.1, primary, { rz: -0.75 });
+      this.box(parent, x - 0.18, y - 0.14, z, 0.1, 0.28, 0.1, secondary, { rz: -0.75 });
+    } else if (icon.shape === 'potion') {
+      this.box(parent, x, y, z, 0.28, 0.34, 0.28, primary);
+      this.box(parent, x, y + 0.25, z, 0.16, 0.18, 0.16, secondary);
+    } else {
+      this.box(parent, x, y, z, 0.44, 0.36, 0.44, primary);
+      this.box(parent, x + 0.1, y + 0.25, z - 0.1, 0.22, 0.14, 0.22, secondary);
+    }
+  }
+
+  private house(x: number, z: number, w: number, d: number, banner: boolean): void {
+    this.roofZones.push({ minX: x - 1.1, maxX: x + w + 0.1, minZ: z - 1.1, maxZ: z + d + 0.1 });
+    this.addKitGroup(
+      this.staticGroup,
+      this.kit.timberHouseBuilder({
+        width: w,
+        depth: d,
+        banner,
+        seed: this.tileHash(x, z),
+        wear: 0.24,
+        colorVariation: 0.045,
+        props: true
+      }),
+      x,
+      z
+    );
+  }
+
+  private interiorShell(woodColor: string, wallColor: string): void {
+    const wood = this.mats.get(`interior-wood-${woodColor}`, woodColor);
+    const wall = this.mats.get(`interior-wall-${wallColor}`, wallColor);
+    for (let x = -7; x <= 7; x += 1) {
+      this.box(this.staticGroup, x, 0.8, -5.5, 1, 1.6, 0.35, wall);
+      this.box(this.staticGroup, x, 0.8, 7.5, 1, 1.6, 0.35, wall);
+      this.box(this.staticGroup, x, 1.7, -5.5, 1, 0.25, 0.38, wood);
+      this.box(this.staticGroup, x, 1.7, 7.5, 1, 0.25, 0.38, wood);
+    }
+    for (let z = -5; z <= 7; z += 1) {
+      this.box(this.staticGroup, -7.5, 0.8, z, 0.35, 1.6, 1, wall);
+      this.box(this.staticGroup, 7.5, 0.8, z, 0.35, 1.6, 1, wall);
+      this.box(this.staticGroup, -7.5, 1.7, z, 0.38, 0.25, 1, wood);
+      this.box(this.staticGroup, 7.5, 1.7, z, 0.38, 0.25, 1, wood);
+    }
+  }
+
+  private marketStall(x: number, z: number, color: string): void {
+    this.addKitGroup(this.staticGroup, this.kit.marketStallBuilder({ color, seed: this.tileHash(x, z), wear: 0.28, colorVariation: 0.04, props: true }), x, z);
+  }
+
+  private fountain(x: number, z: number): void {
+    const stone = this.mats.get('fountain-stone', '#8c8a82');
+    const water = this.mats.get('fountain-water', '#3b8fb6', { transparent: true, opacity: 0.8 });
+    this.box(this.staticGroup, x, 0.15, z, 2.2, 0.3, 2.2, stone);
+    this.box(this.staticGroup, x, 0.35, z, 1.6, 0.2, 1.6, water);
+    this.box(this.staticGroup, x, 0.9, z, 0.5, 1.0, 0.5, stone);
+    this.box(this.staticGroup, x, 1.45, z, 0.25, 0.2, 0.25, water);
+  }
+
+  private dock(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.dockBuilder({ length: 5, seed: this.tileHash(x, z), wear: 0.32, colorVariation: 0.035 }), x, z);
+  }
+
+  private boat(x: number, z: number): void {
+    const wood = this.mats.get('boat', '#6c3e1e');
+    this.box(this.staticGroup, x, 0.2, z, 2.2, 0.4, 0.75, wood, { ry: 0.3 });
+    this.box(this.staticGroup, x, 0.42, z, 1.5, 0.22, 0.45, this.mats.get('boat-inner', '#3d2517'), { ry: 0.3 });
+  }
+
+  private tree(x: number, z: number, scale: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.treeBuilder({ size: scale, seed: this.tileHash(x, z), damage: scale < 0.8 ? 0.38 : 0, colorVariation: 0.08, props: true }), x, z);
+  }
+
+  private sign(x: number, z: number, _text: string): void {
+    const wood = this.mats.get('sign-wood', '#6b421f');
+    this.box(this.staticGroup, x - 1, 0.75, z, 0.18, 1.5, 0.18, wood);
+    this.box(this.staticGroup, x + 1, 0.75, z, 0.18, 1.5, 0.18, wood);
+    this.box(this.staticGroup, x, 1.1, z, 2.4, 0.55, 0.14, wood);
+  }
+
+  private counter(x: number, z: number, width: number): void {
+    const wood = this.mats.get('counter', '#5a351d');
+    for (let i = 0; i < width; i += 1) this.box(this.staticGroup, x + i, 0.45, z, 0.92, 0.9, 0.75, wood);
+  }
+
+  private chest(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.chestBuilder({ seed: this.tileHash(x, z), colorVariation: 0.04 }), x, z);
+  }
+
+  private banner(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.bannerBuilder({ seed: this.tileHash(x, z), color: '#1f5a95', colorVariation: 0.035 }), x, z);
+  }
+
+  private rug(x: number, z: number, color: string): void {
+    this.box(this.staticGroup, x, 0.03, z, 3, 0.05, 2.2, this.mats.get(`rug-${color}`, color));
+    this.box(this.staticGroup, x, 0.06, z, 1.2, 0.04, 0.7, this.mats.get('rug-gold', '#b88b34'));
+  }
+
+  private crates(x: number, z: number): void {
+    const wood = this.mats.get('crate', '#68401f');
+    this.box(this.staticGroup, x, 0.35, z, 0.75, 0.7, 0.75, wood);
+    this.box(this.staticGroup, x + 0.65, 0.25, z + 0.15, 0.55, 0.5, 0.55, wood);
+  }
+
+  private lantern(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.lampPostBuilder({ size: 0.72, seed: this.tileHash(x, z), color: '#ffbd55' }), x, z);
+  }
+
+  private forge(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.forgeBuilder({ seed: this.tileHash(x, z), colorVariation: 0.035, props: true }), x, z);
+  }
+
+  private anvil(x: number, z: number): void {
+    const metal = this.mats.get('anvil', '#777c80', { metalness: 0.25 });
+    this.box(this.staticGroup, x, 0.35, z, 1.1, 0.25, 0.55, metal);
+    this.box(this.staticGroup, x, 0.15, z, 0.45, 0.3, 0.45, metal);
+  }
+
+  private oreBins(x: number, z: number): void {
+    this.crates(x, z);
+    this.box(this.staticGroup, x, 0.75, z, 0.55, 0.25, 0.55, this.mats.get('iron-ore-pile', '#9aa2a0'));
+    this.crates(x + 1.3, z);
+    this.box(this.staticGroup, x + 1.3, 0.75, z, 0.55, 0.25, 0.55, this.mats.get('copper-ore-pile', '#b77745'));
+  }
+
+  private toolRack(x: number, z: number): void {
+    const wood = this.mats.get('toolrack', '#5e371a');
+    this.box(this.staticGroup, x, 0.9, z, 1.5, 0.16, 0.16, wood);
+    this.box(this.staticGroup, x - 0.4, 0.55, z, 0.1, 0.75, 0.1, this.mats.get('tool-metal', '#9da1a0'), { rz: 0.35 });
+    this.box(this.staticGroup, x + 0.4, 0.55, z, 0.1, 0.75, 0.1, this.mats.get('tool-metal2', '#9da1a0'), { rz: -0.35 });
+  }
+
+  private worktable(x: number, z: number, accent: string): void {
+    const wood = this.mats.get('worktable-wood', '#68401f');
+    this.box(this.staticGroup, x, 0.42, z, 1.6, 0.28, 0.9, wood);
+    this.box(this.staticGroup, x - 0.55, 0.18, z - 0.28, 0.16, 0.36, 0.16, wood);
+    this.box(this.staticGroup, x + 0.55, 0.18, z + 0.28, 0.16, 0.36, 0.16, wood);
+    this.box(this.staticGroup, x, 0.64, z, 0.9, 0.08, 0.16, this.mats.get(`work-accent-${accent}`, accent));
+  }
+
+  private alchemyTable(x: number, z: number): void {
+    this.worktable(x, z, '#67c56b');
+    this.box(this.staticGroup, x - 0.35, 0.78, z, 0.22, 0.28, 0.22, this.mats.get('alchemy-red', '#cf2d35', { emissive: '#cf2d35', emissiveIntensity: 0.25 }));
+    this.box(this.staticGroup, x + 0.35, 0.78, z + 0.08, 0.22, 0.28, 0.22, this.mats.get('alchemy-blue', '#245ee9', { emissive: '#245ee9', emissiveIntensity: 0.25 }));
+  }
+
+  private scribeDesk(x: number, z: number): void {
+    this.worktable(x, z, '#d9bd89');
+    this.box(this.staticGroup, x, 0.73, z, 0.7, 0.04, 0.42, this.mats.get('open-scroll', '#d9bd89'));
+    this.box(this.staticGroup, x + 0.5, 0.78, z - 0.2, 0.08, 0.36, 0.08, this.mats.get('quill', '#d8d5c9'), { rz: 0.5 });
+  }
+
+  private loom(x: number, z: number): void {
+    const wood = this.mats.get('loom-wood', '#6a421f');
+    this.box(this.staticGroup, x, 0.8, z, 1.4, 1.2, 0.16, wood);
+    this.box(this.staticGroup, x, 0.8, z + 0.08, 1.0, 0.8, 0.08, this.mats.get('loom-cloth', '#d8d5c9'));
+    this.box(this.staticGroup, x, 0.38, z + 0.35, 1.6, 0.18, 0.18, wood);
+  }
+
+  private cookingFire(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.15, z, 1.1, 0.24, 1.1, this.mats.get('cook-stones', '#55524d'));
+    this.box(this.staticGroup, x, 0.38, z, 0.52, 0.36, 0.52, this.mats.get('cook-fire', '#ff8a2e', { emissive: '#ff5c1f', emissiveIntensity: 1.4 }));
+    this.box(this.staticGroup, x, 0.86, z, 0.8, 0.14, 0.8, this.mats.get('cook-pot', '#343434', { metalness: 0.35 }));
+  }
+
+  private tinkerBench(x: number, z: number): void {
+    this.worktable(x, z, '#b8bab9');
+    this.box(this.staticGroup, x - 0.36, 0.76, z, 0.22, 0.12, 0.22, this.mats.get('gear-prop', '#b8bab9', { metalness: 0.25 }));
+    this.box(this.staticGroup, x + 0.25, 0.78, z + 0.16, 0.36, 0.1, 0.12, this.mats.get('lockpick-prop', '#c0c2bf', { metalness: 0.35 }));
+  }
+
+  private mineEntrance(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.6, z, 3, 1.2, 1, this.mats.get('mine-rock', '#5a5853'));
+    this.box(this.staticGroup, x, 0.55, z - 0.15, 1.4, 1.1, 0.5, this.mats.get('mine-dark', '#11100f'));
+    this.box(this.staticGroup, x, 1.25, z - 0.55, 2.5, 0.22, 0.22, this.mats.get('mine-wood', '#6a421f'));
+  }
+
+  private oreCluster(x: number, z: number, color: string): void {
+    this.addKitGroup(this.staticGroup, this.kit.oreVeinBuilder({ color, seed: this.tileHash(x, z), colorVariation: 0.05 }), x, z);
+  }
+
+  private bridge(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.bridgeBuilder({ length: 5, seed: this.tileHash(x, z), wear: 0.3, colorVariation: 0.04 }), x, z);
+  }
+
+  private flowers(): void {
+    for (let i = 0; i < 60; i += 1) {
+      const x = -12 + ((i * 7) % 24);
+      const z = -10 + ((i * 11) % 20);
+      if (Math.abs(x) < 2 && Math.abs(z) < 2) continue;
+      this.box(this.staticGroup, x + 0.2, 0.12, z - 0.1, 0.12, 0.18, 0.12, this.mats.get(`flower-${i % 4}`, ['#dfd8b1', '#cd584c', '#6f87d4', '#e8bf4b'][i % 4]));
+    }
+  }
+
+  private gardenPatch(x: number, z: number): void {
+    for (let ix = 0; ix < 3; ix += 1) {
+      for (let iz = 0; iz < 2; iz += 1) {
+        this.box(this.staticGroup, x + ix, 0.07, z + iz, 0.72, 0.08, 0.72, this.mats.get('garden-soil', '#4f3921'));
+        this.box(this.staticGroup, x + ix - 0.12, 0.22, z + iz, 0.12, 0.28, 0.12, this.mats.get('garden-green', '#699a3f'));
+        this.box(this.staticGroup, x + ix + 0.14, 0.24, z + iz - 0.1, 0.1, 0.32, 0.1, this.mats.get('garden-flower', '#d7c767'));
+      }
+    }
+  }
+
+  private streamTile(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.02, z, 1.35, 0.05, 1, this.mats.get('stream-water', '#2a6f86', { transparent: true, opacity: 0.76 }));
+    this.box(this.staticGroup, x - 0.86, 0.08, z, 0.25, 0.16, 0.8, this.mats.get('stream-bank', '#5b5136'));
+    this.box(this.staticGroup, x + 0.86, 0.08, z, 0.25, 0.16, 0.8, this.mats.get('stream-bank2', '#5b5136'));
+  }
+
+  private cryptWalls(): void {
+    const wall = this.mats.get('crypt-wall', '#343231');
+    for (let x = -15; x <= 15; x += 1) {
+      this.box(this.staticGroup, x, 0.9, -12.5, 1, 1.8, 0.6, wall);
+      this.box(this.staticGroup, x, 0.9, 12.5, 1, 1.8, 0.6, wall);
+    }
+    for (let z = -12; z <= 12; z += 1) {
+      this.box(this.staticGroup, -15.5, 0.9, z, 0.6, 1.8, 1, wall);
+      this.box(this.staticGroup, 15.5, 0.9, z, 0.6, 1.8, 1, wall);
+    }
+  }
+
+  private column(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.dungeonColumnBuilder({ seed: this.tileHash(x, z), theme: 'crypt', damage: 0.45, colorVariation: 0.035 }), x, z);
+  }
+
+  private torchPost(x: number, z: number, parent = this.staticGroup): void {
+    this.addKitGroup(parent, this.kit.lampPostBuilder({ seed: this.tileHash(x, z), color: '#ff9b2f', colorVariation: 0.02 }), x, z);
+  }
+
+  private bones(x: number, z: number): void {
+    const bone = this.mats.get('floor-bone', '#c9c5b4');
+    this.box(this.staticGroup, x, 0.18, z, 0.75, 0.12, 0.16, bone, { ry: 0.5 });
+    this.box(this.staticGroup, x + 0.3, 0.2, z + 0.2, 0.2, 0.16, 0.2, bone);
+  }
+
+  private blood(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.04, z, 1.1, 0.03, 0.7, this.mats.get('blood', '#5b1513'));
+  }
+
+  private wallLine(x1: number, z1: number, x2: number, z2: number): void {
+    const steps = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+    if (z1 === z2) {
+      this.addKitGroup(this.staticGroup, this.kit.stoneWallBuilder({ length: steps + 1, orientation: 'x', seed: this.tileHash(x1, z1), damage: 0.38, colorVariation: 0.025 }), (x1 + x2) / 2, z1);
+      return;
+    }
+    if (x1 === x2) {
+      this.addKitGroup(this.staticGroup, this.kit.stoneWallBuilder({ length: steps + 1, orientation: 'z', seed: this.tileHash(x1, z1), damage: 0.38, colorVariation: 0.025 }), x1, (z1 + z2) / 2);
+      return;
+    }
+    const stone = this.mats.get('low-wall', '#63635d');
+    for (let i = 0; i <= steps; i += 1) {
+      const t = steps === 0 ? 0 : i / steps;
+      const x = Math.round(THREE.MathUtils.lerp(x1, x2, t));
+      const z = Math.round(THREE.MathUtils.lerp(z1, z2, t));
+      this.box(this.staticGroup, x, 0.4, z, 1, 0.8, 0.5, stone);
+    }
+  }
+
+  private waterEdge(zStart: number): void {
+    for (let x = -13; x <= 13; x += 1) {
+      for (let z = zStart; z <= 11; z += 1) {
+        this.box(this.staticGroup, x, -0.15, z, 1, 0.12, 1, this.mats.get('river', '#214f6c', { transparent: true, opacity: 0.8 }));
+      }
+    }
+  }
+
+  private barrel(x: number, z: number): void {
+    const wood = this.mats.get('prop-barrel', '#7b4a24');
+    this.box(this.staticGroup, x, 0.34, z, 0.62, 0.66, 0.62, wood);
+    this.box(this.staticGroup, x, 0.14, z, 0.68, 0.08, 0.68, this.mats.get('barrel-band-dark', '#3c2b20', { metalness: 0.1 }));
+    this.box(this.staticGroup, x, 0.58, z, 0.68, 0.08, 0.68, this.mats.get('barrel-band-dark2', '#3c2b20', { metalness: 0.1 }));
+  }
+
+  private sack(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.22, z, 0.55, 0.42, 0.48, this.mats.get('sack', '#9d8257'));
+    this.box(this.staticGroup, x, 0.48, z, 0.28, 0.12, 0.24, this.mats.get('sack-tie', '#5d4627'));
+  }
+
+  private bench(x: number, z: number): void {
+    const wood = this.mats.get('bench-wood', '#6a421f');
+    this.box(this.staticGroup, x, 0.35, z, 1.6, 0.16, 0.42, wood);
+    this.box(this.staticGroup, x - 0.55, 0.16, z, 0.16, 0.32, 0.18, wood);
+    this.box(this.staticGroup, x + 0.55, 0.16, z, 0.16, 0.32, 0.18, wood);
+  }
+
+  private cart(x: number, z: number, color: string): void {
+    const wood = this.mats.get(`cart-${color}`, color);
+    this.box(this.staticGroup, x, 0.42, z, 1.6, 0.55, 0.95, wood, { ry: 0.18 });
+    this.box(this.staticGroup, x - 0.72, 0.13, z - 0.46, 0.25, 0.25, 0.16, this.mats.get('cart-wheel', '#2b1b12'), { ry: 0.18 });
+    this.box(this.staticGroup, x + 0.72, 0.13, z + 0.46, 0.25, 0.25, 0.16, this.mats.get('cart-wheel2', '#2b1b12'), { ry: 0.18 });
+    this.box(this.staticGroup, x + 1.05, 0.36, z, 1.0, 0.12, 0.12, wood, { ry: 0.18 });
+  }
+
+  private well(x: number, z: number): void {
+    const stone = this.mats.get('well-stone', '#777268');
+    this.box(this.staticGroup, x, 0.35, z, 1.4, 0.55, 1.4, stone);
+    this.box(this.staticGroup, x, 0.45, z, 0.82, 0.36, 0.82, this.mats.get('well-water', '#225d78', { transparent: true, opacity: 0.76 }));
+    this.box(this.staticGroup, x - 0.65, 1.05, z, 0.15, 1.4, 0.15, this.mats.get('well-wood', '#5a341b'));
+    this.box(this.staticGroup, x + 0.65, 1.05, z, 0.15, 1.4, 0.15, this.mats.get('well-wood2', '#5a341b'));
+    this.box(this.staticGroup, x, 1.68, z, 1.7, 0.2, 0.75, this.mats.get('well-roof', '#77401c'));
+  }
+
+  private flowerBox(x: number, z: number): void {
+    const wood = this.mats.get('flowerbox-wood', '#5d351b');
+    this.box(this.staticGroup, x, 0.62, z, 0.9, 0.22, 0.28, wood);
+    this.box(this.staticGroup, x - 0.25, 0.82, z, 0.12, 0.28, 0.12, this.mats.get('flowerbox-red', '#c84d3c'));
+    this.box(this.staticGroup, x + 0.05, 0.82, z, 0.12, 0.28, 0.12, this.mats.get('flowerbox-blue', '#5b75c7'));
+    this.box(this.staticGroup, x + 0.28, 0.82, z, 0.12, 0.28, 0.12, this.mats.get('flowerbox-yellow', '#ddc55a'));
+  }
+
+  private stump(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.28, z, 0.58, 0.56, 0.58, this.mats.get('stump', '#674222'));
+    this.box(this.staticGroup, x, 0.59, z, 0.48, 0.06, 0.48, this.mats.get('stump-top', '#9a7040'));
+  }
+
+  private logPile(x: number, z: number): void {
+    const log = this.mats.get('log-pile', '#76502d');
+    this.box(this.staticGroup, x, 0.18, z, 1.3, 0.28, 0.28, log, { ry: 0.2 });
+    this.box(this.staticGroup, x + 0.12, 0.42, z + 0.22, 1.1, 0.24, 0.24, log, { ry: 0.2 });
+    this.box(this.staticGroup, x - 0.42, 0.66, z - 0.16, 0.8, 0.22, 0.22, log, { ry: 0.2 });
+  }
+
+  private mushrooms(x: number, z: number): void {
+    for (let i = 0; i < 3; i += 1) {
+      const ox = (i - 1) * 0.22;
+      const cap = i === 1 ? '#d4664b' : '#d8c686';
+      this.box(this.staticGroup, x + ox, 0.13, z + i * 0.12, 0.08, 0.24, 0.08, this.mats.get('mushroom-stem', '#dfd0b5'));
+      this.box(this.staticGroup, x + ox, 0.28, z + i * 0.12, 0.22, 0.1, 0.22, this.mats.get(`mushroom-${cap}`, cap));
+    }
+  }
+
+  private rockScatter(x: number, z: number): void {
+    const rock = this.mats.get('scatter-rock', '#6b6963');
+    this.box(this.staticGroup, x, 0.16, z, 0.54, 0.32, 0.42, rock, { ry: 0.3 });
+    this.box(this.staticGroup, x + 0.55, 0.11, z + 0.2, 0.32, 0.22, 0.3, this.mats.get('scatter-rock2', '#575650'), { ry: -0.2 });
+    this.box(this.staticGroup, x - 0.4, 0.08, z - 0.28, 0.24, 0.16, 0.28, this.mats.get('scatter-rock3', '#77746d'));
+  }
+
+  private fallenBranch(x: number, z: number): void {
+    const wood = this.mats.get('fallen-branch', '#65401f');
+    this.box(this.staticGroup, x, 0.12, z, 1.4, 0.12, 0.12, wood, { ry: 0.7 });
+    this.box(this.staticGroup, x + 0.36, 0.2, z - 0.28, 0.58, 0.1, 0.1, wood, { ry: -0.2 });
+  }
+
+  private bushPatch(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.3, z, 0.8, 0.6, 0.8, this.mats.get('bush', '#3f6b31'));
+    this.box(this.staticGroup, x + 0.45, 0.22, z + 0.18, 0.55, 0.44, 0.55, this.mats.get('bush2', '#4f7938'));
+  }
+
+  private tomb(x: number, z: number): void {
+    const stone = this.mats.get('tomb-stone', '#5c5954');
+    this.box(this.staticGroup, x, 0.28, z, 1.7, 0.45, 0.78, stone, { ry: 0.16 });
+    this.box(this.staticGroup, x - 0.62, 0.68, z, 0.28, 0.5, 0.84, stone, { ry: 0.16 });
+  }
+
+  private rubble(x: number, z: number): void {
+    for (let i = 0; i < 5; i += 1) {
+      const ox = ((i * 3) % 5 - 2) * 0.18;
+      const oz = ((i * 5) % 7 - 3) * 0.13;
+      this.box(this.staticGroup, x + ox, 0.08 + i * 0.018, z + oz, 0.28, 0.16, 0.24, this.mats.get(`rubble-${i}`, i % 2 ? '#4b4946' : '#64615b'), { ry: i * 0.4 });
+    }
+  }
+
+  private candle(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.2, z, 0.14, 0.38, 0.14, this.mats.get('candle-wax', '#d8cfb6'));
+    this.box(this.staticGroup, x, 0.46, z, 0.12, 0.12, 0.12, this.mats.get('candle-flame', '#ffb742', { emissive: '#ff8c21', emissiveIntensity: 1.1 }));
+  }
+
+  private crackedWall(x: number, z: number): void {
+    const crack = this.mats.get('wall-crack', '#151515');
+    this.box(this.staticGroup, x, 1.05, z, 0.08, 1.0, 0.08, crack, { rz: 0.32 });
+    this.box(this.staticGroup, x, 0.78, z + 0.22, 0.07, 0.55, 0.07, crack, { rz: -0.18 });
+  }
+
+  private chain(x: number, z: number): void {
+    const iron = this.mats.get('chain-iron', '#3a3d3f', { metalness: 0.45, roughness: 0.55 });
+    for (let i = 0; i < 4; i += 1) this.box(this.staticGroup, x, 1.5 - i * 0.22, z, 0.11, 0.16, 0.04, iron, { ry: i % 2 ? Math.PI / 2 : 0 });
+  }
+
+  private brokenWeapon(x: number, z: number): void {
+    this.box(this.staticGroup, x, 0.13, z, 0.12, 0.82, 0.08, this.mats.get('broken-blade', '#8f918e', { metalness: 0.25 }), { rz: -1.1 });
+    this.box(this.staticGroup, x - 0.22, 0.1, z + 0.12, 0.12, 0.38, 0.1, this.mats.get('broken-hilt', '#62401f'), { rz: -1.1 });
+  }
+
+  private wagonTracks(x: number, z: number): void {
+    const dirt = this.mats.get('wagon-rut', '#4e3c2a');
+    this.box(this.staticGroup, x, 0.045, z - 0.42, 2.3, 0.035, 0.12, dirt, { ry: 0.14 });
+    this.box(this.staticGroup, x, 0.045, z + 0.42, 2.3, 0.035, 0.12, dirt, { ry: 0.14 });
+  }
+
+  private clearGroup(group: THREE.Object3D): void {
+    const children = [...group.children];
+    children.forEach((child) => {
+      group.remove(child);
+      this.disposeObject(child);
+    });
+  }
+
+  private disposeObject(object: THREE.Object3D): void {
+    object.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.geometry && !mesh.geometry.userData.sharedBox) mesh.geometry.dispose();
+    });
+  }
+}
