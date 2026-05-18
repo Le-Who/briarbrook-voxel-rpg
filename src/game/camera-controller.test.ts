@@ -40,4 +40,35 @@ describe('camera usability controller', () => {
     expect(debug.focus.x).toBeLessThan(state.entities.enemy_bandit_1.position.x);
     expect(camera.position.x).toBeCloseTo(debug.focus.x + debug.offset.x, 4);
   });
+
+  it('snaps the first camera frame to the current player area before smoothing later movement', () => {
+    const camera = new THREE.OrthographicCamera(-8, 8, 5, -5, 0.1, 1000);
+    const controller = new CameraController(camera);
+    const state = createInitialGameState();
+    state.player.position = { x: 5, y: 0, z: -3 };
+
+    controller.update(state, 1 / 60);
+    expect(controller.getDebugState().focus.x).toBeCloseTo(5, 4);
+    expect(controller.getDebugState().focus.z).toBeCloseTo(-3, 4);
+
+    state.player.position = { x: 8, y: 0, z: -3 };
+    controller.update(state, 1 / 60);
+
+    const debug = controller.getDebugState();
+    expect(debug.focus.x).toBeGreaterThan(5);
+    expect(debug.focus.x).toBeLessThan(8);
+  });
+
+  it('removes movement lead when reduced motion is enabled', () => {
+    const camera = new THREE.OrthographicCamera(-8, 8, 5, -5, 0.1, 1000);
+    const controller = new CameraController(camera);
+    const state = createInitialGameState();
+    state.ui.reducedMotion = true;
+    state.player.position = { x: 2, y: 0, z: 0 };
+    state.player.movement.velocity = { x: 4, z: 0 };
+
+    controller.update(state, 1);
+
+    expect(controller.getDebugState().focus.x).toBeCloseTo(2, 4);
+  });
 });

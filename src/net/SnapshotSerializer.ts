@@ -2,7 +2,7 @@ import { createInitialGameState } from '../game/GameState';
 import type { GameState } from '../game/types';
 import type { SerializedSnapshot } from './protocol';
 
-export const CURRENT_SAVE_VERSION = 2;
+export const CURRENT_SAVE_VERSION = 3;
 
 export class SnapshotSerializer {
   static serialize(state: GameState): SerializedSnapshot {
@@ -12,6 +12,11 @@ export class SnapshotSerializer {
         saveVersion: CURRENT_SAVE_VERSION,
         floatingTexts: [],
         projectiles: [],
+        player: {
+          ...state.player,
+          activeTargetId: null,
+          targetPosition: null
+        },
         realtime: {
           ...state.realtime,
           actionQueue: [],

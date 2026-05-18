@@ -5,8 +5,10 @@ import { CameraController } from '../game/CameraController';
 import { hoverRingStyleForEntity } from '../game/WorldFeedback';
 import type { AreaId, BuildPieceDef, Entity, GameState, IconDescriptor, Projectile, Vec3 } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
+import { MODEL_FORWARD_OFFSET } from '../systems/FacingSystem';
 import { areaAmbient, MaterialLibrary } from './Materials';
 import { estimateRenderFrameMs, renderPerformanceBudget } from './RenderBudgets';
+import { RenderMotionTracker, type RenderMotionSample } from './RenderMotion';
 import { VoxelKit } from './VoxelKit';
 
 interface EntityRecord {
@@ -37,6 +39,7 @@ export class VoxelRenderer {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private targetRing: THREE.Mesh | null = null;
   private hoverRing: THREE.Mesh | null = null;
+  private motion = new RenderMotionTracker();
   private roofMeshes: THREE.Mesh[] = [];
   private roofZones: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
   private litKey: string | null = null;
@@ -65,11 +68,13 @@ export class VoxelRenderer {
       this.currentArea = state.player.currentArea;
       this.rebuildStaticArea(state.player.currentArea);
       this.records.clear();
+      this.motion.clear();
+      this.cameraController.snapNext();
       this.clearGroup(this.entityGroup);
     }
     this.applyLighting(state.player.currentArea, state.world.time.phase);
     this.mats.animate(state.clock);
-    this.cameraController.update(state);
+    this.cameraController.update(state, state.realtime.lastFrameDelta, this.visualPlayerSample(state).position);
     this.updateEntities(state);
     this.updateEffects(state);
     this.updateBuildGhost(state);
@@ -263,8 +268,9 @@ export class VoxelRenderer {
     const visible = new Set<string>();
     const playerRecord = this.ensureEntity('player', 'player', () => this.makeCharacter('#6d4a2c', '#2f5841', '#d0d0c8'));
     const playerMoving = state.player.actionState.kind === 'moving' || Math.hypot(state.player.movement.velocity.x, state.player.movement.velocity.z) > 0.08;
-    const playerBob = this.animateActor(playerRecord.group, state.clock, 'player', playerMoving, Boolean(state.combat.hitFlashes.player));
-    playerRecord.group.position.set(state.player.position.x, state.player.position.y + playerBob, state.player.position.z);
+    const playerVisual = this.visualPlayerSample(state);
+    const playerBob = this.animateActor(playerRecord.group, state.clock, 'player', playerMoving, Boolean(state.combat.hitFlashes.player), playerVisual.facing, state.ui.reducedMotion);
+    playerRecord.group.position.set(playerVisual.position.x, playerVisual.position.y + playerBob, playerVisual.position.z);
     const actionScale = state.player.actionState.kind === 'attacking' ? 1.06 : state.player.actionState.kind === 'casting' ? 1.03 : 1;
     playerRecord.group.scale.setScalar((state.combat.hitFlashes.player ? 1.08 : 1) * actionScale);
     visible.add('player');
@@ -277,10 +283,11 @@ export class VoxelRenderer {
       if (entity.kind === 'building') continue;
       const record = this.ensureEntity(entity.id, entity.kind, () => this.makeEntity(entity));
       const actorMoving = entity.kind === 'enemy' ? entity.state === 'chase' || entity.state === 'attack' : entity.kind === 'npc' || entity.kind === 'social';
+      const visual = this.motion.sample(entity.id, { position: entity.position, facing: this.facingForEntity(entity, state), snapKey: entity.area }, state.realtime.tick, state.realtime.renderAlpha ?? 1);
       const actorBob = actorMoving || entity.kind === 'enemy' || entity.kind === 'npc' || entity.kind === 'social'
-        ? this.animateActor(record.group, state.clock, entity.id, actorMoving, Boolean(state.combat.hitFlashes[entity.id]))
+        ? this.animateActor(record.group, state.clock, entity.id, actorMoving, Boolean(state.combat.hitFlashes[entity.id]), visual.facing, state.ui.reducedMotion)
         : 0;
-      record.group.position.set(entity.position.x, entity.position.y + actorBob, entity.position.z);
+      record.group.position.set(visual.position.x, visual.position.y + actorBob, visual.position.z);
       const gatherPulse = state.gathering?.entityId === entity.id ? 1 + Math.sin(state.clock * 18) * 0.025 : 1;
       record.group.scale.setScalar((state.combat.hitFlashes[entity.id] ? 1.1 : 1) * gatherPulse);
       record.group.userData.entityId = entity.id;
@@ -304,27 +311,61 @@ export class VoxelRenderer {
       this.disposeObject(record.group);
       this.records.delete(id);
     });
+    this.motion.forgetMissing(visible);
 
     this.updateTargetRing(state);
   }
 
-  private animateActor(group: THREE.Group, clock: number, seedText: string, moving: boolean, hit: boolean): number {
+  private visualPlayerSample(state: GameState): RenderMotionSample {
+    return this.motion.sample(
+      'player',
+      {
+        position: state.player.position,
+        facing: state.player.facing?.facingYaw ?? this.facingFromVelocity(state.player.movement.velocity.x, state.player.movement.velocity.z),
+        snapKey: state.player.currentArea
+      },
+      state.realtime.tick,
+      state.realtime.renderAlpha ?? 1
+    );
+  }
+
+  private animateActor(group: THREE.Group, clock: number, seedText: string, moving: boolean, hit: boolean, facing: number, reducedMotion: boolean): number {
     const seed = seedText.length * 0.37;
     const speed = moving ? 9.5 : 2.4;
     const wave = Math.sin(clock * speed + seed);
-    const bob = hit ? 0.08 : moving ? Math.abs(wave) * 0.055 : Math.sin(clock * 2 + seed) * 0.018;
-    group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, hit ? Math.sin(clock * 30 + seed) * 0.12 : 0, 0.35);
+    const bobScale = reducedMotion ? 0.35 : 1;
+    const bob = hit ? 0.08 * bobScale : moving ? Math.abs(wave) * 0.055 * bobScale : Math.sin(clock * 2 + seed) * 0.018 * bobScale;
+    const hitWobble = hit && !reducedMotion ? Math.sin(clock * 30 + seed) * 0.12 : 0;
+    group.rotation.y = smoothAngle(group.rotation.y, facing + MODEL_FORWARD_OFFSET + hitWobble, 0.28);
     const leftArm = group.getObjectByName('left-arm');
     const rightArm = group.getObjectByName('right-arm');
     const leftLeg = group.getObjectByName('left-leg');
     const rightLeg = group.getObjectByName('right-leg');
     const weapon = group.getObjectByName('weapon');
-    if (leftArm) leftArm.rotation.x = moving ? wave * 0.35 : Math.sin(clock * 1.7 + seed) * 0.08;
-    if (rightArm) rightArm.rotation.x = moving ? -wave * 0.35 : Math.sin(clock * 1.9 + seed) * 0.08;
-    if (leftLeg) leftLeg.rotation.x = moving ? -wave * 0.22 : 0;
-    if (rightLeg) rightLeg.rotation.x = moving ? wave * 0.22 : 0;
-    if (weapon) weapon.rotation.z = hit ? -0.95 : -0.6 + (moving ? -wave * 0.08 : 0);
+    if (leftArm) leftArm.rotation.x = moving ? wave * 0.35 * bobScale : Math.sin(clock * 1.7 + seed) * 0.08 * bobScale;
+    if (rightArm) rightArm.rotation.x = moving ? -wave * 0.35 * bobScale : Math.sin(clock * 1.9 + seed) * 0.08 * bobScale;
+    if (leftLeg) leftLeg.rotation.x = moving ? -wave * 0.22 * bobScale : 0;
+    if (rightLeg) rightLeg.rotation.x = moving ? wave * 0.22 * bobScale : 0;
+    if (weapon) weapon.rotation.z = hit ? -0.95 : -0.6 + (moving ? -wave * 0.08 * bobScale : 0);
     return bob;
+  }
+
+  private facingForEntity(entity: Entity, state: GameState): number {
+    if (entity.facing) return entity.facing.facingYaw;
+    if (entity.kind === 'enemy') {
+      const target = entity.state === 'chase' || entity.state === 'attack' ? state.player.position : entity.leashOrigin;
+      return this.facingFromDelta(target.x - entity.position.x, target.z - entity.position.z);
+    }
+    return 0;
+  }
+
+  private facingFromVelocity(x: number, z: number): number {
+    if (Math.hypot(x, z) < 0.04) return 0;
+    return this.facingFromDelta(x, z);
+  }
+
+  private facingFromDelta(x: number, z: number): number {
+    return Math.atan2(x, z);
   }
 
   private updateTargetRing(state: GameState): void {
@@ -371,7 +412,8 @@ export class VoxelRenderer {
 
   private updateEffects(state: GameState): void {
     this.clearGroup(this.effectGroup);
-    state.projectiles.forEach((projectile) => this.effectGroup.add(this.makeProjectile(projectile)));
+    const projectileLead = (state.realtime.renderAlpha ?? 1) * state.realtime.fixedDelta;
+    state.projectiles.forEach((projectile) => this.effectGroup.add(this.makeProjectile(projectile, projectileLead)));
     state.combat.telegraphs.forEach((telegraph) => {
       const progress = 1 - telegraph.remaining / telegraph.duration;
       const ring = new THREE.Mesh(
@@ -465,6 +507,43 @@ export class VoxelRenderer {
         );
       }
     }
+    this.updateFacingDebug(state);
+  }
+
+  private updateFacingDebug(state: GameState): void {
+    const debug = state.dev.facingDebug;
+    if (!debug || (!debug.showFacingArrows && !debug.showDesiredFacingArrows && !debug.showVelocityVectors && !debug.showLookAtLines)) return;
+    const actors = [
+      { id: 'player', position: state.player.position, facing: state.player.facing, velocity: state.player.movement.velocity },
+      ...Object.values(state.entities)
+        .filter((entity) => entity.area === state.player.currentArea && (entity.kind === 'enemy' || entity.kind === 'npc' || entity.kind === 'social'))
+        .map((entity) => ({ id: entity.id, position: entity.position, facing: entity.facing, velocity: null }))
+    ];
+    for (const actor of actors) {
+      if (!actor.facing) continue;
+      if (debug.showFacingArrows) this.addFacingArrow(actor.position, actor.facing.facingYaw, '#70d6ff', 0.72);
+      if (debug.showDesiredFacingArrows) this.addFacingArrow({ ...actor.position, y: actor.position.y + 0.08 }, actor.facing.desiredFacingYaw, '#ffd166', 0.92);
+      if (debug.showVelocityVectors && actor.velocity) {
+        const speed = Math.hypot(actor.velocity.x, actor.velocity.z);
+        if (speed > 0.04) this.addDebugLine(actor.position, { x: actor.position.x + (actor.velocity.x / speed) * 0.95, y: actor.position.y, z: actor.position.z + (actor.velocity.z / speed) * 0.95 }, '#6eea78');
+      }
+      if (debug.showLookAtLines) {
+        const target = actor.facing.lookAtEntityId ? state.entities[actor.facing.lookAtEntityId]?.position : actor.facing.lookAtPosition;
+        if (target) this.addDebugLine(actor.position, target, '#b66dff');
+      }
+    }
+  }
+
+  private addFacingArrow(position: Vec3, yaw: number, color: string, length: number): void {
+    const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+    const origin = new THREE.Vector3(position.x, position.y + 1.55, position.z);
+    this.effectGroup.add(new THREE.ArrowHelper(dir, origin, length, color, 0.18, 0.1));
+  }
+
+  private addDebugLine(from: Vec3, to: Vec3, color: string): void {
+    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(from.x, from.y + 1.35, from.z), new THREE.Vector3(to.x, to.y + 1.35, to.z)]);
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.76 }));
+    this.effectGroup.add(line);
   }
 
   private updateBuildGhost(state: GameState): void {
@@ -1077,8 +1156,8 @@ export class VoxelRenderer {
     return this.mats.get('placed-wood', '#86552b');
   }
 
-  private makeProjectile(projectile: Projectile): THREE.Object3D {
-    const t = Math.min(1, projectile.age / projectile.duration);
+  private makeProjectile(projectile: Projectile, renderLead = 0): THREE.Object3D {
+    const t = Math.min(1, (projectile.age + renderLead) / projectile.duration);
     const x = THREE.MathUtils.lerp(projectile.from.x, projectile.to.x, t);
     const y = THREE.MathUtils.lerp(projectile.from.y, projectile.to.y, t) + Math.sin(t * Math.PI) * 0.35;
     const z = THREE.MathUtils.lerp(projectile.from.z, projectile.to.z, t);
@@ -1660,4 +1739,9 @@ export class VoxelRenderer {
     if (!maybeMemory?.usedJSHeapSize) return null;
     return Math.round((maybeMemory.usedJSHeapSize / 1024 / 1024) * 10) / 10;
   }
+}
+
+function smoothAngle(current: number, target: number, alpha: number): number {
+  const delta = ((((target - current) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  return current + delta * alpha;
 }

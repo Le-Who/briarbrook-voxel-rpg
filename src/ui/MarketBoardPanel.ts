@@ -31,7 +31,7 @@ export function MarketBoardPanel(state: GameState): string {
     return `${order.title ?? ''} ${order.requester} ${requirementsLabel(order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }])}`.toLowerCase().includes(search);
   });
 
-  return `<section class="panel market-panel">
+  return `<section class="panel market-panel" data-window-id="market">
     <header><span>Briarbrook Market Board</span><button data-action="toggle-panel" data-panel="market">x</button></header>
     <div class="market-controls">
       <input class="market-search" data-action="market-search" value="${attr(state.ui.marketSearch ?? '')}" placeholder="Search item or issuer" />

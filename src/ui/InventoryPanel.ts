@@ -31,10 +31,11 @@ export function renderSlots(inventory: InventoryState | Array<ItemStack | null>,
       const source = validDropContainer && stack && def ? `${def.type === 'tool' ? 'tool' : 'item'}:${stack.itemId}` : '';
       const dragAttrs =
         validDropContainer && stack && def
-          ? ` data-hotbar-source="${attr(source)}" data-drag-kind="item" data-source-window-id="${attr(container)}" data-source-slot-id="${index}" data-item-instance-id="${attr(stack.uid)}" data-item-definition-id="${attr(stack.itemId)}" data-quantity="${stack.quantity}" data-display-name="${attr(def.name)}"`
+          ? ` data-hotbar-source="${attr(source)}" draggable="true" data-drag-kind="item" data-source-window-id="${attr(container)}" data-source-slot-id="${index}" data-item-instance-id="${attr(stack.uid)}" data-item-definition-id="${attr(stack.itemId)}" data-quantity="${stack.quantity}" data-display-name="${attr(def.name)}"`
           : '';
       const dropAttr = validDropContainer ? ` data-item-drop-target="${attr(container)}:${index}"` : '';
-      return `<button class="slot${selectedClass}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs} data-tooltip="${attr(tooltip(stack))}" title="${attr(def?.name ?? 'Empty')}">
+      const tooltipId = `${kind}:${index}:${stack?.itemId ?? 'empty'}`;
+      return `<button class="slot${selectedClass}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs} data-tooltip-id="${attr(tooltipId)}" data-tooltip-source="${attr(kind)}" data-tooltip="${attr(tooltip(stack))}" title="${attr(def?.name ?? 'Empty')}">
         ${def ? renderIcon(def.icon, def.name) : ''}
         ${stack && stack.quantity > 1 ? `<span class="qty">${stack.quantity}</span>` : ''}
       </button>`;
@@ -48,7 +49,7 @@ export function InventoryPanel(state: GameState): string {
   const stack = selected == null ? null : state.player.inventory.slots[selected];
   const def = stack ? itemDefs[stack.itemId] : null;
   const stats = calculateDerivedStats(state);
-  return `<section class="panel inventory-panel">
+  return `<section class="panel inventory-panel" data-window-id="inventory">
     <header><span>Inventory</span><button data-action="toggle-panel" data-panel="inventory">x</button></header>
     ${renderSlots(state.player.inventory, 'inv', selected)}
     <footer class="panel-footer">
@@ -58,7 +59,7 @@ export function InventoryPanel(state: GameState): string {
     ${
       def
         ? `<div class="item-actions">
-            <div class="item-actions-title"><strong>${def.name}</strong><button data-action="clear-selected-item" title="Close">x</button></div>
+            <div class="item-actions-title"><strong>${def.name}</strong><button data-action="clear-selected-item" aria-label="Close">x</button></div>
             <button data-action="use-selected">Use</button>
             <button data-action="equip-selected">Equip</button>
             ${stack && stack.quantity > 1 ? '<button data-action="split-selected">Split</button>' : ''}

@@ -143,6 +143,13 @@ export class InputRouter {
     }
 
     const hotbarSlot = hotbarSlotFromKeyboardCode(event.code);
+    const hotbarAssignSpellId = this.getState().ui.hotbarAssignSpellId;
+    if (hotbarSlot != null && hotbarAssignSpellId) {
+      this.preventBrowserDefault(event, `keydown:hotbar-assign-${hotbarSlot}`);
+      this.intent(`HOTBAR_ASSIGN:${hotbarSlot}`);
+      this.dispatch({ type: 'SET_HOTBAR_SLOT', slot: hotbarSlot, binding: { kind: 'spell', id: hotbarAssignSpellId } });
+      return;
+    }
     if (hotbarSlot != null && event.shiftKey && this.getState().ui.panels.spellbook) {
       this.preventBrowserDefault(event, `keydown:shift-hotbar-${hotbarSlot}`);
       this.intent(`HOTBAR_ASSIGN:${hotbarSlot}`);
@@ -335,7 +342,8 @@ export class InputRouter {
       return;
     }
     const state = this.getState();
-    if (state.ui.targeting) this.dispatch({ type: 'CANCEL_TARGETING' });
+    if (state.ui.hotbarAssignSpellId) this.dispatch({ type: 'CANCEL_HOTBAR_ASSIGNMENT' });
+    else if (state.ui.targeting) this.dispatch({ type: 'CANCEL_TARGETING' });
     else if (state.ui.contextMenu) this.dispatch({ type: 'CLOSE_CONTEXT_MENU' });
     else if (state.buildMode.active) this.dispatch({ type: 'TOGGLE_BUILD_MODE', active: false });
     else if (state.ui.selectedInventorySlot != null || state.ui.selectedBankSlot != null || state.ui.hoverTarget) {

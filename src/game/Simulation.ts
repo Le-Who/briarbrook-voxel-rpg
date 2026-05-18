@@ -12,6 +12,7 @@ import { attemptSnoopContainer, attemptStealFromContainer, begNearby, handleInno
 import { startCraft, updateCrafting } from '../systems/CraftingSystem';
 import { calculateDerivedStats } from '../systems/EquipmentSystem';
 import { completeWorkOrder, fulfillMarketOrder, repairEquippedItem, updateEconomy } from '../systems/EconomySystem';
+import { releaseFacingLock, updateAllFacing } from '../systems/FacingSystem';
 import {
   devAddGold,
   devCompleteQuestStep,
@@ -35,7 +36,9 @@ import { movePlayerBy, setMoveTarget, updatePlayerMovement } from '../systems/Mo
 import { completeQuest, recordQuestEvent, refreshQuestProgress } from '../systems/QuestSystem';
 import { isTargetingTool, targetingPromptForTool, updateResourceTiles, useToolOnTarget } from '../systems/ResourceSystem';
 import { castSpellIntent, meditate, updateSpellCasting } from '../systems/SpellSystem';
+import { recordUiReset } from '../systems/TelemetrySystem';
 import { combineMapFragments, decipherTreasureMap, detectHiddenPulse, digWithShovel, openTreasureMap, pinTreasureMap, removeTrapFromTarget } from '../systems/TreasureSystem';
+import { cancelApproachIntent, clearInvalidAreaTargets, clearMovementState, transitionPlayerToArea } from '../systems/TransitionSystem';
 import { performDefensiveAction, useWeaponAbility } from '../systems/WeaponAbilitySystem';
 import { AreaManager } from '../world/AreaManager';
 import type { GameAction } from './Actions';
@@ -43,6 +46,7 @@ import { createId, createInitialGameState } from './GameState';
 import { clearSave, saveGame } from './SaveLoad';
 import type { GameState, TargetRef, Vec3 } from './types';
 import { setSkillMode } from '../systems/SkillSystem';
+import { updateWindowFocusOrder } from '../ui/WindowManager';
 
 export class Simulation {
   readonly areaManager = new AreaManager();
@@ -71,34 +75,48 @@ export class Simulation {
   private applyAction(action: GameAction, fromBuffer = false): void {
     switch (action.type) {
       case 'MOVE_BY':
+        this.recordMovementCommand('direct');
+        cancelApproachIntent(this.state, 'Movement command cancelled approach.');
         movePlayerBy(this.state, this.areaManager, action.dx, action.dz);
         break;
       case 'MOVE_TO':
+        this.recordMovementCommand('click');
+        cancelApproachIntent(this.state, 'Movement command cancelled approach.');
         setMoveTarget(this.state, this.areaManager, action.position);
         break;
       case 'STOP_MOVE':
-        this.state.player.targetPosition = null;
-        this.state.player.movement.intent = null;
-        this.state.player.movement.path = [];
-        this.state.player.movement.waypoint = null;
+        cancelApproachIntent(this.state, 'Manual stop cancelled approach.', 'Action cancelled.');
+        clearMovementState(this.state);
+        this.state.spellCasting = null;
+        this.state.gathering = null;
+        releaseFacingLock(this.state.player);
+        setPlayerActionState(this.state, 'idle', 0, 'manual-stop');
         break;
       case 'ENTER_AREA':
         this.enterArea(action.areaId);
         break;
       case 'SELECT_ENTITY':
         this.state.player.activeTargetId = action.entityId;
+        this.state.ui.selectedTarget = action.entityId ? { kind: 'entity', entityId: action.entityId } : null;
+        this.state.ui.prompt = action.entityId ? 'Target selected.' : 'Target cleared.';
         break;
       case 'CYCLE_TARGET':
         this.cycleTarget(action.direction);
         break;
       case 'INTERACT_ENTITY':
         if (!fromBuffer && this.bufferEntityAction(action, action.entityId, 2.1, `Approaching ${this.state.entities[action.entityId]?.name ?? 'target'}...`)) break;
-        interactEntity(this.state, this.areaManager, action.entityId);
-        setPlayerActionState(this.state, 'interacting', 0.35, action.entityId);
+        {
+          const areaBefore = this.state.player.currentArea;
+          interactEntity(this.state, this.areaManager, action.entityId);
+          if (this.state.player.currentArea === areaBefore) setPlayerActionState(this.state, 'interacting', 0.35, action.entityId);
+        }
         break;
       case 'ATTACK_ENTITY':
-        if (handleInnocentAttack(this.state, action.entityId ?? this.state.player.activeTargetId)) break;
-        if (!fromBuffer && this.bufferEntityAction(action, action.entityId ?? this.state.player.activeTargetId, 1.45, 'Approaching to strike...')) break;
+        {
+          const targetId = action.entityId ?? this.state.player.activeTargetId;
+          if (handleInnocentAttack(this.state, targetId)) break;
+          if (!fromBuffer && this.bufferWeaponAttack(action, targetId)) break;
+        }
         if (this.state.combat.meleeCooldown <= 0) {
           meleeAttack(this.state, action.entityId);
           this.state.combat.meleeCooldown = weaponCooldown(this.state);
@@ -107,6 +125,7 @@ export class Simulation {
         }
         break;
       case 'USE_RANGED':
+        if (!fromBuffer && this.bufferRangedAttack(action, action.entityId ?? this.state.player.activeTargetId)) break;
         if (this.state.combat.rangedCooldown <= 0) {
           rangedAttack(this.state, action.entityId);
           this.state.combat.rangedCooldown = 1.1;
@@ -124,7 +143,10 @@ export class Simulation {
         if (this.state.combat.magicCooldown <= 0) {
           const spell = spellDefs[action.spellId];
           const spellTarget = action.entityId ? ({ kind: 'entity', entityId: action.entityId } as const) : this.state.player.activeTargetId ? ({ kind: 'entity', entityId: this.state.player.activeTargetId } as const) : null;
-          if (!fromBuffer && spell && spellTarget && spell.targetType === 'entity' && this.bufferTargetAction(action, spellTarget, spell.range, `Approaching to cast ${spell.displayName}...`)) break;
+          if (!fromBuffer && spell && spellTarget && spell.targetType === 'entity' && this.isTargetOutOfRange(spellTarget, spell.range)) {
+            this.state.ui.prompt = 'Out of range.';
+            break;
+          }
           const previousCastId = this.state.spellCasting?.id ?? null;
           castSpellIntent(this.state, action.spellId, action.entityId ? { kind: 'entity', entityId: action.entityId } : null);
           if (this.state.spellCasting && this.state.spellCasting.id !== previousCastId) {
@@ -139,6 +161,8 @@ export class Simulation {
         this.state.ui.prompt = action.prompt;
         break;
       case 'CANCEL_TARGETING':
+        cancelApproachIntent(this.state, 'Escape cancelled approach.', 'Targeting cancelled.');
+        this.state.spellCasting = null;
         this.state.ui.targeting = null;
         this.state.ui.hoverTarget = null;
         this.state.ui.prompt = 'Targeting cancelled.';
@@ -194,7 +218,10 @@ export class Simulation {
       case 'USE_SPELL_ON_TARGET':
         {
           const spell = spellDefs[action.spellId];
-          if (!fromBuffer && spell && spell.targetType === 'entity' && this.bufferTargetAction(action, action.target, spell.range, `Approaching to cast ${spell.displayName}...`)) break;
+          if (!fromBuffer && spell && spell.targetType === 'entity' && this.isTargetOutOfRange(action.target, spell.range)) {
+            this.state.ui.prompt = 'Out of range.';
+            break;
+          }
         }
         castSpellIntent(this.state, action.spellId, action.target);
         this.state.ui.targeting = null;
@@ -365,6 +392,7 @@ export class Simulation {
         break;
       case 'TOGGLE_PANEL':
         this.state.ui.panels[action.panel] = action.open ?? !this.state.ui.panels[action.panel];
+        if (action.panel === 'skills' && this.state.ui.panels[action.panel]) this.state.ui.skillsViewMode = 'ledger';
         if (this.state.ui.panels[action.panel]) recordQuestEvent(this.state, { type: 'open_panel', panel: action.panel });
         break;
       case 'HOVER_TARGET':
@@ -410,18 +438,52 @@ export class Simulation {
         break;
       case 'SET_SPELL_SEARCH':
         this.state.ui.spellSearch = action.search.slice(0, 40);
+        this.state.ui.spellbookSearch = action.search.slice(0, 48);
         break;
       case 'SET_SPELLBOOK_CIRCLE':
         this.state.ui.spellbookCircle = action.circle;
+        this.state.ui.spellbookCircleFilter = action.circle;
         break;
       case 'SET_SPELLBOOK_FILTER':
         this.state.ui.spellbookFilter = action.filter;
+        this.state.ui.spellbookKnowledgeFilter = action.filter;
         break;
       case 'SET_SPELLBOOK_VIEW':
         this.state.ui.spellbookView = action.view;
+        this.state.ui.spellbookViewMode = action.view;
         break;
       case 'SET_JOURNAL_TAB':
         this.state.ui.journalTab = action.tab;
+        break;
+      case 'SET_SPELLBOOK_SEARCH':
+        this.state.ui.spellbookSearch = action.search.slice(0, 48);
+        this.state.ui.spellSearch = action.search.slice(0, 40);
+        break;
+      case 'SET_SPELLBOOK_KNOWLEDGE_FILTER':
+        this.state.ui.spellbookKnowledgeFilter = action.filter;
+        this.state.ui.spellbookFilter = action.filter;
+        break;
+      case 'SET_SPELLBOOK_CIRCLE_FILTER':
+        this.state.ui.spellbookCircleFilter = action.circle;
+        this.state.ui.spellbookCircle = action.circle;
+        break;
+      case 'SET_SPELLBOOK_ROLE_FILTER':
+        this.state.ui.spellbookRoleFilter = action.role;
+        break;
+      case 'SET_SPELLBOOK_VIEW_MODE':
+        this.state.ui.spellbookViewMode = action.mode;
+        if (action.mode === 'grid' || action.mode === 'list') this.state.ui.spellbookView = action.mode;
+        break;
+      case 'BEGIN_HOTBAR_ASSIGNMENT':
+        if (!this.state.player.spellbook.knownSpellIds.includes(action.spellId)) {
+          this.state.ui.prompt = 'Unknown spell.';
+          break;
+        }
+        this.state.ui.hotbarAssignSpellId = action.spellId;
+        this.state.ui.prompt = 'Press 1-0 to assign this spell to the hotbar.';
+        break;
+      case 'CANCEL_HOTBAR_ASSIGNMENT':
+        this.state.ui.hotbarAssignSpellId = null;
         break;
       case 'SET_CRAFT_QUANTITY':
         this.state.ui.craftQuantity = Math.max(1, Math.min(20, Math.floor(action.quantity)));
@@ -437,18 +499,34 @@ export class Simulation {
         break;
       case 'SET_SKILL_VIEW':
         this.state.ui.skillView = action.view;
+        this.state.ui.skillsViewMode = action.view === 'mastery' ? 'milestones' : action.view;
         break;
       case 'SET_PROFESSION_FILTER':
         this.state.ui.professionFilter = action.professionId;
+        this.state.ui.skillProfessionFilter = action.professionId as typeof this.state.ui.skillProfessionFilter;
+        break;
+      case 'SET_SKILLS_VIEW_MODE':
+        this.state.ui.skillsViewMode = action.mode;
+        this.state.ui.skillView = action.mode === 'milestones' ? 'mastery' : action.mode;
+        break;
+      case 'SET_SKILL_TRAINABLE_FILTER':
+        this.state.ui.skillTrainableFilter = action.filter;
+        break;
+      case 'SET_SKILL_RECENT_FILTER':
+        this.state.ui.skillRecentFilter = action.filter;
+        break;
+      case 'SET_SKILL_PROFESSION_FILTER':
+        this.state.ui.skillProfessionFilter = action.filter;
+        this.state.ui.professionFilter = action.filter;
         break;
       case 'SET_PROFESSION_ATLAS_ZOOM':
         this.state.ui.professionAtlasZoom = Math.max(0.75, Math.min(1.35, Number(action.zoom.toFixed(2))));
         break;
       case 'PIN_PROFESSION_GOAL':
-        this.state.ui.pinnedProfessionGoalId = action.goalId;
+        this.state.ui.pinnedProfessionGoalId = this.state.ui.pinnedProfessionGoalId === action.goalId ? null : action.goalId;
         this.state.ui.journalTab = 'tutorials';
         this.state.ui.panels.journal = true;
-        this.state.ui.prompt = action.goalId ? 'Profession goal pinned to Journal.' : 'Profession goal unpinned.';
+        this.state.ui.prompt = this.state.ui.pinnedProfessionGoalId ? 'Profession goal pinned to Journal.' : 'Profession goal unpinned.';
         break;
       case 'TOGGLE_DEV_TRAVEL':
         this.state.ui.devTravel = !this.state.ui.devTravel;
@@ -494,6 +572,10 @@ export class Simulation {
       case 'UPDATE_INPUT_DEBUG':
         this.state.dev.input = { ...this.state.dev.input, ...action.patch };
         break;
+      case 'TOGGLE_FACING_DEBUG':
+        this.state.dev.facingDebug[action.key] = !this.state.dev.facingDebug[action.key];
+        this.state.ui.prompt = `${action.key} ${this.state.dev.facingDebug[action.key] ? 'enabled' : 'hidden'}.`;
+        break;
       case 'SET_CHAT_TAB':
         this.state.ui.chatTab = action.channel;
         break;
@@ -509,6 +591,7 @@ export class Simulation {
       case 'SET_HOTBAR_SLOT':
         if (action.slot >= 0 && action.slot < this.state.ui.hotbar.length) {
           this.state.ui.hotbar[action.slot] = action.binding;
+          this.state.ui.hotbarAssignSpellId = null;
           this.state.ui.prompt = action.binding ? `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} updated.` : `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} cleared.`;
         }
         break;
@@ -534,6 +617,40 @@ export class Simulation {
         this.state.ui.reducedMotion = !this.state.ui.reducedMotion;
         this.state.ui.prompt = this.state.ui.reducedMotion ? 'Reduced motion enabled.' : 'Reduced motion disabled.';
         break;
+      case 'SET_CAMERA_SMOOTHING':
+        this.state.ui.cameraSmoothing = action.mode;
+        this.state.ui.prompt = `Camera smoothing: ${action.mode}.`;
+        break;
+      case 'SET_WINDOW_LAYOUT':
+        this.state.ui.windowLayouts[action.windowId] = action.layout;
+        this.state.ui.windowLayoutPreset = 'default';
+        break;
+      case 'FOCUS_WINDOW':
+        this.state.ui.windowFocusOrder = updateWindowFocusOrder(this.state.ui.windowFocusOrder ?? [], action.windowId);
+        break;
+      case 'RESET_UI_LAYOUT':
+        this.state.ui.windowLayouts = {};
+        this.state.ui.windowLayoutPreset = 'default';
+        this.state.ui.prompt = 'UI layout reset.';
+        recordUiReset(this.state);
+        break;
+      case 'APPLY_UI_LAYOUT_PRESET':
+        this.state.ui.windowLayouts = {};
+        this.state.ui.windowLayoutPreset = action.preset;
+        this.state.ui.prompt = `${action.preset} UI layout.`;
+        break;
+      case 'SET_COMBAT_APPROACH_MODE':
+        this.state.player.combatPreferences.approachMode = action.mode;
+        this.state.ui.prompt = `Auto-approach: ${this.combatApproachLabel(action.mode)}.`;
+        break;
+      case 'TOGGLE_AUTO_ATTACK_ON_TARGET_SELECT':
+        this.state.player.combatPreferences.autoAttackOnTargetSelect = !this.state.player.combatPreferences.autoAttackOnTargetSelect;
+        this.state.ui.prompt = this.state.player.combatPreferences.autoAttackOnTargetSelect ? 'Auto-attack on target select enabled.' : 'Auto-attack on target select disabled.';
+        break;
+      case 'TOGGLE_STOP_MOVEMENT_WHEN_CASTING':
+        this.state.player.combatPreferences.stopMovementWhenCasting = !this.state.player.combatPreferences.stopMovementWhenCasting;
+        this.state.ui.prompt = this.state.player.combatPreferences.stopMovementWhenCasting ? 'Casting stops movement.' : 'Casting keeps current movement.';
+        break;
       case 'TOGGLE_PAUSE':
         this.state.paused = action.paused ?? !this.state.paused;
         this.state.ui.panels.help = this.state.paused ? true : this.state.ui.panels.help;
@@ -558,6 +675,7 @@ export class Simulation {
 
   update(dt: number): void {
     if (this.state.paused) {
+      this.state.realtime.renderAlpha = 1;
       if (this.state.realtime.actionQueue.length) {
         this.processActionQueue();
         this.emit();
@@ -573,6 +691,7 @@ export class Simulation {
       steps += 1;
     }
     if (steps === this.maxSubSteps) this.accumulator = 0;
+    this.state.realtime.renderAlpha = this.state.realtime.fixedDelta > 0 ? Math.max(0, Math.min(1, this.accumulator / this.state.realtime.fixedDelta)) : 1;
     if (steps > 0) this.emit();
   }
 
@@ -605,6 +724,8 @@ export class Simulation {
     updateAmbientChat(this.state, dt);
     this.regenerate(dt);
     this.updateTargetLock();
+    updateAllFacing(this.state, dt);
+    clearInvalidAreaTargets(this.state);
     refreshPlayerActionState(this.state);
     refreshQuestProgress(this.state);
   }
@@ -630,14 +751,14 @@ export class Simulation {
   private updateActionBuffer(): void {
     const pending = this.state.realtime.pendingAction;
     if (!pending) return;
-    if (pending.expiresAt <= this.state.clock) {
-      this.state.realtime.pendingAction = null;
-      this.state.ui.prompt = 'Queued action expired.';
+    const invalidReason = this.pendingActionInvalidReason(pending);
+    if (invalidReason) {
+      this.cancelBufferedAction(invalidReason);
       return;
     }
     const targetPosition = this.resolveTargetPosition(pending.target);
     if (!targetPosition) {
-      this.state.realtime.pendingAction = null;
+      this.cancelBufferedAction('Target is no longer available.');
       return;
     }
     const dist = this.distance(this.state.player.position, targetPosition);
@@ -650,9 +771,67 @@ export class Simulation {
       return;
     }
     if (!this.state.player.targetPosition) {
-      setMoveTarget(this.state, this.areaManager, this.approachPoint(targetPosition, Math.max(0.8, pending.range * 0.78)));
+      const pathStarted = setMoveTarget(this.state, this.areaManager, this.approachPoint(targetPosition, Math.max(0.8, pending.range * 0.78)));
+      if (!pathStarted) {
+        this.cancelBufferedAction('Path blocked.');
+        return;
+      }
       this.state.ui.prompt = pending.label;
     }
+  }
+
+  private bufferWeaponAttack(action: GameAction, entityId: string | null | undefined): boolean {
+    if (!entityId) return false;
+    const target = this.state.entities[entityId];
+    if (!target || target.kind !== 'enemy') return false;
+    const intent = this.currentWeaponIntent();
+    const dist = this.distance(this.state.player.position, target.position);
+    if (dist <= intent.range) return false;
+    if (!this.canAutoApproach(intent.kind)) {
+      this.state.ui.prompt = intent.kind === 'ranged' ? 'Bow attacks require distance and line of sight.' : 'Auto-approach is disabled.';
+      return true;
+    }
+    return this.bufferEntityAction(action, entityId, intent.range, intent.kind === 'ranged' ? 'Moving into bow range.' : 'Moving into range.');
+  }
+
+  private bufferRangedAttack(action: GameAction, entityId: string | null | undefined): boolean {
+    if (!entityId) return false;
+    const target = this.state.entities[entityId];
+    if (!target || target.kind !== 'enemy') return false;
+    const range = this.rangedAttackRange();
+    if (this.distance(this.state.player.position, target.position) <= range) return false;
+    if (!this.canAutoApproach('ranged')) {
+      this.state.ui.prompt = this.state.player.combatPreferences.approachMode === 'manual' ? 'Auto-approach is disabled.' : 'Bow attacks require distance and line of sight.';
+      return true;
+    }
+    return this.bufferEntityAction(action, entityId, range, 'Moving into bow range.');
+  }
+
+  private currentWeaponIntent(): { kind: 'melee' | 'ranged'; range: number } {
+    const weapon = this.state.player.equipment.weapon;
+    const definition = weapon ? itemDefs[weapon.itemId] : null;
+    const weaponClass = definition?.weaponClass;
+    if (weaponClass === 'bow' || weaponClass === 'crossbow') {
+      return { kind: 'ranged', range: definition?.range ?? 8 };
+    }
+    return { kind: 'melee', range: definition?.range ?? 1.45 };
+  }
+
+  private rangedAttackRange(): number {
+    const equipped = this.currentWeaponIntent();
+    if (equipped.kind === 'ranged') return equipped.range;
+    const inventoryBow = this.state.player.inventory.slots
+      .map((slot) => (slot ? itemDefs[slot.itemId] : null))
+      .find((definition) => definition?.weaponClass === 'bow' || definition?.weaponClass === 'crossbow');
+    return inventoryBow?.range ?? 8;
+  }
+
+  private canAutoApproach(intent: 'melee' | 'ranged' | 'spell'): boolean {
+    const mode = this.state.player.combatPreferences.approachMode;
+    if (mode === 'manual') return false;
+    if (intent === 'spell') return false;
+    if (mode === 'melee_only') return intent === 'melee';
+    return mode === 'assist' || mode === 'aggressive';
   }
 
   private bufferEntityAction(action: GameAction, entityId: string | null | undefined, range: number, label: string): boolean {
@@ -672,9 +851,47 @@ export class Simulation {
       expiresAt: this.state.clock + 8,
       label
     };
-    setMoveTarget(this.state, this.areaManager, this.approachPoint(targetPosition, Math.max(0.8, range * 0.78)));
+    const pathStarted = setMoveTarget(this.state, this.areaManager, this.approachPoint(targetPosition, Math.max(0.8, range * 0.78)));
+    if (!pathStarted) {
+      this.cancelBufferedAction('Path blocked.');
+      return true;
+    }
     this.state.ui.prompt = label.startsWith('Approaching') ? `You are too far away. ${label}` : label;
     return true;
+  }
+
+  private isTargetOutOfRange(target: TargetRef, range: number): boolean {
+    const position = this.resolveTargetPosition(target);
+    return Boolean(position && this.distance(this.state.player.position, position) > range);
+  }
+
+  private pendingActionInvalidReason(pending: NonNullable<GameState['realtime']['pendingAction']>): string | null {
+    if (pending.expiresAt <= this.state.clock) return 'Cannot reach target.';
+    const target = pending.target;
+    if (!target) return 'Target is no longer available.';
+    if (target.kind === 'tile') return target.areaId === this.state.player.currentArea ? null : 'Target is no longer available.';
+    if (target.kind === 'entity' || target.kind === 'ground-item' || target.kind === 'friendly' || target.kind === 'hostile') {
+      const entity = this.state.entities[target.entityId];
+      if (!entity || entity.area !== this.state.player.currentArea) return 'Target is no longer available.';
+      if ('state' in entity && entity.state === 'dead') return 'Target is no longer available.';
+    }
+    return null;
+  }
+
+  private cancelBufferedAction(reason: string): void {
+    cancelApproachIntent(this.state, reason, reason);
+    this.state.player.activeTargetId = null;
+    setPlayerActionState(this.state, 'idle', 0, 'approach-cancelled');
+  }
+
+  private recordMovementCommand(source: string): void {
+    this.state.dev.stability.lastMovementCommandAt = this.state.clock;
+    this.state.dev.stability.lastMovementCommandSource = source;
+  }
+
+  private combatApproachLabel(mode: GameState['player']['combatPreferences']['approachMode']): string {
+    if (mode === 'melee_only') return 'Melee Only';
+    return mode[0].toUpperCase() + mode.slice(1);
   }
 
   private resolveTargetPosition(target: TargetRef): Vec3 | null {
@@ -727,13 +944,21 @@ export class Simulation {
     if (!target) return;
     const entityId = target.kind === 'entity' ? target.entityId : null;
     const entity = entityId ? this.state.entities[entityId] : null;
-    if (command === 'attack' && entityId) {
+    if (command === 'target' && entityId) {
+      this.applyAction({ type: 'SELECT_ENTITY', entityId });
+    } else if (command === 'attack' && entityId) {
       this.applyAction({ type: 'SELECT_ENTITY', entityId });
       this.applyAction({ type: 'ATTACK_ENTITY', entityId });
-    } else if (command === 'talk' && entityId) {
+    } else if ((command === 'talk' || command === 'interact' || command === 'open' || command === 'pick_lock') && entityId) {
       this.applyAction({ type: 'INTERACT_ENTITY', entityId });
+    } else if (command === 'gather' && entityId) {
+      this.applyAction({ type: 'GATHER_RESOURCE', entityId });
+    } else if (command === 'loot' && entityId) {
+      this.applyAction({ type: 'PICKUP_ITEM', entityId });
     } else if (command === 'trade' && entityId) {
       if (entity?.kind === 'npc' || entity?.kind === 'social') this.applyAction({ type: 'OPEN_TRADE', partnerId: entityId });
+    } else if (command === 'disarm') {
+      this.applyAction({ type: 'USE_SKILL_ON_TARGET', skillId: 'Remove Trap', target });
     } else if (command === 'use_tool') {
       const tool = this.selectedToolItemId();
       if (tool) this.applyAction({ type: 'USE_TOOL_ON_TARGET', toolItemId: tool, target });
@@ -781,21 +1006,7 @@ export class Simulation {
   }
 
   private enterArea(areaId: GameState['player']['currentArea']): void {
-    this.state.player.currentArea = areaId;
-    this.state.player.position = this.areaManager.getSpawn(areaId);
-    this.state.player.targetPosition = null;
-    this.state.player.movement.intent = null;
-    this.state.player.movement.velocity = { x: 0, z: 0 };
-    this.state.player.movement.path = [];
-    this.state.player.movement.waypoint = null;
-    this.state.player.movement.tile = { x: Math.round(this.state.player.position.x), z: Math.round(this.state.player.position.z) };
-    this.state.realtime.pendingAction = null;
-    this.state.player.activeTargetId = null;
-    this.state.gathering = null;
-    this.state.ui.hoverTarget = null;
-    this.state.ui.selectedTarget = null;
-    this.state.ui.targeting = null;
-    this.state.ui.contextMenu = null;
+    transitionPlayerToArea(this.state, this.areaManager, areaId);
     this.state.ui.selectedInventorySlot = null;
     this.state.ui.selectedBankSlot = null;
     this.state.ui.trade = null;

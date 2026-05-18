@@ -354,7 +354,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 3,
     value: 28,
-    durability: 48,
+    durability: 75,
     icon: { shape: 'pickaxe', primary: '#bfc2c1', secondary: '#7a4b25' }
   },
   axe: {
@@ -365,7 +365,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 3,
     value: 30,
-    durability: 50,
+    durability: 70,
     icon: { shape: 'axe', primary: '#c7c9c8', secondary: '#815027' }
   },
   fishing_pole: {
@@ -376,7 +376,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 1.5,
     value: 18,
-    durability: 36,
+    durability: 60,
     icon: { shape: 'bow', primary: '#8f5f2a', secondary: '#d9bd89' }
   },
   shovel: {
@@ -387,7 +387,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 2.5,
     value: 20,
-    durability: 44,
+    durability: 65,
     icon: { shape: 'pickaxe', primary: '#9da1a0', secondary: '#7a4b25' }
   },
   stone_block: {

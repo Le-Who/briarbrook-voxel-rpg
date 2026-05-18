@@ -572,3 +572,118 @@ function hasScrollableRegion(panel: HTMLElement): boolean {
 function isDevRuntime(): boolean {
   return Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 }
+
+export type WindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help';
+export type WindowLayout = WindowRect;
+export type ResizeMode = 'none' | 'horizontal' | 'vertical' | 'both';
+export type WindowPreset = 'default' | 'compact' | 'large' | 'combat';
+
+export interface WindowDefinition {
+  id: WindowId;
+  title: string;
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+  resizable: ResizeMode;
+  zIndex: number;
+  safeAreaBehavior: 'avoid-hotbar' | 'free';
+}
+
+export interface WindowLayoutDelta {
+  dx: number;
+  dy: number;
+  mode: 'move' | 'resize';
+}
+
+const EDGE = 8;
+const HOTBAR_SAFE = 96;
+
+export const windowDefinitions: Record<WindowId, WindowDefinition> = {
+  inventory: { id: 'inventory', title: 'Inventory', minWidth: 222, minHeight: 260, maxWidth: 380, maxHeight: 560, resizable: 'vertical', zIndex: 32, safeAreaBehavior: 'avoid-hotbar' },
+  spellbook: { id: 'spellbook', title: 'Spellbook', minWidth: 620, minHeight: 400, maxWidth: 980, maxHeight: 720, resizable: 'both', zIndex: 48, safeAreaBehavior: 'avoid-hotbar' },
+  skills: { id: 'skills', title: 'Skills', minWidth: 360, minHeight: 360, maxWidth: 900, maxHeight: 720, resizable: 'both', zIndex: 44, safeAreaBehavior: 'avoid-hotbar' },
+  journal: { id: 'journal', title: 'Journal', minWidth: 560, minHeight: 360, maxWidth: 940, maxHeight: 720, resizable: 'both', zIndex: 45, safeAreaBehavior: 'avoid-hotbar' },
+  market: { id: 'market', title: 'Market', minWidth: 620, minHeight: 360, maxWidth: 1080, maxHeight: 720, resizable: 'both', zIndex: 46, safeAreaBehavior: 'avoid-hotbar' },
+  help: { id: 'help', title: 'Help', minWidth: 380, minHeight: 300, maxWidth: 620, maxHeight: 620, resizable: 'both', zIndex: 42, safeAreaBehavior: 'avoid-hotbar' }
+};
+
+export const managedWindowIds = Object.keys(windowDefinitions) as WindowId[];
+
+export function resolveWindowLayout(id: WindowId, saved: Partial<WindowLayout> | undefined, viewport: ViewportSize, preset: WindowPreset = 'default'): WindowLayout {
+  const base = { ...presetLayout(id, viewport, preset), ...saved };
+  return clampLayout(id, base, viewport);
+}
+
+export function updateWindowLayout(id: WindowId, current: WindowLayout, delta: WindowLayoutDelta, viewport: ViewportSize): WindowLayout {
+  if (delta.mode === 'move') {
+    return clampLayout(id, { ...current, x: current.x + delta.dx, y: current.y + delta.dy }, viewport);
+  }
+  const def = windowDefinitions[id];
+  const width = def.resizable === 'horizontal' || def.resizable === 'both' ? current.width + delta.dx : current.width;
+  const height = def.resizable === 'vertical' || def.resizable === 'both' ? current.height + delta.dy : current.height;
+  return clampLayout(id, { ...current, width, height }, viewport);
+}
+
+export function resolveWindowZIndex(id: WindowId, focusOrder: WindowId[] = []): number {
+  const focusIndex = focusOrder.indexOf(id);
+  if (focusIndex < 0) return windowDefinitions[id].zIndex;
+  return 1000 + focusIndex;
+}
+
+export function updateWindowFocusOrder(focusOrder: WindowId[], id: WindowId): WindowId[] {
+  return [...focusOrder.filter((windowId) => windowId !== id), id];
+}
+
+export function applyWindowPreset(preset: WindowPreset, viewport: ViewportSize): Record<WindowId, WindowLayout> {
+  return Object.fromEntries(managedWindowIds.map((id) => [id, resolveWindowLayout(id, undefined, viewport, preset)])) as Record<WindowId, WindowLayout>;
+}
+
+function presetLayout(id: WindowId, viewport: ViewportSize, preset: WindowPreset): WindowLayout {
+  const usableWidth = Math.max(320, viewport.width - EDGE * 2);
+  const usableHeight = Math.max(260, viewport.height - HOTBAR_SAFE - EDGE * 2);
+  const scale = preset === 'compact' ? 0.78 : preset === 'large' ? 1.12 : 1;
+  const size = (width: number, height: number) => ({
+    width: Math.min(usableWidth, Math.round(width * scale)),
+    height: Math.min(usableHeight, Math.round(height * scale))
+  });
+  const safeLarge = (width: number, height: number, y = 74): WindowLayout => {
+    const safeLeft = viewport.width >= 980 ? 344 : EDGE;
+    const clampedWidth = Math.min(width, Math.max(windowDefinitions.spellbook.minWidth, viewport.width - safeLeft - EDGE));
+    const centeredX = Math.round((viewport.width - clampedWidth) / 2);
+    return {
+      x: safeLeft + clampedWidth <= viewport.width - EDGE ? Math.max(centeredX, safeLeft) : centeredX,
+      y,
+      width: clampedWidth,
+      height
+    };
+  };
+
+  if (preset === 'combat') {
+    if (id === 'inventory') return { x: viewport.width - 246, y: 300, width: 222, height: 330 };
+    if (id === 'skills') return { x: 16, y: 170, width: 380, height: 440 };
+    if (id === 'help') return { x: 344, y: 14, width: 420, height: 560 };
+  }
+
+  if (id === 'inventory') return { x: viewport.width - 240, y: 372, width: 222, height: Math.min(360, usableHeight - 364) };
+  if (id === 'help') return { x: 344, y: 14, ...size(420, 616) };
+  if (id === 'skills') {
+    const width = viewport.width >= 980 ? Math.min(760, viewport.width - 600) : Math.min(usableWidth, Math.round(420 * scale));
+    return { x: viewport.width >= 980 ? Math.max(344, Math.round((viewport.width - width) / 2)) : EDGE, y: 88, width, height: Math.min(usableHeight, Math.round(560 * scale)) };
+  }
+  if (id === 'journal') return safeLarge(size(820, 560).width, size(820, 560).height, 72);
+  if (id === 'market') return safeLarge(size(940, 560).width, size(940, 560).height, 86);
+  return safeLarge(size(840, 560).width, size(840, 560).height, 78);
+}
+
+function clampLayout(id: WindowId, layout: Partial<WindowLayout>, viewport: ViewportSize): WindowLayout {
+  const def = windowDefinitions[id];
+  const maxWidth = Math.min(def.maxWidth, Math.max(def.minWidth, viewport.width - EDGE * 2));
+  const safeBottom = def.safeAreaBehavior === 'avoid-hotbar' ? HOTBAR_SAFE : EDGE;
+  const maxHeight = Math.min(def.maxHeight, Math.max(def.minHeight, viewport.height - safeBottom - EDGE));
+  const width = clamp(layout.width ?? def.minWidth, def.minWidth, maxWidth);
+  const height = clamp(layout.height ?? def.minHeight, def.minHeight, maxHeight);
+  const x = clamp(layout.x ?? EDGE, EDGE, Math.max(EDGE, viewport.width - width - EDGE));
+  const y = clamp(layout.y ?? EDGE, EDGE, Math.max(EDGE, viewport.height - safeBottom - height));
+  return { x, y, width, height };
+}

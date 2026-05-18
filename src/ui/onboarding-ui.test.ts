@@ -12,11 +12,13 @@ describe('onboarding UI', () => {
 
     expect(state.player.activeQuestIds).toEqual(['prepare_for_road']);
     expect(state.ui.panels.guide).toBe(true);
-    expect(state.ui.panels.quest).toBe(true);
+    expect(state.ui.panels.quest).toBe(false);
     expect(state.ui.panels.inventory).toBe(false);
     expect(state.ui.panels.help).toBe(false);
     expect(state.ui.panels.status).toBe(false);
-    expect(GuidePanel(state)).toContain('Talk to Mira');
+    const guide = GuidePanel(state);
+    expect(guide).toContain('Talk to Mira');
+    expect((guide.match(/class="guide-step/g) ?? []).length).toBeLessThanOrEqual(3);
   });
 
   it('renders journal entries from discovered play state', () => {
@@ -28,13 +30,25 @@ describe('onboarding UI', () => {
     const html = JournalPanel(state);
 
     expect(html).toContain('Active Quests');
-    expect(html).toContain('Tutorials');
-    state.ui.journalTab = 'tutorials';
-    expect(JournalPanel(state)).toContain('Discovered Mechanics');
-    state.ui.journalTab = 'locations';
-    expect(JournalPanel(state)).toContain('Briarbrook Bank');
-    state.ui.journalTab = 'skills';
-    expect(JournalPanel(state)).toContain('Skills Learned');
+    expect(html).toContain('First Hour Route');
+    expect(html).toContain('Next: Talk to Mira at the fountain');
+    expect(html).toContain('Skills touched 0/12');
+    expect(html).toContain('Discovered Mechanics');
+    expect(html).toContain('Briarbrook Bank');
+    expect(html).toContain('Skills');
+  });
+
+  it('points from the first tree gather toward the pickaxe loop', () => {
+    const state = createInitialGameState();
+    state.quests.prepare_for_road.objectives.forEach((objective) => {
+      if (objective.type === 'talk' || objective.type === 'open_panel' || objective.type === 'gather') objective.progress = objective.required;
+    });
+    state.ui.panels.inventory = true;
+
+    const guide = GuidePanel(state);
+
+    expect(guide).toContain('Use a pickaxe on a mine rock');
+    expect((guide.match(/class="guide-step/g) ?? []).length).toBeLessThanOrEqual(3);
   });
 
   it('uses functional default hotbar bindings for consumables and tools', () => {

@@ -31,11 +31,11 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
     toolItemId: 'axe',
     skill: 'Lumberjacking',
     yieldItemId: 'logs',
-    yieldRange: [5, 8],
+    yieldRange: [9, 10],
     baseDuration: 2.05,
     respawnSeconds: 18,
     actionVerb: 'Chopping',
-    inspectText: 'Broad hardwood. Requires an axe. Yields useful timber.'
+    inspectText: 'Broad hardwood. Requires an axe. Yields logs for boards and road prep.'
   },
   pine_tree: {
     id: 'pine_tree',
@@ -48,7 +48,7 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
     baseDuration: 1.95,
     respawnSeconds: 18,
     actionVerb: 'Chopping',
-    inspectText: 'Straight softwood. Requires an axe. Good for quick planks.'
+    inspectText: 'Straight softwood. Requires an axe. Good for quick boards.'
   },
   birch_tree: {
     id: 'birch_tree',
@@ -57,11 +57,11 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
     toolItemId: 'axe',
     skill: 'Lumberjacking',
     yieldItemId: 'logs',
-    yieldRange: [4, 6],
+    yieldRange: [3, 6],
     baseDuration: 1.85,
     respawnSeconds: 16,
     actionVerb: 'Chopping',
-    inspectText: 'Light timber. Requires an axe. Easier for novice cutters.'
+    inspectText: 'Light timber. Requires an axe. Easier logs for novice cutters.'
   },
   iron_vein: {
     id: 'iron_vein',
@@ -101,6 +101,19 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
     respawnSeconds: 16,
     actionVerb: 'Foraging',
     inspectText: 'Useful roots and leaves. Requires scissors. Alchemists prize the fresher sprigs.'
+  },
+  ancient_yew: {
+    id: 'ancient_yew',
+    name: 'Ancient Yew',
+    resourceType: 'tree',
+    toolItemId: 'axe',
+    skill: 'Lumberjacking',
+    yieldItemId: 'yew_logs',
+    yieldRange: [2, 4],
+    baseDuration: 2.8,
+    respawnSeconds: 42,
+    actionVerb: 'Careful Cutting',
+    inspectText: 'Rare red heartwood. Requires an axe and rewards patient return visits.'
   }
 };
 
@@ -117,7 +130,11 @@ export const resourcePlacements: ResourcePlacement[] = [
   { id: 'res_copper_2', area: 'forest', resourceId: 'copper_vein', x: 12, z: -7 },
   { id: 'res_herb_1', area: 'forest', resourceId: 'wild_herb', x: -8, z: 8, name: 'Ginseng Patch' },
   { id: 'res_herb_2', area: 'forest', resourceId: 'wild_herb', x: 3, z: 9, name: 'Medicinal Herbs' },
-  { id: 'res_herb_3', area: 'forest', resourceId: 'wild_herb', x: 13, z: 1, name: 'Riverbank Herbs' }
+  { id: 'res_herb_3', area: 'forest', resourceId: 'wild_herb', x: 13, z: 1, name: 'Riverbank Herbs' },
+  { id: 'res_yew_1', area: 'forest', resourceId: 'ancient_yew', x: -13, z: 10, name: 'Ancient Yew' },
+  { id: 'res_road_herb_1', area: 'road', resourceId: 'wild_herb', x: -1, z: 6, name: 'Roadside Herbs' },
+  { id: 'res_crypt_iron_1', area: 'crypt', resourceId: 'iron_vein', x: -6, z: -6, name: 'Crypt Iron Seam' },
+  { id: 'res_crypt_copper_1', area: 'crypt', resourceId: 'copper_vein', x: 10, z: -4, name: 'Old Mine Copper' }
 ];
 
 export function resolveResourceDefinition(entity: Partial<ResourceNodeEntity>): ResourceNodeDefinition {

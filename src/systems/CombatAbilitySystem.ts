@@ -7,6 +7,7 @@ import { addFloatingText } from './LootSystem';
 import { recordQuestEvent } from './QuestSystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
 import { refreshPlayerActionState, setPlayerActionState } from './ActionStateSystem';
+import { recordBandageApplied } from './TelemetrySystem';
 
 export function startBandage(state: GameState, target: TargetRef = { kind: 'self' }): void {
   if (state.bandage) {
@@ -60,6 +61,7 @@ export function updateBandage(state: GameState, dt: number): void {
     state.player.combatProfile.poison = null;
     addSystemMessage(state, 'The bandage draws out the poison.');
   }
+  recordBandageApplied(state, bandage.interrupted || state.combat.lastDamagedAt > bandage.startedAt);
   addFloatingText(state, `+${Math.round(state.player.health - before)}`, state.player.position, '#55e676');
   state.ui.prompt = 'Bandage applied.';
 }

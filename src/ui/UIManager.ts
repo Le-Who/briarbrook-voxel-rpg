@@ -69,6 +69,19 @@ type HotbarMenu =
   | { mode: 'assign'; payload: DragPayload; x: number; y: number }
   | { mode: 'slot'; slot: number; binding: HotbarBinding | null; x: number; y: number };
 
+export function shouldShowMarketQuickButton(state: GameState): boolean {
+  const gatheredGoods =
+    Object.values(state.dev.telemetry.resourceYields).some((amount) => amount > 0) ||
+    Boolean(state.quests.prepare_for_road?.objectives.some((objective) => objective.type === 'gather' && objective.progress > 0)) ||
+    (state.player.skills.Lumberjacking?.lastGainAt ?? 0) > 0 ||
+    (state.player.skills.Mining?.lastGainAt ?? 0) > 0;
+  const economyTouched =
+    state.dev.telemetry.marketTransactions > 0 ||
+    state.dev.telemetry.workOrdersCompleted > 0 ||
+    state.world.economy.transactionLog.some((entry) => entry.kind === 'market' || entry.kind === 'work_order');
+  return state.player.completedQuestIds.includes('prepare_for_road') || state.world.discoveredAreas.includes('road') || gatheredGoods || economyTouched;
+}
+
 export class UIManager {
   private hud: HTMLDivElement;
   private labels: HTMLDivElement;
@@ -275,16 +288,20 @@ export class UIManager {
         ${state.player.downed.active ? `<button class="respawn-button" data-action="respawn">Respawn</button>` : ''}
       </div>
       <div class="quick-buttons">
-        <button data-action="toggle-panel" data-panel="character">C</button>
-        <button data-action="toggle-panel" data-panel="skills">K</button>
-        <button data-action="toggle-panel" data-panel="inventory">I</button>
-        <button data-action="toggle-panel" data-panel="spellbook">M</button>
-        <button data-action="toggle-panel" data-panel="combatActions">A</button>
-        <button data-action="toggle-panel" data-panel="journal">J</button>
-        <button data-action="toggle-panel" data-panel="market">Market</button>
-        <button data-action="toggle-panel" data-panel="help">?</button>
-        ${state.player.currentArea === 'housing' || state.buildMode.active ? '<button data-action="toggle-build">Build</button>' : ''}
-      </div>
+          ${([
+            ['character', 'C'],
+            ['skills', 'K'],
+            ['inventory', 'I'],
+            ['spellbook', 'M'],
+            ['combatActions', 'A'],
+            ['journal', 'J'],
+            shouldShowMarketQuickButton(state) ? ['market', 'Market'] : null,
+            ['help', '?']
+          ].filter(Boolean) as Array<[string, string]>)
+            .map(([panel, label]) => `<button data-action="toggle-panel" data-panel="${panel}">${label}</button>`)
+            .join('')}
+          ${state.player.currentArea === 'housing' || state.buildMode.active ? '<button data-action="toggle-build">Build</button>' : ''}
+        </div>
     </section>`;
   }
 
@@ -591,9 +608,29 @@ export class UIManager {
         this.dispatch({ type: 'SET_SKILL_VIEW', view: skillView });
         return;
       }
+      const skillsView = button.dataset.skillsView;
+      if (skillsView === 'ledger' || skillsView === 'atlas' || skillsView === 'milestones') {
+        this.dispatch({ type: 'SET_SKILLS_VIEW_MODE', mode: skillsView });
+        return;
+      }
+      const skillTrainableFilter = button.dataset.skillTrainableFilter;
+      if (skillTrainableFilter === 'all' || skillTrainableFilter === 'trainable' || skillTrainableFilter === 'not_trainable') {
+        this.dispatch({ type: 'SET_SKILL_TRAINABLE_FILTER', filter: skillTrainableFilter });
+        return;
+      }
+      const skillRecentFilter = button.dataset.skillRecentFilter;
+      if (skillRecentFilter === 'all' || skillRecentFilter === 'recent') {
+        this.dispatch({ type: 'SET_SKILL_RECENT_FILTER', filter: skillRecentFilter });
+        return;
+      }
       const professionFilter = button.dataset.professionFilter;
       if (professionFilter) {
         this.dispatch({ type: 'SET_PROFESSION_FILTER', professionId: professionFilter });
+        return;
+      }
+      const skillProfessionFilter = button.dataset.skillProfessionFilter;
+      if (skillProfessionFilter) {
+        this.dispatch({ type: 'SET_SKILL_PROFESSION_FILTER', filter: skillProfessionFilter as GameState['ui']['skillProfessionFilter'] });
         return;
       }
       const atlasZoom = button.dataset.atlasZoom;
@@ -631,6 +668,10 @@ export class UIManager {
         this.dispatch({ type: 'PIN_PROFESSION_GOAL', goalId: button.dataset.pinProfessionGoal });
         return;
       }
+      if (button.dataset.professionGoal) {
+        this.dispatch({ type: 'PIN_PROFESSION_GOAL', goalId: button.dataset.professionGoal });
+        return;
+      }
       const recipe = button.dataset.recipe;
       if (recipe) {
         this.dispatch({ type: 'SELECT_RECIPE', recipeId: recipe });
@@ -646,14 +687,29 @@ export class UIManager {
         this.dispatch({ type: 'SET_SPELLBOOK_CIRCLE', circle: spellCircle === 'all' ? 'all' : Number(spellCircle) });
         return;
       }
+      const spellbookCircle = button.dataset.spellbookCircle;
+      if (spellbookCircle) {
+        this.dispatch({ type: 'SET_SPELLBOOK_CIRCLE_FILTER', circle: spellbookCircle === 'all' ? 'all' : Number(spellbookCircle) });
+        return;
+      }
       const spellbookFilter = button.dataset.spellbookFilter;
       if (spellbookFilter === 'known' || spellbookFilter === 'all' || spellbookFilter === 'unknown') {
         this.dispatch({ type: 'SET_SPELLBOOK_FILTER', filter: spellbookFilter });
         return;
       }
+      const spellbookKnowledge = button.dataset.spellbookKnowledge;
+      if (spellbookKnowledge === 'known' || spellbookKnowledge === 'all' || spellbookKnowledge === 'unknown') {
+        this.dispatch({ type: 'SET_SPELLBOOK_KNOWLEDGE_FILTER', filter: spellbookKnowledge });
+        return;
+      }
+      const spellbookRole = button.dataset.spellbookRole;
+      if (spellbookRole) {
+        this.dispatch({ type: 'SET_SPELLBOOK_ROLE_FILTER', role: spellbookRole as GameState['ui']['spellbookRoleFilter'] });
+        return;
+      }
       const spellbookView = button.dataset.spellbookView;
-      if (spellbookView === 'grid' || spellbookView === 'list') {
-        this.dispatch({ type: 'SET_SPELLBOOK_VIEW', view: spellbookView });
+      if (spellbookView === 'grid' || spellbookView === 'list' || spellbookView === 'circle') {
+        this.dispatch({ type: 'SET_SPELLBOOK_VIEW_MODE', mode: spellbookView });
         return;
       }
       const spell = button.dataset.spell;
@@ -862,6 +918,17 @@ export class UIManager {
         if (this.currentState) {
           this.replaceHud(this.renderHud(this.currentState));
           const search = this.root.querySelector<HTMLInputElement>('.spell-search');
+          if (search) {
+            search.focus();
+            search.setSelectionRange(search.value.length, search.value.length);
+          }
+        }
+      }
+      if (target.dataset.action === 'spellbook-search') {
+        this.dispatch({ type: 'SET_SPELLBOOK_SEARCH', search: target.value });
+        if (this.currentState) {
+          this.replaceHud(this.renderHud(this.currentState));
+          const search = this.root.querySelector<HTMLInputElement>('.spellbook-search');
           if (search) {
             search.focus();
             search.setSelectionRange(search.value.length, search.value.length);

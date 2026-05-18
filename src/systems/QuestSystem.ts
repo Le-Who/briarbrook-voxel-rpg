@@ -4,7 +4,7 @@ import type { GameState } from '../game/types';
 import { addItem, getItemCount, removeItems } from './InventorySystem';
 import { addSystemMessage } from './ChatSystem';
 import { gainPlayerXp } from './SkillSystem';
-import { recordGoldDelta, recordQuestCompletionTelemetry } from './TelemetrySystem';
+import { recordFirstHourPathCompleted, recordGoldDelta, recordQuestCompletionTelemetry } from './TelemetrySystem';
 
 export type QuestEvent =
   | { type: 'talk'; npcName: string }
@@ -63,6 +63,7 @@ export function completeQuest(state: GameState, questId: string): void {
   state.player.gold += quest.rewards.gold;
   recordGoldDelta(state, quest.rewards.gold);
   recordQuestCompletionTelemetry(state, quest.id);
+  if (quest.id === 'trouble_on_road') recordFirstHourPathCompleted(state);
   gainPlayerXp(state, quest.rewards.xp);
   quest.rewards.items?.forEach((reward) => addItem(state.player.inventory, reward.itemId, reward.quantity));
   quest.status = 'complete';

@@ -3,6 +3,10 @@ import { zoneForArea } from '../data/riskZones';
 import { treasureMapDefinitions } from '../data/treasure';
 import type { GameState } from '../game/types';
 
+function attr(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
+}
+
 function displayAreaName(state: GameState): string {
   if (state.player.currentArea === 'town' && state.player.position.z > 11 && state.player.position.x < -8) return 'Briarbrook Docks';
   if (state.player.currentArea === 'town' && state.player.position.z > 9) return 'North Gate';
@@ -39,15 +43,15 @@ export function Minimap(state: GameState): string {
       const position = event.position!;
       const x = Math.max(10, Math.min(90, Math.round(50 + position.x * 3.2)));
       const y = Math.max(10, Math.min(90, Math.round(50 + position.z * 3.2)));
-      return `<span class="map-dot event" title="${event.title}" style="left:${x}%;top:${y}%"></span>`;
+      return `<span class="map-dot event" data-tooltip-id="map-event:${attr(event.id)}" data-tooltip-source="minimap" data-tooltip="${attr(event.title)}" style="left:${x}%;top:${y}%"></span>`;
     })
     .join('');
   const treasureMarkers = Object.entries(treasureMapDefinitions)
     .filter(([id, definition]) => state.world.treasure.maps[id]?.pinned && definition.regionHint === state.player.currentArea && !state.world.treasure.maps[id]?.found)
-    .map(([, definition]) => {
+    .map(([id, definition]) => {
       const x = Math.max(10, Math.min(90, Math.round(50 + definition.approximateCoordinate.x * 3.2)));
       const y = Math.max(10, Math.min(90, Math.round(50 + definition.approximateCoordinate.z * 3.2)));
-      return `<span class="map-dot treasure" title="Treasure clue" style="left:${x}%;top:${y}%"></span>`;
+      return `<span class="map-dot treasure" data-tooltip-id="treasure:${attr(id)}" data-tooltip-source="minimap" data-tooltip="Treasure clue" style="left:${x}%;top:${y}%"></span>`;
     })
     .join('');
   const devTravel = state.dev.overlay && state.ui.devTravel

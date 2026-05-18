@@ -91,7 +91,8 @@ export function Hotbar(state: GameState): string {
         const active = state.ui.activeHotbarSlot === index ? ' active' : '';
         const invalid = view.invalid ? ' invalid' : '';
         const source = binding ? ` data-hotbar-source="hotbarSlot:${index}" data-drag-kind="hotbarSlot" data-source-window-id="hotbar" data-source-slot-id="${index}"` : '';
-        return `<button class="hotbar-slot${active}${invalid}${binding ? '' : ' empty'}" data-hotbar="${index}" data-hotbar-drop="${index}"${source} data-tooltip="${attr(view.tooltip)}" title="${attr(view.tooltip)}">
+        const tooltipId = binding ? `hotbar:${index}:${binding.kind}:${attr(binding.id)}` : `hotbar:${index}:empty`;
+        return `<button class="hotbar-slot${active}${invalid}${binding ? '' : ' empty'}" data-hotbar="${index}" data-hotbar-drop="${index}"${source} data-tooltip-id="${tooltipId}" data-tooltip-source="hotbar" data-tooltip="${attr(view.tooltip)}" title="${attr(view.tooltip)}">
           <span>${key}</span>
           ${renderIcon(view.icon, view.label)}
           ${view.qty ? `<b>${view.qty}</b>` : ''}

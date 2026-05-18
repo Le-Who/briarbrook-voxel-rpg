@@ -1,5 +1,6 @@
 import { areas } from '../data/areas';
 import { itemDefs } from '../data/items';
+import { summarizeFirstHourBalance } from '../systems/BalanceSystem';
 import { skillGainsPerMinute } from '../systems/TelemetrySystem';
 import { createDevScenePresets } from '../tools/devScenes';
 import type { GameState, ResourceTile, TargetRef } from '../game/types';
@@ -7,6 +8,10 @@ import type { GameState, ResourceTile, TargetRef } from '../game/types';
 export function DevOverlay(state: GameState): string {
   if (!state.dev.overlay) return '';
   const selectedEntity = describeTarget(state, state.ui.selectedTarget ?? (state.player.activeTargetId ? { kind: 'entity', entityId: state.player.activeTargetId } : null));
+  const selectedTarget = state.ui.selectedTarget ?? (state.player.activeTargetId ? { kind: 'entity', entityId: state.player.activeTargetId } : null);
+  const facing = state.player.facing;
+  const targetId = targetIdentifier(selectedTarget);
+  const targetArea = describeTargetArea(state, selectedTarget);
   const hoveredResource = resourceTileInspector(state);
   const activeEffects = [
     state.player.combatProfile.hidden ? 'Hidden' : '',
@@ -20,6 +25,7 @@ export function DevOverlay(state: GameState): string {
   ].filter(Boolean);
   const queue = state.realtime.actionQueue.slice(0, 6);
   const telemetry = state.dev.telemetry;
+  const balance = summarizeFirstHourBalance(state);
   const gainsPerMin = skillGainsPerMinute(state);
   const topSkillGains = Object.entries(gainsPerMin)
     .sort((a, b) => b[1] - a[1])
@@ -33,6 +39,12 @@ export function DevOverlay(state: GameState): string {
   const topSold = Object.entries(telemetry.itemsSold)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
+  const topCancellations = Object.entries(telemetry.actionCancellations ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  const topSkillEvents = Object.entries(telemetry.skillEvents ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
   const validation = state.dev.contentValidation;
 
   return `<section class="dev-overlay">
@@ -47,6 +59,15 @@ export function DevOverlay(state: GameState): string {
         <p><span>Area</span><b>${areas[state.player.currentArea].name}</b></p>
         <p><span>Coords</span><b>${state.player.position.x.toFixed(1)}, ${state.player.position.z.toFixed(1)}</b></p>
         <p><span>Action</span><b>${state.player.actionState.kind} ${state.player.actionState.source ? `(${state.player.actionState.source})` : ''}</b></p>
+        <p><span>Facing</span><b>${facing ? `${facing.lastFacingSource} ${radToDeg(facing.facingYaw)}->${radToDeg(facing.desiredFacingYaw)}` : 'none'}</b></p>
+        <p><span>Target ID</span><b>${targetId}</b></p>
+        <p><span>Target area</span><b>${targetArea}</b></p>
+        <p><span>Path</span><b>${state.player.movement.path.length}${state.player.movement.waypoint ? ' + waypoint' : ''}</b></p>
+        <p><span>Last move</span><b>${state.dev.stability.lastMovementCommandSource} @ ${state.dev.stability.lastMovementCommandAt.toFixed(2)}</b></p>
+        <p><span>Cancel</span><b>${state.dev.stability.lastActionCancellationReason}</b></p>
+        <p><span>Portal</span><b>${state.dev.stability.currentPortalId ?? 'none'}</b></p>
+        <p><span>Transition</span><b>${describeTransition(state)}</b></p>
+        <p><span>Spawn fallbacks</span><b>${state.dev.stability.safeSpawnFallbackCount}</b></p>
         <p><span>Reputation</span><b>${state.player.reputation.status} (${state.player.reputation.townStanding})</b></p>
         <p><span>Crime events</span><b>${state.world.crimeEvents.length}</b></p>
         <p><span>Target</span><b>${selectedEntity}</b></p>
@@ -90,6 +111,23 @@ export function DevOverlay(state: GameState): string {
         ${topYields.length ? topYields.map(([itemId, value]) => `<p><span>${itemDefs[itemId]?.name ?? itemId}</span><b>${value}</b></p>`).join('') : ''}
         ${topOutflow.length ? topOutflow.map(([itemId, value]) => `<p><span>Out ${itemDefs[itemId]?.name ?? itemId}</span><b>${value}</b></p>`).join('') : ''}
         ${topSold.length ? topSold.map(([itemId, value]) => `<p><span>Sold ${itemDefs[itemId]?.name ?? itemId}</span><b>${value}</b></p>`).join('') : ''}
+        <h3>First Hour Balance</h3>
+        <p><span>Elapsed</span><b>${balance.elapsedMinutes}m</b></p>
+        <p><span>Skill/min</span><b>${balance.totalSkillGainPerMinute} total (${balance.topSkillGain})</b></p>
+        <p><span>Gold net</span><b>${balance.goldNet >= 0 ? '+' : ''}${balance.goldNet}</b></p>
+        <p><span>Resources</span><b>+${balance.resourceIn} / -${balance.resourceOut}</b></p>
+        <p><span>Damage</span><b>${balance.damageDealt} dealt / ${balance.damageTaken} taken</b></p>
+        <p><span>Bandages</span><b>${balance.bandagesApplied} total / ${balance.combatBandagesApplied} combat</b></p>
+        <p><span>Repairs</span><b>${balance.repairsCompleted} done / ${balance.repairEstimate}</b></p>
+        <p><span>Experiment casts</span><b>${balance.experimentCasts}</b></p>
+        <h3>Friction</h3>
+        <p><span>First-hour path</span><b>${telemetry.firstHourPathCompletionTime == null ? 'open' : `${telemetry.firstHourPathCompletionTime}s`}</b></p>
+        <p><span>Transition fallbacks</span><b>${telemetry.transitionFallbacks ?? 0}</b></p>
+        <p><span>Stuck recoveries</span><b>${telemetry.stuckRecoveryEvents ?? 0}</b></p>
+        <p><span>Tooltip remounts</span><b>${telemetry.tooltipRemounts ?? 0}</b></p>
+        <p><span>UI resets</span><b>${telemetry.uiResetUsage ?? 0}</b></p>
+        ${topCancellations.map(([reason, count]) => `<p><span>${reason}</span><b>${count}</b></p>`).join('')}
+        ${topSkillEvents.map(([skill, count]) => `<p><span>${skill} events</span><b>${count}</b></p>`).join('')}
         <button data-action="dev-export-telemetry">Export JSON</button>
       </div>
       <div>
@@ -107,7 +145,7 @@ export function DevOverlay(state: GameState): string {
           <button data-dev-give-spell="fireball">Spell</button>
         </div>
         <div class="dev-scenes">
-          ${createDevScenePresets().map((scene) => `<button data-dev-scene="${scene.id}" title="${scene.description}">${scene.label}</button>`).join('')}
+          ${createDevScenePresets().map((scene) => `<button data-dev-scene="${scene.id}" data-tooltip-id="dev-scene:${escapeAttr(scene.id)}" data-tooltip-source="dev" data-tooltip="${escapeAttr(scene.description)}">${scene.label}</button>`).join('')}
         </div>
         <div class="dev-buttons">
           ${(['dawn', 'day', 'dusk', 'night'] as const).map((phase) => `<button data-dev-time-phase="${phase}">${phase}</button>`).join('')}
@@ -118,6 +156,12 @@ export function DevOverlay(state: GameState): string {
           <button data-dev-area="town">Town</button>
           <button data-dev-area="forest">Forest</button>
         </div>
+        <div class="dev-buttons">
+          ${facingDebugButton(state, 'showFacingArrows', 'Facing')}
+          ${facingDebugButton(state, 'showDesiredFacingArrows', 'Desired')}
+          ${facingDebugButton(state, 'showVelocityVectors', 'Velocity')}
+          ${facingDebugButton(state, 'showLookAtLines', 'LookAt')}
+        </div>
       </div>
     </div>
     ${validation.errors.length || validation.warnings.length ? `<details>
@@ -127,6 +171,30 @@ export function DevOverlay(state: GameState): string {
     </details>` : ''}
     ${state.dev.telemetryExportJson ? `<textarea readonly>${escapeHtml(state.dev.telemetryExportJson)}</textarea>` : ''}
   </section>`;
+}
+
+function targetIdentifier(target: TargetRef): string {
+  if (!target) return 'none';
+  if (target.kind === 'entity' || target.kind === 'hostile' || target.kind === 'friendly' || target.kind === 'ground-item') return target.entityId;
+  if (target.kind === 'tile') return `${target.areaId}:${Math.round(target.position.x)},${Math.round(target.position.z)}`;
+  if (target.kind === 'inventory') return `${target.owner}:${target.slot}`;
+  return target.kind;
+}
+
+function describeTargetArea(state: GameState, target: TargetRef): string {
+  if (!target) return 'none';
+  if (target.kind === 'tile') return target.areaId;
+  if (target.kind === 'entity' || target.kind === 'hostile' || target.kind === 'friendly' || target.kind === 'ground-item') {
+    return state.entities[target.entityId]?.area ?? 'missing';
+  }
+  return 'global';
+}
+
+function describeTransition(state: GameState): string {
+  const transition = state.dev.stability.lastTransition;
+  if (!transition) return 'none';
+  const fallback = transition.usedFallback ? ` fallback ${transition.resolved.x},${transition.resolved.z}` : `${transition.resolved.x},${transition.resolved.z}`;
+  return `${transition.from}->${transition.to} ${fallback}`;
 }
 
 function describeTarget(state: GameState, target: TargetRef): string {
@@ -165,6 +233,18 @@ function sumRecord(record: Record<string, number>): number {
   return Object.values(record).reduce((total, value) => total + value, 0);
 }
 
+function facingDebugButton(state: GameState, key: keyof GameState['dev']['facingDebug'], label: string): string {
+  return `<button data-dev-facing-debug="${key}">${state.dev.facingDebug[key] ? `${label} On` : label}</button>`;
+}
+
+function radToDeg(value: number): string {
+  return `${Math.round((value * 180) / Math.PI)}deg`;
+}
+
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value).replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 }

@@ -3,7 +3,7 @@ import type { ChatMessage, GameState } from '../game/types';
 const tabs: ChatMessage['channel'][] = ['Local', 'Global', 'Party', 'Guild'];
 
 export function ChatPanel(state: GameState): string {
-  const visible = state.chat.filter((message) => message.channel === state.ui.chatTab || message.channel === 'System').slice(-8);
+  const visible = state.chat.filter((message) => message.channel === state.ui.chatTab || message.channel === 'System').slice(-5);
   return `<section class="panel chat-panel">
     <div class="chat-tabs">
       ${tabs.map((tab) => `<button class="${state.ui.chatTab === tab ? 'active' : ''}" data-chat-tab="${tab}">${tab}</button>`).join('')}

@@ -8,6 +8,17 @@ export interface BuildPlot {
   maxZ: number;
 }
 
+export interface ResolveSafeSpawnOptions {
+  avoidPortalIds?: string[];
+}
+
+export interface SafeSpawnResolution {
+  position: Vec3;
+  requested: Vec3;
+  usedFallback: boolean;
+  attempts: number;
+}
+
 export class AreaManager {
   private staticBlocked = new Map<AreaId, Set<string>>();
 
@@ -47,9 +58,12 @@ export class AreaManager {
   }
 
   isBlocked(state: GameState, x: number, z: number, ignoreEntityId?: string): boolean {
+    return this.isBlockedInArea(state, state.player.currentArea, x, z, ignoreEntityId);
+  }
+
+  isBlockedInArea(state: GameState, areaId: AreaId, x: number, z: number, ignoreEntityId?: string): boolean {
     const gx = Math.round(x);
     const gz = Math.round(z);
-    const areaId = state.player.currentArea;
     if (!this.isInsideBounds(areaId, gx, gz)) return true;
     const key = this.key(gx, gz);
     if (this.staticBlocked.get(areaId)?.has(key)) return true;
@@ -64,6 +78,15 @@ export class AreaManager {
       if (Math.round(building.position.x) === gx && Math.round(building.position.z) === gz) return true;
     }
     return false;
+  }
+
+  hasMoveExitInArea(state: GameState, areaId: AreaId, x: number, z: number): boolean {
+    return [
+      { x: 1, z: 0 },
+      { x: -1, z: 0 },
+      { x: 0, z: 1 },
+      { x: 0, z: -1 }
+    ].some((dir) => !this.isBlockedInArea(state, areaId, x + dir.x, z + dir.z));
   }
 
   getHeight(areaId: AreaId, x: number, z: number): number {
@@ -217,4 +240,73 @@ export class AreaManager {
     set.delete(this.key(-7, 2));
     return set;
   }
+}
+
+export function resolveSafeSpawn(
+  state: GameState,
+  areaManager: AreaManager,
+  areaId: AreaId,
+  desiredPosition: Vec3,
+  radius = 4,
+  options: ResolveSafeSpawnOptions = {}
+): SafeSpawnResolution {
+  const requested = { x: Math.round(desiredPosition.x), y: 0, z: Math.round(desiredPosition.z) };
+  const candidates = [requested];
+  for (let ring = 1; ring <= radius; ring += 1) {
+    const ringCandidates: Vec3[] = [];
+    for (let ox = -ring; ox <= ring; ox += 1) {
+      for (let oz = -ring; oz <= ring; oz += 1) {
+        if (Math.abs(ox) !== ring && Math.abs(oz) !== ring) continue;
+        ringCandidates.push({ x: requested.x + ox, y: 0, z: requested.z + oz });
+      }
+    }
+    candidates.push(...sortSpawnRing(ringCandidates, state, areaId, options));
+  }
+
+  let attempts = 0;
+  for (const candidate of candidates) {
+    attempts += 1;
+    if (!isSafeSpawnCandidate(state, areaManager, areaId, candidate, options)) continue;
+    const usedFallback = candidate.x !== requested.x || candidate.z !== requested.z;
+    if (usedFallback) {
+      console.warn(`[transition] Safe spawn fallback in ${areaId}: requested ${requested.x},${requested.z}; resolved ${candidate.x},${candidate.z}.`);
+    }
+    return { position: candidate, requested, usedFallback, attempts };
+  }
+
+  console.warn(`[transition] No safe spawn found in ${areaId}; using requested ${requested.x},${requested.z}.`);
+  return { position: requested, requested, usedFallback: true, attempts };
+}
+
+function sortSpawnRing(candidates: Vec3[], state: GameState, areaId: AreaId, options: ResolveSafeSpawnOptions): Vec3[] {
+  const portals = avoidedPortals(state, areaId, options);
+  return candidates.sort((a, b) => {
+    const portalDistA = nearestPortalDistance(a, portals);
+    const portalDistB = nearestPortalDistance(b, portals);
+    if (portalDistA !== portalDistB) return portalDistB - portalDistA;
+    if (a.z !== b.z) return b.z - a.z;
+    return Math.abs(a.x) - Math.abs(b.x);
+  });
+}
+
+function isSafeSpawnCandidate(state: GameState, areaManager: AreaManager, areaId: AreaId, candidate: Vec3, options: ResolveSafeSpawnOptions): boolean {
+  if (areaManager.isBlockedInArea(state, areaId, candidate.x, candidate.z)) return false;
+  if (isOnAvoidedPortal(state, areaId, candidate, options)) return false;
+  return areaManager.hasMoveExitInArea(state, areaId, candidate.x, candidate.z);
+}
+
+function isOnAvoidedPortal(state: GameState, areaId: AreaId, candidate: Vec3, options: ResolveSafeSpawnOptions): boolean {
+  return avoidedPortals(state, areaId, options).some(
+    (portal) => Math.round(portal.position.x) === Math.round(candidate.x) && Math.round(portal.position.z) === Math.round(candidate.z)
+  );
+}
+
+function avoidedPortals(state: GameState, areaId: AreaId, options: ResolveSafeSpawnOptions) {
+  const explicit = new Set(options.avoidPortalIds ?? []);
+  return Object.values(state.entities).filter((entity) => entity.kind === 'portal' && entity.area === areaId && (!explicit.size || explicit.has(entity.id)));
+}
+
+function nearestPortalDistance(candidate: Vec3, portals: ReturnType<typeof avoidedPortals>): number {
+  if (!portals.length) return 0;
+  return portals.reduce((best, portal) => Math.min(best, Math.hypot(candidate.x - portal.position.x, candidate.z - portal.position.z)), Number.POSITIVE_INFINITY);
 }

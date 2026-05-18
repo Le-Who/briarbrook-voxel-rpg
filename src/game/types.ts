@@ -30,7 +30,18 @@ export interface Vec2 {
   z: number;
 }
 
-export type ActionStateKind = 'idle' | 'moving' | 'attacking' | 'casting' | 'gathering' | 'stunned' | 'dead' | 'hidden' | 'interacting' | 'building';
+export type FacingSource = 'movement' | 'target' | 'cast' | 'interact' | 'gathering' | 'idle' | 'forced';
+
+export interface FacingState {
+  facingYaw: number;
+  desiredFacingYaw: number;
+  lastFacingSource: FacingSource;
+  facingLockedUntil: number;
+  lookAtEntityId: string | null;
+  lookAtPosition: Vec3 | null;
+}
+
+export type ActionStateKind = 'idle' | 'moving' | 'attacking' | 'casting' | 'gathering' | 'stunned' | 'dead' | 'hidden' | 'interacting' | 'building' | 'transitioning';
 
 export interface ActionState {
   kind: ActionStateKind;
@@ -50,6 +61,14 @@ export interface PlayerMovementState {
   waypoint: Vec3 | null;
   tile: Vec2;
   maxSpeed: number;
+}
+
+export type CombatApproachMode = 'manual' | 'assist' | 'aggressive' | 'melee_only';
+
+export interface CombatPreferences {
+  approachMode: CombatApproachMode;
+  autoAttackOnTargetSelect: boolean;
+  stopMovementWhenCasting: boolean;
 }
 
 export interface QueuedAction {
@@ -89,6 +108,7 @@ export interface TimedStatusEffect {
 export interface RealtimeState {
   tickRate: number;
   fixedDelta: number;
+  renderAlpha: number;
   tick: number;
   lastFrameDelta: number;
   actionQueue: QueuedAction[];
@@ -267,6 +287,8 @@ export interface PlayerState {
   bankGold: number;
   position: Vec3;
   movement: PlayerMovementState;
+  facing: FacingState;
+  combatPreferences: CombatPreferences;
   actionState: ActionState;
   targetPosition: Vec3 | null;
   currentArea: AreaId;
@@ -301,6 +323,7 @@ export interface BaseEntity {
   name: string;
   position: Vec3;
   blocksMovement: boolean;
+  facing?: FacingState;
   actionState?: ActionState;
 }
 
@@ -918,19 +941,29 @@ export interface ContentValidationState {
 
 export interface TelemetryState {
   startedAt: number;
+  firstHourPathCompletionTime: number | null;
   damageDealtBySource: Record<string, number>;
   damageTaken: number;
+  skillEvents: Record<SkillId, number>;
   skillGains: Record<SkillId, number>;
   resourceYields: Record<string, number>;
   resourceOutflow: Record<string, number>;
   itemsSold: Record<string, number>;
   itemsConsumed: Record<string, number>;
+  bandagesApplied: number;
+  combatBandagesApplied: number;
+  repairsCompleted: number;
   workOrdersCompleted: number;
   marketTransactions: number;
   goldEarned: number;
   goldSpent: number;
   potionConsumption: Record<string, number>;
   deathCount: number;
+  stuckRecoveryEvents: number;
+  transitionFallbacks: number;
+  tooltipRemounts: number;
+  uiResetUsage: number;
+  actionCancellations: Record<string, number>;
   questCompletionTime: Record<string, number>;
   priceTrends: Record<string, number[]>;
 }
@@ -982,6 +1015,23 @@ export interface InputDebugState {
   uiScale: number;
 }
 
+export interface DevStabilityState {
+  lastMovementCommandAt: number;
+  lastMovementCommandSource: string;
+  lastActionCancellationReason: string;
+  currentPortalId: string | null;
+  lastTransition: {
+    from: AreaId;
+    to: AreaId;
+    portalId: string | null;
+    requested: Vec3;
+    resolved: Vec3;
+    usedFallback: boolean;
+    at: number;
+  } | null;
+  safeSpawnFallbackCount: number;
+}
+
 export interface DevToolState {
   overlay: boolean;
   selectedSceneId: string;
@@ -990,6 +1040,13 @@ export interface DevToolState {
   telemetryExportJson: string;
   renderStats: RenderStatsState;
   input: InputDebugState;
+  stability: DevStabilityState;
+  facingDebug: {
+    showFacingArrows: boolean;
+    showDesiredFacingArrows: boolean;
+    showVelocityVectors: boolean;
+    showLookAtLines: boolean;
+  };
 }
 
 export type HotbarBinding =
@@ -1020,6 +1077,16 @@ export interface UIState {
   skillSearch: string;
   skillView: 'ledger' | 'atlas' | 'mastery';
   professionFilter: string;
+  spellbookSearch: string;
+  spellbookKnowledgeFilter: SpellbookKnowledgeFilter;
+  spellbookCircleFilter: number | 'all';
+  spellbookRoleFilter: SpellbookRoleFilter;
+  spellbookViewMode: SpellbookViewMode;
+  hotbarAssignSpellId: string | null;
+  skillsViewMode: SkillsViewMode;
+  skillTrainableFilter: SkillTrainableFilter;
+  skillRecentFilter: SkillRecentFilter;
+  skillProfessionFilter: ProfessionLensFilter;
   professionAtlasZoom: number;
   pinnedProfessionGoalId: string | null;
   devTravel: boolean;
@@ -1033,9 +1100,41 @@ export interface UIState {
   hotbar: Array<HotbarBinding | null>;
   uiScale: number;
   reducedMotion: boolean;
+  cameraSmoothing: CameraSmoothingMode;
+  windowLayouts: Partial<Record<ManagedWindowId, UIWindowLayout>>;
+  windowLayoutPreset: UILayoutPreset;
+  windowFocusOrder: ManagedWindowId[];
   prompt: string;
   trade: TradeState | null;
   merchant: MerchantState | null;
+}
+
+export type CameraSmoothingMode = 'low' | 'medium' | 'high';
+export type SpellbookKnowledgeFilter = 'known' | 'all' | 'unknown';
+export type SpellbookViewMode = 'grid' | 'list' | 'circle';
+export type SpellbookRoleFilter = 'all' | 'Damage' | 'Healing' | 'Utility' | 'Control' | 'Travel' | 'Buff' | 'Debuff';
+export type SkillsViewMode = 'ledger' | 'atlas' | 'milestones';
+export type SkillTrainableFilter = 'all' | 'trainable' | 'not_trainable';
+export type SkillRecentFilter = 'all' | 'recent';
+export type ProfessionLensFilter =
+  | 'all'
+  | 'ranger'
+  | 'hedge_mage'
+  | 'treasure_hunter'
+  | 'field_medic'
+  | 'town_smith'
+  | 'builder'
+  | 'bard'
+  | 'rogue'
+  | 'provisioner'
+  | 'battle_miner';
+export type ManagedWindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help';
+export type UILayoutPreset = 'default' | 'compact' | 'large' | 'combat';
+export interface UIWindowLayout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface WorldState {

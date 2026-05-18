@@ -2,7 +2,7 @@ import { createSkillState, skillDefinitionById } from '../data/skillDefinitions'
 import { emitAudioHook } from '../audio/AudioHooks';
 import type { AttributeName, GameState, SkillId, SkillName, SkillState, Vec3 } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
-import { recordSkillGainTelemetry } from './TelemetrySystem';
+import { recordSkillGainTelemetry, recordSkillUseEvent } from './TelemetrySystem';
 
 export interface SkillUseContext {
   verb: string;
@@ -33,6 +33,7 @@ export function setSkillMode(state: GameState, skillId: SkillId, mode: SkillStat
 
 export function attemptSkillUse(state: GameState, skillId: SkillId, context: SkillUseContext): boolean {
   const skill = ensureSkill(state, skillId);
+  recordSkillUseEvent(state, skillId);
   if (skill.mode === 'lock' || skill.realValue >= skill.cap) return false;
 
   const value = skill.realValue;

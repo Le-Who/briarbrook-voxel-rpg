@@ -71,7 +71,8 @@ export function SkillsPanel(state: GameState): string {
   const selectedGroup = state.player.selectedSkillGroup ?? 'All';
   const search = state.ui.skillSearch?.toLowerCase().trim() ?? '';
   const total = usedSkillTotal(state);
-  const view = state.ui.skillView ?? 'ledger';
+  const modeView = state.ui.skillsViewMode === 'milestones' ? 'mastery' : (state.ui.skillsViewMode ?? 'ledger');
+  const view = state.ui.skillView && state.ui.skillView !== 'ledger' ? state.ui.skillView : modeView;
 
   return `<section class="panel skills-panel">
     <header><span>Skills</span><button data-action="toggle-panel" data-panel="skills">x</button></header>
@@ -93,6 +94,7 @@ function renderSkillLedger(state: GameState, selectedFilter: string, search: str
   });
 
   return `<div class="skill-total"><b>${total.toFixed(1)}</b><span>/ ${state.player.skillCap.toFixed(1)} total skill cap</span></div>
+    <small class="skill-ledger-note">Trainable and Not yet trainable skills are marked by status. Tooltips show Trained by and Used by details.</small>
     <div class="skill-tabs">
       ${skillFilters.map((group) => `<button class="${group === selectedFilter ? 'active' : ''}" data-skill-group="${attr(group)}">${group}</button>`).join('')}
     </div>
@@ -158,7 +160,8 @@ function renderSkillRow(state: GameState, definition: SkillDefinition, relevant:
 }
 
 function renderProfessionAtlas(state: GameState): string {
-  const selected = professionById(state.ui.professionFilter) ?? [...professionClusters].sort((a, b) => professionActivityScore(state, b) - professionActivityScore(state, a))[0];
+  const selectedProfessionId = state.ui.professionFilter !== 'all' ? state.ui.professionFilter : state.ui.skillProfessionFilter;
+  const selected = professionById(selectedProfessionId) ?? [...professionClusters].sort((a, b) => professionActivityScore(state, b) - professionActivityScore(state, a))[0];
   const zoom = state.ui.professionAtlasZoom ?? 1;
   const activeSkills = relevantSkills(state);
   const activeNodeIds = new Set<string>();
@@ -172,6 +175,7 @@ function renderProfessionAtlas(state: GameState): string {
     }
   });
   return `<div class="atlas-layout">
+    <small class="atlas-note">Not a passive tree. Profession links are planning context for use-based skills, tools, Treasure Map clues, and milestones. <span class="not-trainable">Not yet trainable nodes stay marked.</span></small>
     <div class="profession-filters">
       ${professionClusters
         .map((profession) => {
@@ -201,7 +205,7 @@ function renderProfessionAtlas(state: GameState): string {
               })
               .join('')}
           </svg>
-          ${selected.nodes.map((node) => renderAtlasNode(node, activeNodeIds.has(node.id), selected.color)).join('')}
+          ${selected.nodes.map((node) => renderAtlasNode(state, node, activeNodeIds.has(node.id), selected.color)).join('')}
         </div>
       </div>
       <div class="atlas-detail">
@@ -212,7 +216,7 @@ function renderProfessionAtlas(state: GameState): string {
   </div>`;
 }
 
-function renderAtlasNode(node: { id: string; type: string; label: string; ref?: string; description: string; x: number; y: number }, active: boolean, color: string): string {
+function renderAtlasNode(state: GameState, node: { id: string; type: string; label: string; ref?: string; description: string; x: number; y: number }, active: boolean, color: string): string {
   const dataset =
     node.type === 'skill'
       ? `data-atlas-skill="${attr(node.ref ?? node.label)}"`
@@ -225,15 +229,18 @@ function renderAtlasNode(node: { id: string; type: string; label: string; ref?: 
             : node.type === 'goal' || node.type === 'milestone'
               ? `data-atlas-action="${attr(node.label)}" data-description="${attr(node.description)}"`
               : `data-atlas-action="${attr(node.label)}" data-description="${attr(node.description)}"`;
-  return `<button class="atlas-node ${node.type} ${active ? 'active' : ''}" style="--x:${node.x}; --y:${node.y}; --profession:${color}" ${dataset} title="${attr(node.description)}"><i>${node.type}</i><b>${node.label}</b></button>`;
+  const pinned = state.ui.pinnedProfessionGoalId === node.id || state.ui.pinnedProfessionGoalId === node.ref || state.ui.pinnedProfessionGoalId === `${node.type}:${node.ref ?? node.label}`;
+  const trainable = node.type !== 'skill' || trainableSkills.has(node.ref ?? node.label);
+  return `<button class="atlas-node ${node.type} ${active ? 'active' : ''} ${pinned ? 'pinned' : ''} ${trainable ? '' : 'not-trainable'}" style="--x:${node.x}; --y:${node.y}; --profession:${color}" ${dataset} title="${attr(node.description)}"><i>${node.type}</i><b>${node.label}</b></button>`;
 }
 
 function renderMastery(state: GameState): string {
   const visible = masteryMilestones.filter((milestone) => milestoneProgress(state, milestone).visible);
   return `<div class="mastery-layout">
     <div class="mastery-summary">
+      <h3>Mastery Milestones</h3>
       <b>${visible.filter((milestone) => milestoneProgress(state, milestone).complete).length}/${masteryMilestones.length}</b>
-      <span>Mastery milestones are earned from use-based skills, quests, discoveries, tools, and profession achievements. No level-point spending.</span>
+      <span>Practice, no point spending. Mastery milestones are earned from use-based skills, quests, discoveries, tools, and profession achievements. No level-point spending.</span>
     </div>
     <div class="mastery-list">
       ${visible

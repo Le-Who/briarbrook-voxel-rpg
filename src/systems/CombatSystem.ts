@@ -7,6 +7,7 @@ import { handlePlayerDamaged, setPlayerActionState } from './ActionStateSystem';
 import { addSystemMessage } from './ChatSystem';
 import { calculateDerivedStats } from './EquipmentSystem';
 import { degradeArmorFromHit, degradeEquippedItem, degradeItemStack, durabilityScale, isBroken } from './EconomySystem';
+import { faceEntityFromDelta, faceEntityTowardPosition, facePlayerTowardEntity } from './FacingSystem';
 import { addFloatingText, spawnLootFromEnemy } from './LootSystem';
 import { recordKill } from './QuestSystem';
 import { attemptSkillUse, gainPlayerXp, getSkillValue } from './SkillSystem';
@@ -123,6 +124,7 @@ export function meleeAttack(state: GameState, entityId?: string): void {
     state.ui.prompt = 'Move closer to strike.';
     return;
   }
+  facePlayerTowardEntity(state, target.id, 'target', 0.5);
   setPlayerActionState(state, 'attacking', 0.38, target.id);
   breakHidden(state, 'attacking');
   const stats = calculateDerivedStats(state);
@@ -182,6 +184,7 @@ export function rangedAttack(state: GameState, entityId?: string): void {
     state.ui.prompt = 'Target is out of bow range.';
     return;
   }
+  facePlayerTowardEntity(state, target.id, 'target', 0.45);
   setPlayerActionState(state, 'attacking', 0.34, target.id);
   if (def.requiredAmmo && !removeItems(state.player.inventory, def.requiredAmmo, 1)) {
     state.ui.prompt = `You need ${itemDefs[def.requiredAmmo]?.name ?? def.requiredAmmo}.`;
@@ -341,6 +344,7 @@ function playerParries(state: GameState, enemy: EnemyEntity): boolean {
 
 function startEnemyTelegraph(state: GameState, enemy: EnemyEntity): void {
   if (state.combat.telegraphs.some((telegraph) => telegraph.sourceId === enemy.id)) return;
+  faceEntityTowardPosition(enemy, state.player.position, 'target', state.clock, 0.6);
   const kind: CombatTelegraph['kind'] = enemy.aiStyle === 'archer' ? 'shot' : enemy.aiStyle === 'mage' ? 'cast' : enemy.aiStyle === 'beast' ? 'leap' : enemy.combatRole === 'brute' ? 'cone' : 'slash';
   const duration = enemy.aiStyle === 'beast' ? 0.42 : enemy.aiStyle === 'mage' ? 0.95 : enemy.combatRole === 'brute' ? 0.82 : 0.55;
   state.combat.telegraphs.push({
@@ -474,6 +478,7 @@ function updateProvokedEnemy(state: GameState, areaManager: AreaManager, enemy: 
   if (dist > enemy.attackRange) {
     moveEnemyToward(state, areaManager, enemy, target.position, dt, 1.8);
   } else if (enemy.attackTimer <= 0) {
+    faceEntityTowardPosition(enemy, target.position, 'target', state.clock, 0.45);
     enemy.attackTimer = enemy.attackCooldown;
     const damage = Math.max(1, rollDamage(enemy.damage[0], enemy.damage[1]) - Math.round(target.armor * 0.2));
     target.health = Math.max(0, target.health - damage);
@@ -490,6 +495,7 @@ function moveEnemyToward(state: GameState, areaManager: AreaManager, enemy: Enem
   const nx = enemy.position.x + (dx / len) * dt * speed;
   const nz = enemy.position.z + (dz / len) * dt * speed;
   if (!areaManager.isBlocked(state, nx, nz, enemy.id)) {
+    faceEntityFromDelta(enemy, nx - enemy.position.x, nz - enemy.position.z, 'movement', state.clock);
     enemy.position.x = nx;
     enemy.position.z = nz;
   }

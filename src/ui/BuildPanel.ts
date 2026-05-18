@@ -31,12 +31,12 @@ export function BuildPanel(state: GameState): string {
     <div class="plot-summary">
       <div><b>${plot ? tier.name : 'Unclaimed Plot'}</b><span>${plot ? `${placed.length}/${tier.placementLimit} objects` : 'Claim before placing'}</span></div>
       <button data-action="claim-plot">${plot ? 'Claimed' : 'Claim Plot'}</button>
-      ${nextTier ? `<button data-action="upgrade-housing" class="${upgrade.ok ? 'primary' : ''}" title="${attr(upgrade.message)}">Upgrade: ${nextTier.name}</button>` : ''}
+      ${nextTier ? `<button data-action="upgrade-housing" class="${upgrade.ok ? 'primary' : ''}" data-tooltip-id="housing:upgrade" data-tooltip-source="build" data-tooltip="${attr(upgrade.message)}">Upgrade: ${nextTier.name}</button>` : ''}
     </div>
     <div class="build-tabs">${categories.map((tab) => `<button class="${category === tab ? 'active' : ''}" data-build-category="${tab}">${tab}</button>`).join('')}</div>
     <div class="build-grid">
       ${pieces
-        .map((piece) => `<button class="build-piece ${piece.id === selected.id ? 'selected' : ''}" data-build-piece="${piece.id}" title="${piece.name}">${renderIcon(piece.icon, piece.name)}</button>`)
+        .map((piece) => `<button class="build-piece ${piece.id === selected.id ? 'selected' : ''}" data-build-piece="${piece.id}" data-tooltip-id="build-piece:${attr(piece.id)}" data-tooltip-source="build" data-tooltip="${attr(`${piece.name}\n${piece.description}`)}">${renderIcon(piece.icon, piece.name)}</button>`)
         .join('')}
     </div>
     <div class="build-detail">
@@ -46,7 +46,8 @@ export function BuildPanel(state: GameState): string {
         .map((cost) => {
           const def = itemDefs[cost.itemId];
           const have = getItemCount(state.player.inventory, cost.itemId);
-          return `<span class="cost ${have < cost.quantity ? 'missing' : ''}" title="${have < cost.quantity ? attr(`Missing ${cost.quantity - have} ${def.name}`) : attr(def.name)}">${renderIcon(def.icon, def.name)} ${have}/${cost.quantity}</span>`;
+          const message = have < cost.quantity ? `Missing ${cost.quantity - have} ${def.name}` : def.name;
+          return `<span class="cost ${have < cost.quantity ? 'missing' : ''}" data-tooltip-id="build-cost:${attr(cost.itemId)}" data-tooltip-source="build" data-tooltip="${attr(message)}">${renderIcon(def.icon, def.name)} ${have}/${cost.quantity}</span>`;
         })
         .join('')}</div>
       <button data-action="place-building" class="primary">Place</button>
@@ -73,7 +74,7 @@ export function BuildPanel(state: GameState): string {
                   .map((stack, index) => {
                     if (!stack) return `<button class="empty" disabled></button>`;
                     const def = itemDefs[stack.itemId];
-                    return `<button data-housing-withdraw="${activeStorage.id}:${index}" title="${attr(def.name)}">${renderIcon(def.icon, def.name)}<b>${stack.quantity}</b></button>`;
+                    return `<button data-housing-withdraw="${activeStorage.id}:${index}" data-tooltip-id="housing-storage:${attr(activeStorage.id)}:${index}:${attr(stack.itemId)}" data-tooltip-source="housing-storage" data-tooltip="${attr(`${def.name}\nQty: ${stack.quantity}`)}">${renderIcon(def.icon, def.name)}<b>${stack.quantity}</b></button>`;
                   })
                   .join('')}
               </div>

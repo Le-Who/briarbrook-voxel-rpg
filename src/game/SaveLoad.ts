@@ -9,31 +9,14 @@ import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
 import { createInitialRenderStats } from '../render/RenderBudgets';
+import { ensureFacingState } from '../systems/FacingSystem';
 import type { BuildingEntity, EnemyEntity, GameState, HousingStorageState, ItemType, PortalEntity, ResourceNodeEntity } from './types';
 
+export const CURRENT_SAVE_VERSION = 3;
 const SAVE_KEY = 'briarbrook.voxel-rpg.save.v1';
 
 export function saveGame(state: GameState): void {
-  const safeState: GameState = {
-    ...state,
-    floatingTexts: [],
-    projectiles: [],
-    realtime: {
-      ...state.realtime,
-      actionQueue: [],
-      actionHistory: [],
-      pendingAction: null,
-      lastFrameDelta: 0
-    },
-    dev: {
-      ...state.dev,
-      overlay: false,
-      telemetryExportJson: '',
-      renderStats: createInitialRenderStats()
-    },
-    paused: false
-  };
-  localStorage.setItem(SAVE_KEY, JSON.stringify(safeState));
+  localStorage.setItem(SAVE_KEY, JSON.stringify(sanitizeForSave(state)));
 }
 
 export function loadGame(): GameState {
@@ -43,11 +26,11 @@ export function loadGame(): GameState {
   }
   try {
     const parsed = JSON.parse(raw) as GameState;
-    if (parsed.version !== 1) {
+    if (!validateSaveSchema(parsed)) {
       return createInitialGameState();
     }
     parsed.saveVersion ??= 1;
-    if (parsed.saveVersion < 2) parsed.saveVersion = 2;
+    if (parsed.saveVersion < CURRENT_SAVE_VERSION) parsed.saveVersion = CURRENT_SAVE_VERSION;
     parsed.combat ??= {
       meleeCooldown: 0,
       rangedCooldown: 0,
@@ -72,6 +55,7 @@ export function loadGame(): GameState {
     parsed.realtime ??= {
       tickRate: 30,
       fixedDelta: 1 / 30,
+      renderAlpha: 1,
       tick: 0,
       lastFrameDelta: 0,
       actionQueue: [],
@@ -81,6 +65,7 @@ export function loadGame(): GameState {
     };
     parsed.realtime.tickRate = parsed.realtime.tickRate || 30;
     parsed.realtime.fixedDelta = 1 / parsed.realtime.tickRate;
+    parsed.realtime.renderAlpha = 1;
     parsed.realtime.tick ??= 0;
     parsed.realtime.lastFrameDelta = 0;
     parsed.realtime.actionQueue = [];
@@ -150,11 +135,20 @@ export function loadGame(): GameState {
     parsed.player.movement.waypoint ??= null;
     parsed.player.movement.tile = { x: Math.round(parsed.player.position.x), z: Math.round(parsed.player.position.z) };
     parsed.player.movement.maxSpeed ??= 4.8;
+    ensureFacingState(parsed.player);
+    parsed.player.combatPreferences ??= {
+      approachMode: 'assist',
+      autoAttackOnTargetSelect: false,
+      stopMovementWhenCasting: true
+    };
+    parsed.player.combatPreferences.approachMode ??= 'assist';
+    parsed.player.combatPreferences.autoAttackOnTargetSelect ??= false;
+    parsed.player.combatPreferences.stopMovementWhenCasting ??= true;
     parsed.player.actionState ??= createIdleActionState(parsed.clock);
     parsed.ui.merchant ??= null;
-    parsed.ui.hoverTarget ??= null;
-    parsed.ui.selectedTarget ??= null;
-    parsed.ui.targeting ??= null;
+    parsed.ui.hoverTarget = null;
+    parsed.ui.selectedTarget = null;
+    parsed.ui.targeting = null;
     parsed.ui.contextMenu = null;
     parsed.ui.selectedSpellId ??= 'magic_arrow';
     parsed.ui.spellSearch ??= '';
@@ -166,11 +160,23 @@ export function loadGame(): GameState {
     parsed.ui.professionFilter ??= 'all';
     parsed.ui.professionAtlasZoom ??= 1;
     parsed.ui.pinnedProfessionGoalId ??= null;
+    parsed.ui.spellbookSearch ??= '';
+    parsed.ui.spellbookKnowledgeFilter ??= 'known';
+    parsed.ui.spellbookCircleFilter ??= 'all';
+    parsed.ui.spellbookRoleFilter ??= 'all';
+    parsed.ui.spellbookViewMode ??= 'grid';
+    parsed.ui.hotbarAssignSpellId = null;
     parsed.ui.selectedTreasureMapId ??= 'greymont_cache';
     parsed.ui.selectedHousingStorageId ??= null;
     parsed.ui.marketCategory ??= 'all';
     parsed.ui.marketSearch ??= '';
     parsed.ui.skillSearch ??= '';
+    parsed.ui.skillsViewMode ??= 'ledger';
+    parsed.ui.skillTrainableFilter ??= 'all';
+    parsed.ui.skillRecentFilter ??= 'all';
+    parsed.ui.skillProfessionFilter ??= 'all';
+    parsed.ui.professionAtlasZoom ??= 1;
+    parsed.ui.pinnedProfessionGoalId ??= null;
     parsed.ui.devTravel ??= false;
     parsed.ui.fadeUntil ??= 0;
     parsed.ui.selectedStationType ??= 'forge';
@@ -187,6 +193,10 @@ export function loadGame(): GameState {
     parsed.ui.hotbar = Array.from({ length: 10 }, (_, index) => parsed.ui.hotbar[index] ?? createDefaultHotbar()[index] ?? null);
     parsed.ui.uiScale ??= 1;
     parsed.ui.reducedMotion ??= false;
+    parsed.ui.cameraSmoothing ??= 'medium';
+    parsed.ui.windowLayouts ??= {};
+    parsed.ui.windowLayoutPreset ??= 'default';
+    parsed.ui.windowFocusOrder ??= [];
     parsed.ui.craftQuantity ??= 1;
     parsed.buildMode ??= {
       active: false,
@@ -241,13 +251,14 @@ export function loadGame(): GameState {
       if (!parsed.player.completedQuestIds.length && tutorialQuestIds.every((questId) => parsed.player.activeQuestIds.includes(questId))) parsed.player.activeQuestIds = ['prepare_for_road'];
     }
     if (tutorialQuestIds.some((questId) => parsed.player.activeQuestIds.includes(questId))) {
-      parsed.ui.panels.quest = true;
+      parsed.ui.panels.quest = false;
       parsed.ui.panels.guide = true;
     }
     for (const [id, entity] of Object.entries(fresh.entities)) {
       parsed.entities[id] ??= entity;
     }
     Object.values(parsed.entities ?? {}).forEach((entity) => {
+      if (entity.kind === 'enemy' || entity.kind === 'npc' || entity.kind === 'social') ensureFacingState(entity);
       if (entity.kind === 'enemy') {
         const enemy = entity as EnemyEntity;
         const freshEnemy = fresh.entities[enemy.id];
@@ -379,19 +390,29 @@ export function loadGame(): GameState {
     parsed.dev.contentValidation.checkedAt ??= parsed.clock ?? 0;
     parsed.dev.telemetry ??= initialDev.telemetry;
     parsed.dev.telemetry.startedAt ??= parsed.clock ?? 0;
+    parsed.dev.telemetry.firstHourPathCompletionTime ??= null;
     parsed.dev.telemetry.damageDealtBySource ??= {};
     parsed.dev.telemetry.damageTaken ??= 0;
+    parsed.dev.telemetry.skillEvents ??= {};
     parsed.dev.telemetry.skillGains ??= {};
     parsed.dev.telemetry.resourceYields ??= {};
     parsed.dev.telemetry.resourceOutflow ??= {};
     parsed.dev.telemetry.itemsSold ??= {};
     parsed.dev.telemetry.itemsConsumed ??= {};
+    parsed.dev.telemetry.bandagesApplied ??= 0;
+    parsed.dev.telemetry.combatBandagesApplied ??= 0;
+    parsed.dev.telemetry.repairsCompleted ??= 0;
     parsed.dev.telemetry.workOrdersCompleted ??= 0;
     parsed.dev.telemetry.marketTransactions ??= 0;
     parsed.dev.telemetry.goldEarned ??= 0;
     parsed.dev.telemetry.goldSpent ??= 0;
     parsed.dev.telemetry.potionConsumption ??= {};
     parsed.dev.telemetry.deathCount ??= 0;
+    parsed.dev.telemetry.stuckRecoveryEvents ??= 0;
+    parsed.dev.telemetry.transitionFallbacks ??= parsed.dev.stability?.safeSpawnFallbackCount ?? 0;
+    parsed.dev.telemetry.tooltipRemounts ??= 0;
+    parsed.dev.telemetry.uiResetUsage ??= 0;
+    parsed.dev.telemetry.actionCancellations ??= {};
     parsed.dev.telemetry.questCompletionTime ??= {};
     parsed.dev.telemetry.priceTrends ??= {};
     parsed.dev.telemetryExportJson = '';
@@ -399,8 +420,8 @@ export function loadGame(): GameState {
       ...initialDev.renderStats,
       ...(parsed.dev.renderStats ?? {}),
       budget: {
-        ...initialDev.renderStats.budget,
-        ...(parsed.dev.renderStats?.budget ?? {})
+        ...('budget' in initialDev.renderStats ? initialDev.renderStats.budget : createInitialRenderStats().budget),
+        ...((parsed.dev.renderStats as ReturnType<typeof createInitialRenderStats> | undefined)?.budget ?? {})
       }
     };
     parsed.dev.input ??= initialDev.input;
@@ -416,6 +437,23 @@ export function loadGame(): GameState {
     parsed.dev.input.targetMode ??= null;
     parsed.dev.input.viewport ??= 'unknown';
     parsed.dev.input.uiScale ??= parsed.ui?.uiScale ?? 1;
+    parsed.dev.renderStats.frame ??= 0;
+    parsed.dev.renderStats.entityCount ??= 0;
+    parsed.dev.renderStats.visibleEntityCount ??= 0;
+    parsed.dev.renderStats.roughDrawCalls ??= 0;
+    parsed.dev.renderStats.triangles ??= 0;
+    parsed.dev.stability ??= initialDev.stability;
+    parsed.dev.stability.lastMovementCommandAt ??= parsed.clock ?? 0;
+    parsed.dev.stability.lastMovementCommandSource ??= 'none';
+    parsed.dev.stability.lastActionCancellationReason ??= 'none';
+    parsed.dev.stability.currentPortalId ??= null;
+    parsed.dev.stability.lastTransition ??= null;
+    parsed.dev.stability.safeSpawnFallbackCount ??= 0;
+    parsed.dev.facingDebug ??= initialDev.facingDebug;
+    parsed.dev.facingDebug.showFacingArrows ??= false;
+    parsed.dev.facingDebug.showDesiredFacingArrows ??= false;
+    parsed.dev.facingDebug.showVelocityVectors ??= false;
+    parsed.dev.facingDebug.showLookAtLines ??= false;
     for (const building of parsed.world.placedBuildings ?? []) {
       const piece = getHousingPieceDefinition(building.pieceId);
       building.plotId ??= parsed.world.housing.ownedPlotId ?? starterPlotId;
@@ -428,6 +466,7 @@ export function loadGame(): GameState {
       }
       parsed.entities[building.id] = building as BuildingEntity;
     }
+    sanitizeLoadedTransientState(parsed);
     return {
       ...parsed,
       floatingTexts: [],
@@ -441,6 +480,109 @@ export function loadGame(): GameState {
 
 export function clearSave(): void {
   localStorage.removeItem(SAVE_KEY);
+}
+
+export function validateSaveSchema(value: unknown): value is GameState {
+  if (!isRecord(value)) return false;
+  if (value.version !== 1) return false;
+  if (!isRecord(value.player) || !isRecord(value.ui) || !isRecord(value.world) || !isRecord(value.entities) || !isRecord(value.quests)) return false;
+  const player = value.player;
+  if (typeof player.id !== 'string' || !isRecord(player.inventory) || !isRecord(player.equipment) || !isRecord(player.skills)) return false;
+  return true;
+}
+
+function sanitizeForSave(state: GameState): GameState {
+  const initialDev = createInitialDevState(state.clock);
+  const movement = state.player.movement;
+  return {
+    ...state,
+    saveVersion: CURRENT_SAVE_VERSION,
+    floatingTexts: [],
+    projectiles: [],
+    gathering: null,
+    bandage: null,
+    spellCasting: null,
+    player: {
+      ...state.player,
+      activeTargetId: null,
+      targetPosition: null,
+      movement: {
+        ...movement,
+        velocity: { x: 0, z: 0 },
+        intent: null,
+        intentUntil: 0,
+        path: [],
+        waypoint: null,
+        tile: { x: Math.round(state.player.position.x), z: Math.round(state.player.position.z) }
+      },
+      actionState: createIdleActionState(state.clock)
+    },
+    ui: {
+      ...state.ui,
+      hoverTarget: null,
+      selectedTarget: null,
+      targeting: null,
+      contextMenu: null,
+      hotbarAssignSpellId: null
+    },
+    realtime: {
+      ...state.realtime,
+      actionQueue: [],
+      actionHistory: [],
+      pendingAction: null,
+      lastFrameDelta: 0,
+      renderAlpha: 1
+    },
+    dev: {
+      ...state.dev,
+      overlay: false,
+      telemetryExportJson: '',
+      renderStats: { ...initialDev.renderStats },
+      input: { ...initialDev.input },
+      stability: { ...initialDev.stability },
+      facingDebug: { ...initialDev.facingDebug }
+    },
+    paused: false
+  };
+}
+
+function sanitizeLoadedTransientState(state: GameState): void {
+  state.floatingTexts = [];
+  state.projectiles = [];
+  state.gathering = null;
+  state.bandage = null;
+  state.spellCasting = null;
+  state.paused = false;
+  state.player.activeTargetId = null;
+  state.player.targetPosition = null;
+  state.player.movement.velocity = { x: 0, z: 0 };
+  state.player.movement.intent = null;
+  state.player.movement.intentUntil = 0;
+  state.player.movement.path = [];
+  state.player.movement.waypoint = null;
+  state.player.movement.tile = { x: Math.round(state.player.position.x), z: Math.round(state.player.position.z) };
+  state.player.actionState = createIdleActionState(state.clock ?? 0);
+  state.ui.hoverTarget = null;
+  state.ui.selectedTarget = null;
+  state.ui.targeting = null;
+  state.ui.contextMenu = null;
+  state.ui.hotbarAssignSpellId = null;
+  state.realtime.actionQueue = [];
+  state.realtime.actionHistory = [];
+  state.realtime.pendingAction = null;
+  state.realtime.lastFrameDelta = 0;
+  state.realtime.renderAlpha = 1;
+  const initialDev = createInitialDevState(state.clock ?? 0);
+  state.dev.overlay = false;
+  state.dev.telemetryExportJson = '';
+  state.dev.renderStats = { ...initialDev.renderStats };
+  state.dev.input = { ...initialDev.input };
+  state.dev.stability = { ...initialDev.stability };
+  state.dev.facingDebug = { ...initialDev.facingDebug };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function migrateLegacySkill(state: GameState, from: string, to: string): void {

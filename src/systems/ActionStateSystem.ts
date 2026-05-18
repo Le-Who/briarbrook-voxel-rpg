@@ -11,7 +11,8 @@ const DEFAULT_DURATIONS: Record<ActionStateKind, number> = {
   dead: 0,
   hidden: 0.25,
   interacting: 0.4,
-  building: 0.2
+  building: 0.2,
+  transitioning: 0.1
 };
 
 const INTERRUPTIBLE: Record<ActionStateKind, boolean> = {
@@ -24,7 +25,8 @@ const INTERRUPTIBLE: Record<ActionStateKind, boolean> = {
   dead: false,
   hidden: true,
   interacting: true,
-  building: true
+  building: true,
+  transitioning: false
 };
 
 export function setPlayerActionState(state: GameState, kind: ActionStateKind, duration = DEFAULT_DURATIONS[kind], source?: string): void {
@@ -43,7 +45,7 @@ export function refreshPlayerActionState(state: GameState): void {
   const action = state.player.actionState;
   if (action.kind === 'dead') return;
   if (action.kind === 'stunned' && action.endsAt > state.clock) return;
-  if ((action.kind === 'moving' || action.kind === 'attacking' || action.kind === 'interacting' || action.kind === 'building' || action.kind === 'hidden') && action.endsAt > state.clock) return;
+  if ((action.kind === 'moving' || action.kind === 'attacking' || action.kind === 'interacting' || action.kind === 'building' || action.kind === 'hidden' || action.kind === 'transitioning') && action.endsAt > state.clock) return;
   if (state.spellCasting) {
     setPlayerActionState(state, 'casting', state.spellCasting.remaining, state.spellCasting.spellId);
     return;

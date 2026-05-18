@@ -2,6 +2,7 @@ import type { GameState, Vec3 } from '../game/types';
 import type { AreaManager } from '../world/AreaManager';
 import { interruptPlayerAction, isPlayerStunned, refreshPlayerActionState, setPlayerActionState } from './ActionStateSystem';
 import { addSystemMessage } from './ChatSystem';
+import { faceActorTowardPosition, facePlayerFromVelocity, releaseFacingLock } from './FacingSystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
 
 export function movePlayerBy(state: GameState, areaManager: AreaManager, dx: number, dz: number): void {
@@ -13,17 +14,27 @@ export function movePlayerBy(state: GameState, areaManager: AreaManager, dx: num
   state.player.movement.path = [];
   state.player.movement.waypoint = null;
   state.player.targetPosition = null;
+  releaseFacingLock(state.player);
+  facePlayerFromVelocity(state, state.player.movement.intent);
   checkStealthMovement(state);
 }
 
-export function setMoveTarget(state: GameState, areaManager: AreaManager, position: Vec3): void {
-  if (isPlayerStunned(state)) return;
+export function setMoveTarget(state: GameState, areaManager: AreaManager, position: Vec3): boolean {
+  if (isPlayerStunned(state)) return false;
   interruptPlayerAction(state, 'movement');
   state.player.targetPosition = { x: Math.round(position.x), y: 0, z: Math.round(position.z) };
   state.player.movement.intent = null;
   state.player.movement.path = buildPath(state, areaManager, state.player.targetPosition);
+  if (!state.player.movement.path.length) {
+    clearPath(state);
+    state.ui.prompt = 'Path blocked.';
+    return false;
+  }
   state.player.movement.waypoint = state.player.movement.path.shift() ?? state.player.targetPosition;
+  releaseFacingLock(state.player);
+  faceActorTowardPosition(state.player, state.player.position, state.player.movement.waypoint, 'movement', state.clock, { force: true });
   checkStealthMovement(state);
+  return true;
 }
 
 export function updatePlayerMovement(state: GameState, areaManager: AreaManager, dt: number): void {
@@ -74,6 +85,7 @@ export function updatePlayerMovement(state: GameState, areaManager: AreaManager,
   const nextSpeed = moveToward(currentSpeed, targetSpeed, acceleration * dt);
   const dir = desired ?? (currentSpeed > 0 ? { x: movement.velocity.x / currentSpeed, z: movement.velocity.z / currentSpeed } : { x: 0, z: 0 });
   movement.velocity = { x: dir.x * nextSpeed, z: dir.z * nextSpeed };
+  if (desired && nextSpeed > 0.04) facePlayerFromVelocity(state, movement.velocity);
 
   const nextX = player.x + movement.velocity.x * dt;
   const nextZ = player.z + movement.velocity.z * dt;
@@ -134,7 +146,7 @@ function buildPath(state: GameState, areaManager: AreaManager, target: Vec3): Ve
   }
 
   const goalKey = key(goal.x, goal.z);
-  if (!cameFrom.has(goalKey)) return [{ x: goal.x, y: 0, z: goal.z }];
+  if (!cameFrom.has(goalKey)) return [];
   const path: Vec3[] = [];
   let cursor: string | null = goalKey;
   while (cursor) {

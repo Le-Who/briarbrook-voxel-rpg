@@ -9,6 +9,7 @@ import type { AreaManager } from '../world/AreaManager';
 import { updateBuildGhost } from './BuildingSystem';
 import { addChat, addSystemMessage } from './ChatSystem';
 import { calculateDerivedStats } from './EquipmentSystem';
+import { faceEntityTowardPosition, facePlayerTowardEntity } from './FacingSystem';
 import { pickupLoot } from './LootSystem';
 import { addFloatingText } from './LootSystem';
 import { completeQuest, recordQuestEvent, refreshQuestProgress } from './QuestSystem';
@@ -20,6 +21,7 @@ import { registerResourceHarvest, resourceYieldModifier } from './LivingWorldSys
 import { degradeToolForGathering, findUsableTool } from './EconomySystem';
 import { recordResourceYield } from './TelemetrySystem';
 import { interactContainer } from './ContainerSystem';
+import { transitionPlayerToArea } from './TransitionSystem';
 
 function randomInt(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min + 1));
@@ -53,11 +55,14 @@ export function interactEntity(state: GameState, areaManager: AreaManager, entit
   }
 
   if (entity.kind === 'portal') {
+    facePlayerTowardEntity(state, entity.id, 'interact', 0.25);
     enterThroughPortal(state, areaManager, entity);
     return;
   }
 
   if (entity.kind === 'npc' || entity.kind === 'social') {
+    facePlayerTowardEntity(state, entity.id, 'interact', 0.55);
+    faceEntityTowardPosition(entity, state.player.position, 'interact', state.clock, 0.75);
     const line = entity.dialogue[Math.floor(Math.random() * entity.dialogue.length)];
     addChat(state, line, { speaker: entity.name, tone: entity.role === 'merchant' ? 'trade' : 'normal' });
     recordQuestEvent(state, { type: 'talk', npcName: entity.name });
@@ -106,33 +111,26 @@ export function interactEntity(state: GameState, areaManager: AreaManager, entit
   }
 
   if (entity.kind === 'loot') {
+    facePlayerTowardEntity(state, entity.id, 'interact', 0.25);
     pickupLoot(state, entity.id);
     return;
   }
 
   if (entity.kind === 'container') {
+    facePlayerTowardEntity(state, entity.id, 'interact', 0.35);
     interactContainer(state, entity);
   }
 }
 
 function enterThroughPortal(state: GameState, areaManager: AreaManager, portal: PortalEntity): void {
   const destination = portal.destination;
-  state.player.currentArea = destination;
-  state.player.position = portal.spawn ? { ...portal.spawn } : areaManager.getSpawn(destination);
-  state.player.targetPosition = null;
-  state.player.movement.intent = null;
-  state.player.movement.velocity = { x: 0, z: 0 };
-  state.player.movement.path = [];
-  state.player.movement.waypoint = null;
-  state.player.movement.tile = { x: Math.round(state.player.position.x), z: Math.round(state.player.position.z) };
-  state.player.activeTargetId = null;
-  state.realtime.pendingAction = null;
-  state.gathering = null;
-  state.spellCasting = null;
-  state.bandage = null;
-  state.ui.hoverTarget = null;
-  state.ui.selectedTarget = null;
-  state.ui.targeting = null;
+  transitionPlayerToArea(state, areaManager, destination, {
+    portalId: portal.id,
+    requestedSpawn: portal.spawn,
+    avoidPortalIds: Object.values(state.entities)
+      .filter((entity) => entity.kind === 'portal' && entity.area === destination)
+      .map((entity) => entity.id)
+  });
   state.ui.selectedInventorySlot = null;
   state.ui.selectedBankSlot = null;
   state.ui.trade = null;
@@ -146,7 +144,6 @@ function enterThroughPortal(state: GameState, areaManager: AreaManager, portal: 
   state.ui.panels.skills = false;
   state.buildMode.active = false;
   state.ui.fadeUntil = state.clock + 0.45;
-  state.world.discoveredAreas = Array.from(new Set([...state.world.discoveredAreas, destination]));
   recordQuestEvent(state, { type: 'enter_area', areaId: destination });
 
   if (destination === 'bank') {
@@ -212,6 +209,7 @@ export function gatherResource(state: GameState, entityId: string): void {
   const baseDuration = entity.baseDuration ?? definition.baseDuration;
   const duration = Math.max(0.9, baseDuration - skillValue * 0.012);
   state.player.targetPosition = null;
+  facePlayerTowardEntity(state, entity.id, 'gathering', duration + 0.2);
   state.gathering = {
     entityId: entity.id,
     actionLabel: `${definition.actionVerb} ${entity.name}`,

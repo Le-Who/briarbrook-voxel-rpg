@@ -10,6 +10,7 @@ import { addItem } from './InventorySystem';
 import { refreshQuestProgress } from './QuestSystem';
 import { recordGoldDelta, exportTelemetryJson } from './TelemetrySystem';
 import { findDevScenePreset } from '../tools/devScenes';
+import { transitionPlayerToArea } from './TransitionSystem';
 
 export function devTeleportToScene(state: GameState, areaManager: AreaManager, sceneId: string): void {
   const scene = findDevScenePreset(sceneId);
@@ -175,23 +176,7 @@ export function devExportTelemetry(state: GameState): void {
 }
 
 function teleportPlayer(state: GameState, areaManager: AreaManager, areaId: AreaId, position = areaManager.getSpawn(areaId)): void {
-  state.player.currentArea = areaId;
-  state.player.position = { ...position };
-  state.player.targetPosition = null;
-  state.player.movement.intent = null;
-  state.player.movement.velocity = { x: 0, z: 0 };
-  state.player.movement.path = [];
-  state.player.movement.waypoint = null;
-  state.player.movement.tile = { x: Math.round(position.x), z: Math.round(position.z) };
-  state.player.activeTargetId = null;
-  state.gathering = null;
-  state.spellCasting = null;
-  state.bandage = null;
-  state.realtime.pendingAction = null;
-  state.ui.hoverTarget = null;
-  state.ui.selectedTarget = null;
-  state.ui.targeting = null;
-  state.ui.contextMenu = null;
+  transitionPlayerToArea(state, areaManager, areaId, { requestedSpawn: position });
   state.ui.trade = null;
   state.ui.merchant = null;
   state.ui.panels.trade = false;
@@ -200,5 +185,4 @@ function teleportPlayer(state: GameState, areaManager: AreaManager, areaId: Area
   state.ui.panels.crafting = false;
   state.ui.panels.build = false;
   state.buildMode.active = false;
-  state.world.discoveredAreas = Array.from(new Set([...state.world.discoveredAreas, areaId]));
 }

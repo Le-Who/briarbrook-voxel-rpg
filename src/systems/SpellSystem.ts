@@ -8,6 +8,7 @@ import { refreshPlayerActionState, setPlayerActionState } from './ActionStateSys
 import { addSystemMessage } from './ChatSystem';
 import { revealMagicalContainers, unlockContainerWithSpell } from './ContainerSystem';
 import { calculateDerivedStats } from './EquipmentSystem';
+import { facePlayerTowardTarget } from './FacingSystem';
 import { addItem, hasItems, removeItems } from './InventorySystem';
 import { addFloatingText, pickupLoot, spawnLootFromEnemy } from './LootSystem';
 import { recordKill, recordQuestEvent } from './QuestSystem';
@@ -65,6 +66,7 @@ export function castSpellIntent(state: GameState, spellId: string, target: Targe
     state.player.combatProfile.hiddenUntil = 0;
     addSystemMessage(state, 'You reveal yourself by casting.');
   }
+  facePlayerTowardTarget(state, resolved, 'cast', spell.castTime + 0.25);
   state.player.mana = Math.max(0, state.player.mana - spell.manaCost);
   spell.reagents.forEach((req) => removeItems(state.player.inventory, req.itemId, req.quantity));
   state.spellCasting = {
@@ -88,6 +90,7 @@ export function updateSpellCasting(state: GameState, dt: number): void {
   state.spellCasting = null;
   const spell = spellDefs[casting.spellId];
   if (!spell) return;
+  facePlayerTowardTarget(state, casting.target, 'cast', 0.2);
   completeSpell(state, spell, casting.target);
   refreshPlayerActionState(state);
 }

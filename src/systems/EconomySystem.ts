@@ -7,7 +7,7 @@ import { addSystemMessage } from './ChatSystem';
 import { adjustTownStanding } from './CrimeSystem';
 import { addItem, getItemCount, hasItems, removeItems } from './InventorySystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
-import { recordGoldDelta, recordItemConsumed, recordItemSold, recordMarketTransaction, recordPriceTrend, recordResourceOutflow, recordWorkOrderCompleted } from './TelemetrySystem';
+import { recordGoldDelta, recordItemConsumed, recordItemSold, recordMarketTransaction, recordPriceTrend, recordRepairCompleted, recordResourceOutflow, recordWorkOrderCompleted } from './TelemetrySystem';
 
 export function isBroken(stack: ItemStack | null | undefined): boolean {
   return Boolean(stack?.maxDurability && (stack.durability ?? stack.maxDurability) <= 0);
@@ -162,6 +162,7 @@ export function repairEquippedItem(state: GameState, slot: EquipmentSlot): boole
     stack.durability = stack.maxDurability;
     addSystemMessage(state, `${itemDefs[stack.itemId]?.name ?? stack.itemId} repaired.`);
   }
+  recordRepairCompleted(state);
   pushTransaction(state, { kind: 'repair', itemId: stack.itemId, quantity: materialCost, gold: 0, actor: 'Valen' });
   return !failure;
 }

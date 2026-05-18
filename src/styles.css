@@ -99,7 +99,8 @@ button:hover {
 }
 
 .hud-layer,
-.label-layer {
+.label-layer,
+.tooltip-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -179,6 +180,73 @@ button:hover {
   height: 24px;
   line-height: 20px;
   padding: 0;
+}
+
+.managed-window {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.managed-window > header {
+  flex: 0 0 auto;
+  cursor: move;
+}
+
+.managed-window > header button,
+.managed-window input,
+.managed-window button {
+  cursor: pointer;
+}
+
+.window-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.window-resize-handle::before {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid rgba(240, 201, 87, 0.72);
+  border-bottom: 2px solid rgba(240, 201, 87, 0.72);
+}
+
+.managed-window .help-body,
+.managed-window .skills-list,
+.managed-window .journal-body,
+.managed-window .market-columns,
+.managed-window .spellbook-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.managed-window.spellbook-panel .spellbook-body,
+.managed-window.market-panel .market-columns {
+  display: grid;
+}
+
+.managed-window.spellbook-panel .spell-circles,
+.managed-window.spellbook-panel .spell-detail {
+  min-height: 0;
+  overflow: auto;
+}
+
+.managed-window.inventory-panel .slot-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .player-status {
@@ -304,7 +372,7 @@ button:hover {
 .quick-buttons {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(27px, 1fr));
   gap: 4px;
 }
 
@@ -346,6 +414,8 @@ button:hover {
   padding: 10px 12px 12px;
   max-height: calc(100vh - 150px);
   overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .help-body p {
@@ -376,9 +446,26 @@ button:hover {
   align-items: center;
   width: 100%;
   min-width: 0;
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start !important;
+  gap: 6px 8px !important;
+  width: 100%;
+  min-width: 0;
+}
+
+.help-setting > span {
+  flex: 1 1 118px;
+  min-width: 96px;
+}
+
+.help-setting > b {
+  flex: 0 0 auto;
 }
 
 .help-setting button {
+  flex: 0 0 auto;
   min-width: 34px;
   padding: 0 8px;
 }
@@ -749,8 +836,10 @@ button:hover {
 .guide-panel {
   position: absolute;
   right: 278px;
-  top: 408px;
+  top: 344px;
   width: 270px;
+  max-height: calc(100vh - 448px);
+  overflow: auto;
   z-index: 26;
 }
 
@@ -910,6 +999,30 @@ button:hover {
   margin: 0;
   color: #f0c957;
   font-size: 16px;
+}
+
+.journal-section.route {
+  grid-column: 1 / -1;
+}
+
+.journal-route-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.journal-route-list article {
+  min-height: 58px;
+  align-content: start;
+}
+
+.journal-route-list article.done {
+  border-color: rgba(112, 214, 154, 0.42);
+}
+
+.journal-route-list article.todo:first-of-type {
+  border-color: rgba(240, 201, 87, 0.55);
+  background: rgba(240, 201, 87, 0.08);
 }
 
 .journal-section article {
@@ -1137,7 +1250,7 @@ button:hover {
   position: absolute;
   left: 12px;
   bottom: 92px;
-  width: 390px;
+  width: 360px;
   z-index: 8;
 }
 
@@ -1156,7 +1269,7 @@ button:hover {
 }
 
 .chat-log {
-  height: 148px;
+  height: 112px;
   padding: 8px 12px;
   overflow: hidden;
   background: rgba(5, 6, 5, 0.42);
@@ -1448,6 +1561,7 @@ button:hover {
   top: 76px;
   width: 720px;
   max-width: calc(100vw - 32px);
+  width: min(760px, calc(100vw - 40px));
   max-height: min(620px, calc(100vh - 172px));
   z-index: 34;
 }
@@ -1463,7 +1577,7 @@ button:hover {
   transform: translateX(-50%);
 }
 
-.spellbook-body {
+.spellbook-filters {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) 245px;
   min-height: 0;
@@ -1534,21 +1648,92 @@ button:hover {
 .spell-list.list-view {
   display: grid;
   gap: 5px;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
-.spell-circle h3,
+.spellbook-search {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 9px;
+  color: #f5ead2;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+}
+
+.spellbook-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.spellbook-filter-row button {
+  min-height: 28px;
+  padding: 3px 7px;
+  font-size: 12px;
+}
+
+.spellbook-filter-row button.active,
+.spell-card.active,
+.spell-row.active {
+  color: #ffe87f;
+  border-color: #f0c957;
+  background: #302417;
+}
+
+.spellbook-body {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(260px, 310px);
+  min-height: 0;
+}
+
+.spell-list {
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+  border-right: 1px solid var(--line-soft);
+}
+
+.spell-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+  gap: 8px;
+}
+
+.spell-circle-group {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.spell-circle-group h3,
 .spell-detail h3,
 .spell-detail h4 {
   margin: 0 0 8px;
   color: #f2d992;
 }
 
-.spell-circle {
-  min-width: 0;
+.spell-card {
+  display: grid;
+  grid-template-rows: 34px minmax(32px, auto) auto;
+  justify-items: center;
+  align-content: start;
+  gap: 4px;
+  min-height: 116px;
+  padding: 8px 6px;
+  text-align: center;
 }
 
-.spell-entry {
-  position: relative;
+.spell-card .item-icon,
+.locked-spell-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.locked-spell-icon {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto auto auto;
   align-items: center;
@@ -1556,16 +1741,80 @@ button:hover {
   width: 100%;
   min-height: 40px;
   padding: 4px;
+  place-items: center;
+  border: 1px solid var(--line-soft);
+  color: #c6bba5;
+  background: rgba(0, 0, 0, 0.34);
+  font-weight: 800;
+}
+
+.locked-spell-icon.large {
+  width: 44px;
+  height: 44px;
+}
+
+.spell-card-name {
+  display: block;
+  max-width: 100%;
+  color: #f4e6c4;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+.spell-card-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 5px;
+  width: 100%;
+  color: #c7bca6;
+  font-size: 11px;
+}
+
+.spell-card-meta i,
+.spell-card-meta em,
+.spell-card-meta small {
+  font-style: normal;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spell-card-meta em {
+  grid-column: 1 / -1;
+}
+
+.spell-card.unknown {
+  opacity: 0.72;
+}
+
+.spell-list-view {
+  display: grid;
+  gap: 4px;
+}
+
+.spell-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 42px 82px 54px 88px;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 5px 7px;
   text-align: left;
 }
 
-.spell-entry .item-icon {
-  width: 28px;
-  height: 28px;
+.spell-row span,
+.spell-row i,
+.spell-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
 }
 
-.spell-entry small {
-  display: block;
+.spell-row small {
   color: #c7bca6;
 }
 
@@ -1609,8 +1858,27 @@ button:hover {
 }
 
 .spell-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px;
   overflow: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.spell-detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.spell-detail-actions {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
 }
 
 .spell-title {
@@ -1675,10 +1943,16 @@ button:hover {
 .secondary-action {
   width: 100%;
   min-height: 34px;
+  margin-top: 6px;
 }
 
 .primary.disabled {
   opacity: 0.62;
+}
+
+.spell-assign-hint {
+  margin-top: 8px;
+  color: #8bd9ff;
 }
 
 .skill-total {
@@ -1712,6 +1986,52 @@ button:hover {
   color: #ffe87f;
   border-color: #f0c957;
   background: rgba(66, 54, 28, 0.82);
+}
+
+.skill-view-tabs,
+.skill-filter-row,
+.profession-lenses,
+.atlas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+.skill-view-tabs button,
+.skill-filter-row button,
+.profession-lenses button,
+.atlas-toolbar button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.skill-view-tabs button.active,
+.skill-filter-row button.active,
+.profession-lenses button.active {
+  color: #ffe87f;
+  border-color: #f0c957;
+  background: rgba(240, 201, 87, 0.1);
+}
+
+.skills-subhead {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 4px;
+}
+
+.skills-subhead h3 {
+  margin: 0;
+  color: #f0c957;
+  font-size: 15px;
+}
+
+.skills-subhead span {
+  color: var(--muted);
+  line-height: 1.25;
 }
 
 .skill-tabs {
@@ -1822,6 +2142,19 @@ button:hover {
   gap: 2px;
 }
 
+.skill-row.ledger-row {
+  grid-template-columns: 28px minmax(150px, 1.2fr) 64px 30px minmax(120px, 1fr) minmax(130px, 1fr);
+  padding: 6px 0;
+}
+
+.skill-row.ledger-row.not-trainable {
+  opacity: 0.68;
+}
+
+.skill-row.ledger-row.recent {
+  background: rgba(240, 201, 87, 0.05);
+}
+
 .skill-row span small {
   display: block;
   color: var(--muted);
@@ -1849,9 +2182,31 @@ button:hover {
   pointer-events: none;
 }
 
-.skill-row:hover::after,
-.spell-entry:hover::after {
+.skill-row strong {
+  color: #eee5d4;
+  font-weight: 700;
+}
+
+.skill-row b small,
+.ledger-meta small {
   display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.ledger-meta {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ledger-meta em {
+  overflow: hidden;
+  color: #ddd8cb;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-row .item-icon {
@@ -2013,6 +2368,51 @@ button:hover {
   stroke-width: 0.8;
 }
 
+.profession-atlas-panel,
+.mastery-panel,
+.skill-ledger {
+  min-height: 0;
+}
+
+.atlas-toolbar {
+  justify-content: flex-start;
+  color: #d8cfbf;
+}
+
+.atlas-toolbar b {
+  color: #f6de70;
+}
+
+.atlas-scroll {
+  margin: 8px;
+  height: min(520px, calc(100vh - 310px));
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  background: rgba(4, 5, 4, 0.34);
+}
+
+.atlas-canvas {
+  position: relative;
+  min-width: 900px;
+  min-height: 560px;
+}
+
+.atlas-links {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.atlas-links line {
+  stroke: rgba(216, 207, 191, 0.26);
+  stroke-width: 2;
+}
+
+.atlas-links line.highlighted {
+  stroke: rgba(240, 201, 87, 0.82);
+  stroke-width: 3;
+}
+
 .atlas-node {
   position: absolute;
   left: calc(var(--x) * 1%);
@@ -2030,6 +2430,19 @@ button:hover {
 .atlas-node b {
   display: block;
   overflow: hidden;
+  display: grid;
+  gap: 1px;
+  width: 126px;
+  min-height: 46px;
+  padding: 6px 8px;
+  text-align: left;
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(20, 23, 20, 0.94);
+}
+
+.atlas-node b {
+  overflow: hidden;
+  color: #eee5d4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2168,6 +2581,104 @@ button:hover {
 .mastery-reqs span.done {
   color: #d9f4c9;
   border-color: #4b8f53;
+}
+
+.atlas-node small {
+  color: var(--muted);
+}
+
+.atlas-node.highlighted {
+  border-color: rgba(240, 201, 87, 0.72);
+  box-shadow: 0 0 0 1px rgba(240, 201, 87, 0.16);
+}
+
+.atlas-node.pinned {
+  outline: 2px solid #8bd9ff;
+  outline-offset: 1px;
+}
+
+.atlas-node.not-trainable {
+  opacity: 0.48;
+  border-style: dashed;
+}
+
+.atlas-node.profession {
+  background: rgba(58, 45, 24, 0.96);
+}
+
+.atlas-node.milestone {
+  background: rgba(36, 42, 36, 0.96);
+}
+
+.atlas-loop-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.atlas-loop-list span {
+  padding: 5px 7px;
+  color: #ddd8cb;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.milestone-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: min(560px, calc(100vh - 230px));
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.milestone-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.milestone-card.earned {
+  border-color: rgba(112, 214, 154, 0.5);
+}
+
+.milestone-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.milestone-card header b {
+  color: #f6de70;
+}
+
+.milestone-card header span {
+  color: #8bd9ff;
+}
+
+.milestone-reqs {
+  display: grid;
+  gap: 4px;
+}
+
+.milestone-reqs p {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: #d8cfbf;
+}
+
+.milestone-reqs p.done {
+  color: #70d69a;
+}
+
+.milestone-card small {
+  color: var(--muted);
+  line-height: 1.25;
 }
 
 .bank-panel {
@@ -2691,7 +3202,7 @@ button:hover {
 .prompt {
   position: absolute;
   left: 50%;
-  bottom: 84px;
+  bottom: 92px;
   transform: translateX(-50%);
   padding: 7px 12px;
   max-width: 520px;
@@ -2851,6 +3362,68 @@ button:hover {
   background: #f1eee0;
 }
 
+.tooltip-layer {
+  z-index: 95;
+}
+
+.game-tooltip {
+  position: absolute;
+  display: grid;
+  gap: 3px;
+  max-width: 300px;
+  padding: 8px 9px;
+  color: #f5ead2;
+  white-space: normal;
+  text-align: left;
+  background: rgba(12, 13, 12, 0.97);
+  border: 1px solid rgba(232, 205, 148, 0.58);
+  border-radius: 5px;
+  box-shadow: 0 10px 24px var(--shadow);
+  pointer-events: none;
+}
+
+.game-tooltip strong {
+  color: #f3d78e;
+  line-height: 1.15;
+}
+
+.game-tooltip span {
+  color: #d8cfbf;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.tooltip-debug {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 96;
+  width: 260px;
+  padding: 8px;
+  color: #dfeff5;
+  background: rgba(5, 8, 9, 0.88);
+  border: 1px solid rgba(111, 212, 255, 0.4);
+  border-radius: 5px;
+  font: 11px "Cascadia Mono", "Consolas", monospace;
+  pointer-events: none;
+}
+
+.tooltip-debug p {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 6px;
+  margin: 0 0 3px;
+}
+
+.tooltip-debug span {
+  color: #9fb6bf;
+}
+
+.tooltip-debug b {
+  color: #f7f2df;
+  overflow-wrap: anywhere;
+}
+
 .world-label {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -2992,6 +3565,22 @@ button:hover {
   font-size: 13px;
 }
 
+.context-menu button:disabled {
+  color: #8f887b;
+  border-color: rgba(255, 255, 255, 0.12);
+  cursor: help;
+  opacity: 0.72;
+}
+
+.target-hint.valid-target {
+  border-color: rgba(95, 210, 115, 0.7);
+}
+
+.target-hint.invalid-target {
+  border-color: rgba(255, 119, 119, 0.72);
+  color: #ffd1c8;
+}
+
 .damage-indicator {
   position: absolute;
   inset: 0;
@@ -3066,6 +3655,18 @@ button:hover {
   }
 
   .journal-body {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-row.ledger-row {
+    grid-template-columns: 28px 1fr 58px 30px;
+  }
+
+  .ledger-meta {
+    grid-column: 2 / -1;
+  }
+
+  .milestone-list {
     grid-template-columns: 1fr;
   }
 

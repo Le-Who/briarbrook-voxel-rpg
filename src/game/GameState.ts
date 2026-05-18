@@ -9,6 +9,7 @@ import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
 import { createInitialRenderStats } from '../render/RenderBudgets';
+import { createFacingState } from '../systems/FacingSystem';
 import type {
   ActionState,
   ContentValidationState,
@@ -93,19 +94,29 @@ export function createInitialDevState(clock = 0): DevToolState {
     contentValidation: createInitialContentValidationState(clock),
     telemetry: {
       startedAt: clock,
+      firstHourPathCompletionTime: null,
       damageDealtBySource: {},
       damageTaken: 0,
+      skillEvents: {},
       skillGains: {},
       resourceYields: {},
       resourceOutflow: {},
       itemsSold: {},
       itemsConsumed: {},
+      bandagesApplied: 0,
+      combatBandagesApplied: 0,
+      repairsCompleted: 0,
       workOrdersCompleted: 0,
       marketTransactions: 0,
       goldEarned: 0,
       goldSpent: 0,
       potionConsumption: {},
       deathCount: 0,
+      stuckRecoveryEvents: 0,
+      transitionFallbacks: 0,
+      tooltipRemounts: 0,
+      uiResetUsage: 0,
+      actionCancellations: {},
       questCompletionTime: {},
       priceTrends: {}
     },
@@ -124,6 +135,20 @@ export function createInitialDevState(clock = 0): DevToolState {
       targetMode: null,
       viewport: 'unknown',
       uiScale: 1
+    },
+    stability: {
+      lastMovementCommandAt: clock,
+      lastMovementCommandSource: 'none',
+      lastActionCancellationReason: 'none',
+      currentPortalId: null,
+      lastTransition: null,
+      safeSpawnFallbackCount: 0
+    },
+    facingDebug: {
+      showFacingArrows: false,
+      showDesiredFacingArrows: false,
+      showVelocityVectors: false,
+      showLookAtLines: false
     }
   };
 }
@@ -131,6 +156,7 @@ export function createInitialDevState(clock = 0): DevToolState {
 const npc = (entity: Omit<NpcEntity, 'kind' | 'blocksMovement'> & { kind?: NpcEntity['kind']; blocksMovement?: boolean }): NpcEntity => ({
   kind: entity.kind ?? 'npc',
   blocksMovement: entity.blocksMovement ?? true,
+  facing: createFacingState(0),
   ...entity
 });
 
@@ -194,6 +220,7 @@ const enemy = (
   discordAmount: 0,
   provokedTargetId: null,
   position: { x, y: 0, z },
+  facing: createFacingState(0),
   blocksMovement: true,
   lootTable:
     enemyType === 'Undead'
@@ -370,6 +397,28 @@ export function createInitialEntities(): Record<string, Entity> {
       ]
     }),
     npc({ id: 'npc_aric_road', area: 'road', name: 'Aric', role: 'player', kind: 'social', position: { x: -2, y: 0, z: 2 }, dialogue: ['Bandits ahead. Stay sharp.'] }),
+    npc({ id: 'npc_guard_patrol_road', area: 'road', name: 'Guard Patrol', role: 'guard', position: { x: -6, y: 0, z: 4 }, dialogue: ['Ambush bend is ahead. Watch the cart and the brush.', 'The shrine is safe enough, but the cache markers keep moving.'] }),
+    npc({
+      id: 'npc_caravan_mara_road',
+      area: 'road',
+      name: 'Mara the Carter',
+      role: 'merchant',
+      position: { x: 4, y: 0, z: 6 },
+      dialogue: ['Bandits cracked an axle. Boards, gears, and bandages always sell on this road.', 'Bring spare materials later and the caravan pays better than town stalls.'],
+      tradeGold: 85,
+      tradeInventory: createInventory(8, [createStack('fresh_bread', 6), createStack('bandage', 4), createStack('torch', 2), createStack('gear', 1)])
+    }),
+    npc({ id: 'npc_hermit_forest', area: 'forest', name: 'Old Tamsin', role: 'quest', position: { x: -11, y: 0, z: 6 }, dialogue: ['The ancient yew regrows slowly. Cut it clean and come back another day.', 'Bandit tracks cross the moss near the mine approach. Look before you loot.'] }),
+    npc({
+      id: 'npc_plot_steward_housing',
+      area: 'housing',
+      name: 'Plot Steward Nessa',
+      role: 'merchant',
+      position: { x: -5, y: 0, z: -2 },
+      dialogue: ['The crate is yours. The bench frame shows what this plot wants next.', 'Storage, light, trophy, workbench: four small pieces make this place useful.'],
+      tradeGold: 60,
+      tradeInventory: createInventory(8, [createStack('wood', 8), createStack('stone_block', 6), createStack('torch', 4), createStack('crate_kit', 1)])
+    }),
     npc({ id: 'npc_liora_crypt', area: 'crypt', name: 'Liora', role: 'player', kind: 'social', position: { x: -7, y: 0, z: 1 }, dialogue: ['Ready when you are.', 'I got a bad feeling about this.'] }),
     portal('portal_bank', 'town', 'Bank Door', -8, -2, 'bank', { x: 0, y: 0, z: 5 }),
     portal('portal_smith', 'town', 'Smithy Door', 6, -3, 'blacksmith', { x: -5, y: 0, z: 4 }),
@@ -405,6 +454,144 @@ export function createInitialEntities(): Record<string, Entity> {
       gold: 6
     } as Entity,
     {
+      id: 'board_town_rumor',
+      kind: 'container',
+      area: 'town',
+      name: 'Rumor Board',
+      position: { x: 2, y: 0, z: 9 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'town',
+      accessRule: 'public',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'map_fragment', quantity: 1 },
+        { itemId: 'vendor_contract', quantity: 1 }
+      ],
+      gold: 0
+    } as Entity,
+    {
+      id: 'board_town_market',
+      kind: 'container',
+      area: 'town',
+      name: 'Market Board',
+      position: { x: 7, y: 0, z: 5 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'town',
+      accessRule: 'public',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [{ itemId: 'vendor_contract', quantity: 1 }],
+      gold: 0
+    } as Entity,
+    {
+      id: 'cart_road_broken_supply',
+      kind: 'container',
+      area: 'road',
+      name: 'Broken Supply Cart',
+      position: { x: 4, y: 0, z: 5 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      accessRule: 'abandoned',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'boards', quantity: 4 },
+        { itemId: 'gear', quantity: 1 }
+      ],
+      gold: 9
+    } as Entity,
+    {
+      id: 'shrine_road_wayside',
+      kind: 'container',
+      area: 'road',
+      name: 'Roadside Shrine',
+      position: { x: -3, y: 0, z: 7 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'road_shrine',
+      accessRule: 'public',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'ginseng', quantity: 2 },
+        { itemId: 'garlic', quantity: 2 }
+      ],
+      gold: 4
+    } as Entity,
+    {
+      id: 'tracks_road_bandit',
+      kind: 'container',
+      area: 'road',
+      name: 'Fresh Bandit Tracks',
+      position: { x: 1, y: 0, z: -5 },
+      blocksMovement: false,
+      locked: false,
+      opened: false,
+      hidden: false,
+      lockDifficulty: 0,
+      trap: null,
+      loot: [{ itemId: 'map_fragment', quantity: 1 }],
+      gold: 0
+    } as Entity,
+    {
+      id: 'cache_road_hidden',
+      kind: 'container',
+      area: 'road',
+      name: 'Hidden Road Cache',
+      position: { x: 8, y: 0, z: 4 },
+      blocksMovement: false,
+      locked: true,
+      opened: false,
+      hidden: true,
+      lockDifficulty: 24,
+      trap: {
+        armed: true,
+        detected: false,
+        difficulty: 22,
+        damage: 8
+      },
+      loot: [
+        { itemId: 'lockpick', quantity: 2 },
+        { itemId: 'repair_kit', quantity: 1 },
+        { itemId: 'map_fragment', quantity: 1 }
+      ],
+      gold: 18
+    } as Entity,
+    {
+      id: 'camp_forest_hunter',
+      kind: 'container',
+      area: 'forest',
+      name: 'Hunter Camp Supplies',
+      position: { x: -10, y: 0, z: 6 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      accessRule: 'abandoned',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'bandage', quantity: 2 },
+        { itemId: 'arrow', quantity: 12 },
+        { itemId: 'kindling', quantity: 4 }
+      ],
+      gold: 7
+    } as Entity,
+    {
       id: 'cache_forest_tracks',
       kind: 'container',
       area: 'forest',
@@ -421,6 +608,29 @@ export function createInitialEntities(): Record<string, Entity> {
         { itemId: 'lockpick', quantity: 2 }
       ],
       gold: 12
+    } as Entity,
+    {
+      id: 'door_crypt_side_room',
+      kind: 'container',
+      area: 'crypt',
+      name: 'Collapsed Mine Side Room',
+      position: { x: -6, y: 0, z: -7 },
+      blocksMovement: true,
+      locked: true,
+      opened: false,
+      hidden: false,
+      lockDifficulty: 28,
+      trap: {
+        armed: true,
+        detected: false,
+        difficulty: 26,
+        damage: 10
+      },
+      loot: [
+        { itemId: 'iron_ore', quantity: 6 },
+        { itemId: 'crypt_lore_clue', quantity: 1 }
+      ],
+      gold: 22
     } as Entity,
     {
       id: 'chest_crypt_warded',
@@ -489,11 +699,91 @@ export function createInitialEntities(): Record<string, Entity> {
       ],
       gold: 70
     } as Entity,
+    {
+      id: 'crate_plot_starter_resources',
+      kind: 'container',
+      area: 'housing',
+      name: 'Starter Resource Crate',
+      position: { x: -2, y: 0, z: 1 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'player',
+      accessRule: 'player_owned',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'wood', quantity: 8 },
+        { itemId: 'stone_block', quantity: 6 },
+        { itemId: 'torch', quantity: 2 }
+      ],
+      gold: 0
+    } as Entity,
+    {
+      id: 'bench_plot_frame',
+      kind: 'container',
+      area: 'housing',
+      name: 'Workbench Frame',
+      position: { x: 2, y: 0, z: -2 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'player',
+      accessRule: 'player_owned',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'gear', quantity: 1 },
+        { itemId: 'boards', quantity: 4 }
+      ],
+      gold: 0
+    } as Entity,
+    {
+      id: 'storage_plot_empty_chest',
+      kind: 'container',
+      area: 'housing',
+      name: 'Empty Storage Chest',
+      position: { x: -1, y: 0, z: -4 },
+      blocksMovement: true,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'player',
+      accessRule: 'player_owned',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [{ itemId: 'storage_chest', quantity: 1 }],
+      gold: 0
+    } as Entity,
+    {
+      id: 'hook_plot_trophy',
+      kind: 'container',
+      area: 'housing',
+      name: 'Trophy Hook',
+      position: { x: 4, y: 0, z: 3 },
+      blocksMovement: false,
+      locked: false,
+      opened: false,
+      hidden: false,
+      protected: true,
+      ownerId: 'player',
+      accessRule: 'player_owned',
+      lockDifficulty: 0,
+      trap: null,
+      loot: [{ itemId: 'vendor_contract', quantity: 1 }],
+      gold: 0
+    } as Entity,
     ...resourcePlacements.map(resource),
     enemy('enemy_skel_1', 'crypt', 'Skeletal Warrior', 'Undead', 5, 1, 0, 40, [5, 9]),
     enemy('enemy_skel_2', 'crypt', 'Skeletal Warrior', 'Undead', 5, 5, -2, 40, [5, 9]),
     enemy('enemy_skel_3', 'crypt', 'Skeletal Warrior', 'Undead', 6, 3, 5, 48, [6, 10]),
     enemy('enemy_cultist_1', 'crypt', 'Mage Cultist', 'Cultist', 7, -3, 4, 46, [5, 8], 'mage'),
+    enemy('enemy_bone_captain', 'crypt', 'Crypt Bone Captain', 'Undead', 8, 8, 3, 78, [8, 13]),
     enemy('enemy_bandit_1', 'road', 'Highway Bandit', 'Bandit', 4, 2, -2, 56, [5, 9]),
     enemy('enemy_bandit_2', 'road', 'Bandit Archer', 'Bandit', 4, 5, 1, 46, [4, 8], 'archer'),
     enemy('enemy_brigand_1', 'road', 'Brigand Swordsman', 'Bandit', 6, 7, -2, 70, [7, 11]),
@@ -528,7 +818,7 @@ export function createInitialGameState(): GameState {
 
   return {
     version: 1,
-    saveVersion: 2,
+    saveVersion: 3,
     clock: 0,
     paused: false,
     player: {
@@ -578,6 +868,12 @@ export function createInitialGameState(): GameState {
         waypoint: null,
         tile: { x: Math.round(areas.town.spawn.x), z: Math.round(areas.town.spawn.z) },
         maxSpeed: 4.8
+      },
+      facing: createFacingState(0),
+      combatPreferences: {
+        approachMode: 'assist',
+        autoAttackOnTargetSelect: false,
+        stopMovementWhenCasting: true
       },
       actionState: createIdleActionState(0),
       targetPosition: null,
@@ -638,6 +934,7 @@ export function createInitialGameState(): GameState {
     realtime: {
       tickRate: 30,
       fixedDelta: 1 / 30,
+      renderAlpha: 1,
       tick: 0,
       lastFrameDelta: 0,
       actionQueue: [],
@@ -678,7 +975,7 @@ export function createInitialGameState(): GameState {
         merchant: false,
         crafting: false,
         build: false,
-        quest: true
+        quest: false
       },
       selectedInventorySlot: null,
       selectedBankSlot: null,
@@ -698,6 +995,16 @@ export function createInitialGameState(): GameState {
       skillSearch: '',
       skillView: 'ledger',
       professionFilter: 'all',
+      spellbookSearch: '',
+      spellbookKnowledgeFilter: 'known',
+      spellbookCircleFilter: 'all',
+      spellbookRoleFilter: 'all',
+      spellbookViewMode: 'grid',
+      hotbarAssignSpellId: null,
+      skillsViewMode: 'ledger',
+      skillTrainableFilter: 'all',
+      skillRecentFilter: 'all',
+      skillProfessionFilter: 'all',
       professionAtlasZoom: 1,
       pinnedProfessionGoalId: null,
       devTravel: false,
@@ -712,7 +1019,11 @@ export function createInitialGameState(): GameState {
       hotbar: createDefaultHotbar(),
       uiScale: 1,
       reducedMotion: false,
-      prompt: 'Arrive in Briarbrook: talk to Mira at the fountain. Press E nearby or click her.',
+      cameraSmoothing: 'medium',
+      windowLayouts: {},
+      windowLayoutPreset: 'default',
+      windowFocusOrder: [],
+      prompt: 'Talk to Mira at the fountain. Press E nearby.',
       trade: null,
       merchant: null
     },

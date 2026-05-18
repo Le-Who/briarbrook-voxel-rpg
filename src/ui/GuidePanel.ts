@@ -20,6 +20,7 @@ export function GuidePanel(state: GameState): string {
     { text: 'Open Skills with K.', why: 'Shows what improves as you play.', skillId: 'Lumberjacking', done: objectiveDone('prepare_for_road', 'open_panel', 'Skills') || state.ui.panels.skills },
     { text: 'Open Inventory with I and check your kit.', why: 'You have an axe, pickaxe, bandages, and a beginner spellbook.', done: state.ui.panels.inventory || questDone('prepare_for_road') },
     { text: 'Press 7, then use your axe on a tree.', why: 'Tools gather materials and train skills.', skillId: 'Lumberjacking', done: objectiveDone('prepare_for_road', 'gather') || (state.player.skills.Lumberjacking?.realValue ?? 0) > 20 },
+    { text: 'Use a pickaxe on a mine rock.', why: 'Mining feeds Broms forge and adds a second tool skill.', skillId: 'Mining', done: objectiveDone('ore_for_brom', 'gather') || (state.dev.telemetry.resourceYields.iron_ore ?? 0) > 0 || (state.player.skills.Mining?.realValue ?? 0) > 25 },
     { text: 'Bank one spare resource with Eldon.', why: 'Banking protects materials and finishes the first town loop.', done: objectiveDone('prepare_for_road', 'bank') || getItemCount(state.player.bank, 'logs') > 0 || getItemCount(state.player.bank, 'iron_ore') > 0 },
     { text: 'Talk to Mira again to close the road kit.', why: 'Completing the first loop opens profession and survival leads.', done: questDone('prepare_for_road') },
     { text: 'Mine a forest rock face for Brom.', why: 'Mining shows that skills improve by doing, not by picking a class.', skillId: 'Mining', done: objectiveDone('ore_for_brom', 'gather') || (state.player.skills.Mining?.realValue ?? 0) > 20 },
@@ -37,7 +38,7 @@ export function GuidePanel(state: GameState): string {
   ];
   const next = steps.findIndex((step) => !step.done);
   const focus = steps[next] ?? steps[steps.length - 1];
-  const visible = steps.map((step, index) => ({ step, index })).filter(({ step, index }) => step.done || index === next || index === next + 1).slice(-5);
+  const visible = steps.map((step, index) => ({ step, index })).filter(({ step, index }) => step.done || index === next || index === next + 1).slice(-2);
   const skill = focus.skillId ? state.player.skills[focus.skillId] : null;
   const skillPct = skill ? Math.max(2, Math.min(100, ((skill.gainProgress ?? skill.xp) / skillXpThreshold(skill.realValue ?? skill.value)) * 100)) : 0;
   return `<section class="panel guide-panel">

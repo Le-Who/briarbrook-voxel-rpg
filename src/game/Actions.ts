@@ -1,4 +1,5 @@
-import type { AreaId, BuildPieceDef, ChatMessage, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, InputDebugState, SkillGainMode, StationType, TargetRef, Vec3, WorldPhase } from './types';
+import type { AreaId, BuildPieceDef, CameraSmoothingMode, ChatMessage, CombatApproachMode, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, InputDebugState, ManagedWindowId, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, UILayoutPreset, UIWindowLayout, Vec3, WorldPhase } from './types';
+import type { InteractionCommand } from '../systems/InteractionAffordanceSystem';
 
 export type GameAction =
   | { type: 'MOVE_BY'; dx: number; dz: number }
@@ -17,7 +18,7 @@ export type GameAction =
   | { type: 'CANCEL_TARGETING' }
   | { type: 'OPEN_CONTEXT_MENU'; target: TargetRef; x: number; y: number }
   | { type: 'CLOSE_CONTEXT_MENU' }
-  | { type: 'CONTEXT_ACTION'; command: 'talk' | 'trade' | 'attack' | 'inspect' | 'use_tool' | 'cast_spell' | 'detect_hidden' | 'remove_trap' | 'lockpick' | 'snoop' | 'steal' | 'follow' | 'mark' }
+  | { type: 'CONTEXT_ACTION'; command: InteractionCommand }
   | { type: 'TARGET_ENTITY'; entityId: string }
   | { type: 'TARGET_TILE'; areaId: AreaId; position: Vec3 }
   | { type: 'USE_TOOL_ON_TARGET'; toolItemId: string; target: TargetRef }
@@ -83,12 +84,23 @@ export type GameAction =
   | { type: 'SET_SPELLBOOK_FILTER'; filter: 'known' | 'all' | 'unknown' }
   | { type: 'SET_SPELLBOOK_VIEW'; view: 'grid' | 'list' }
   | { type: 'SET_JOURNAL_TAB'; tab: 'quests' | 'rumors' | 'skills' | 'spells' | 'locations' | 'tutorials' | 'workOrders' }
+  | { type: 'SET_SPELLBOOK_SEARCH'; search: string }
+  | { type: 'SET_SPELLBOOK_KNOWLEDGE_FILTER'; filter: SpellbookKnowledgeFilter }
+  | { type: 'SET_SPELLBOOK_CIRCLE_FILTER'; circle: number | 'all' }
+  | { type: 'SET_SPELLBOOK_ROLE_FILTER'; role: SpellbookRoleFilter }
+  | { type: 'SET_SPELLBOOK_VIEW_MODE'; mode: SpellbookViewMode }
+  | { type: 'BEGIN_HOTBAR_ASSIGNMENT'; spellId: string }
+  | { type: 'CANCEL_HOTBAR_ASSIGNMENT' }
   | { type: 'SET_CRAFT_QUANTITY'; quantity: number }
   | { type: 'SET_SKILL_MODE'; skillId: string; mode: SkillGainMode }
   | { type: 'SET_SKILL_GROUP'; group: string }
   | { type: 'SET_SKILL_SEARCH'; search: string }
   | { type: 'SET_SKILL_VIEW'; view: 'ledger' | 'atlas' | 'mastery' }
   | { type: 'SET_PROFESSION_FILTER'; professionId: string }
+  | { type: 'SET_SKILLS_VIEW_MODE'; mode: SkillsViewMode }
+  | { type: 'SET_SKILL_TRAINABLE_FILTER'; filter: SkillTrainableFilter }
+  | { type: 'SET_SKILL_RECENT_FILTER'; filter: SkillRecentFilter }
+  | { type: 'SET_SKILL_PROFESSION_FILTER'; filter: ProfessionLensFilter }
   | { type: 'SET_PROFESSION_ATLAS_ZOOM'; zoom: number }
   | { type: 'PIN_PROFESSION_GOAL'; goalId: string | null }
   | { type: 'TOGGLE_DEV_TRAVEL' }
@@ -105,6 +117,7 @@ export type GameAction =
   | { type: 'DEV_SIMULATE_TIME'; phase: WorldPhase }
   | { type: 'DEV_EXPORT_TELEMETRY' }
   | { type: 'UPDATE_INPUT_DEBUG'; patch: Partial<InputDebugState> }
+  | { type: 'TOGGLE_FACING_DEBUG'; key: keyof DevToolState['facingDebug'] }
   | { type: 'SET_CHAT_TAB'; channel: ChatMessage['channel'] }
   | { type: 'SEND_CHAT'; text: string }
   | { type: 'USE_HOTBAR'; slot: number }
@@ -114,6 +127,14 @@ export type GameAction =
   | { type: 'SHOW_PROMPT'; message: string }
   | { type: 'SET_UI_SCALE'; scale: number }
   | { type: 'TOGGLE_REDUCED_MOTION' }
+  | { type: 'SET_CAMERA_SMOOTHING'; mode: CameraSmoothingMode }
+  | { type: 'SET_WINDOW_LAYOUT'; windowId: ManagedWindowId; layout: UIWindowLayout }
+  | { type: 'FOCUS_WINDOW'; windowId: ManagedWindowId }
+  | { type: 'RESET_UI_LAYOUT' }
+  | { type: 'APPLY_UI_LAYOUT_PRESET'; preset: UILayoutPreset }
+  | { type: 'SET_COMBAT_APPROACH_MODE'; mode: CombatApproachMode }
+  | { type: 'TOGGLE_AUTO_ATTACK_ON_TARGET_SELECT' }
+  | { type: 'TOGGLE_STOP_MOVEMENT_WHEN_CASTING' }
   | { type: 'TOGGLE_PAUSE'; paused?: boolean }
   | { type: 'SAVE_GAME' }
   | { type: 'RESET_GAME' }

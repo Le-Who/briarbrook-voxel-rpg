@@ -5,6 +5,7 @@ import { createId } from '../game/GameState';
 import type { GameState, ResourceKind, ResourceTile, TargetRef, Vec3 } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
 import { addSystemMessage } from './ChatSystem';
+import { facePlayerTowardTarget } from './FacingSystem';
 import { addItem, removeItems } from './InventorySystem';
 import { addFloatingText } from './LootSystem';
 import { recordQuestEvent, refreshQuestProgress } from './QuestSystem';
@@ -93,6 +94,7 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
     state.ui.prompt = `You are too far away. Moving closer to ${config.verb}.`;
     return;
   }
+  facePlayerTowardTarget(state, target, 'gathering', 0.45);
 
   const tile = resolveResourceTile(state, target, config.kind);
   if (!tile) {
