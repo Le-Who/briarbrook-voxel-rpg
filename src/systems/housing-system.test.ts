@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialGameState } from '../game/GameState';
 import { AreaManager } from '../world/AreaManager';
-import { placeBuilding, updateBuildGhost } from './BuildingSystem';
+import { beginMoveLastBuilding, placeBuilding, updateBuildGhost } from './BuildingSystem';
+import { buildPieces } from '../data/items';
+import { getHousingPieceDefinition } from '../data/housing';
 import { addItem, getItemCount } from './InventorySystem';
 import { claimStarterPlot, depositSelectedToHousingStorage, housingStorages, selectedHousingStorage, undoLastHousingPlacement, upgradeHousingTier, withdrawFromHousingStorage } from './HousingSystem';
 import { startCraft } from './CraftingSystem';
@@ -11,6 +13,11 @@ function setupHousing() {
   const areaManager = new AreaManager();
   state.player.currentArea = 'housing';
   state.player.position = { x: -4, y: 0, z: -3 };
+  state.player.gold = 200;
+  addItem(state.player.inventory, 'wood', 10);
+  addItem(state.player.inventory, 'stone_block', 10);
+  addItem(state.player.inventory, 'iron_bar', 3);
+  addItem(state.player.inventory, 'logs', 6);
   claimStarterPlot(state);
   return { state, areaManager };
 }
@@ -24,6 +31,17 @@ function placePiece(pieceId: string, x: number, z: number) {
 }
 
 describe('housing workshop progression', () => {
+  it('defines tier 0 camp identity pieces and tier 1 workshop storage', () => {
+    expect(getHousingPieceDefinition('crate')).toMatchObject({ minTier: 0, functionType: 'storage' });
+    expect(getHousingPieceDefinition('crate').storage?.slots).toBeGreaterThanOrEqual(4);
+    expect(buildPieces.some((piece) => piece.id === 'small_trophy_hook')).toBe(true);
+    expect(getHousingPieceDefinition('small_trophy_hook')).toMatchObject({ minTier: 0, functionType: 'trophy' });
+
+    expect(buildPieces.some((piece) => piece.id === 'reinforced_chest')).toBe(true);
+    expect(getHousingPieceDefinition('reinforced_chest')).toMatchObject({ minTier: 1, functionType: 'storage' });
+    expect(getHousingPieceDefinition('reinforced_chest').storage?.slots).toBeGreaterThan(getHousingPieceDefinition('small_chest').storage?.slots ?? 0);
+  });
+
   it('claims the starter plot and places functional storage with stable storage state', () => {
     const { state, placed } = placePiece('small_chest', 0, 0);
 
@@ -105,5 +123,24 @@ describe('housing workshop progression', () => {
     expect(undoLastHousingPlacement(state)).toBe(true);
     expect(state.world.placedBuildings).toHaveLength(0);
     expect(state.world.housing.storages[storage.id]).toBeUndefined();
+  });
+
+  it('blocks moving storage while it contains items and allows moving after it is empty', () => {
+    const { state, areaManager } = placePiece('small_chest', 0, 0);
+    const storage = selectedHousingStorage(state);
+    if (!storage) throw new Error('storage missing');
+    const logsSlot = state.player.inventory.slots.findIndex((stack) => stack?.itemId === 'logs');
+    expect(depositSelectedToHousingStorage(state, logsSlot, storage.id)).toBe(true);
+
+    expect(beginMoveLastBuilding(state, areaManager)).toBe(false);
+    expect(state.buildMode.moveBuildingId).toBeNull();
+    expect(state.ui.prompt).toContain('Empty that storage');
+
+    const storageSlot = storage.inventory.slots.findIndex((stack) => stack?.itemId === 'logs');
+    expect(withdrawFromHousingStorage(state, storage.id, storageSlot)).toBe(true);
+    expect(beginMoveLastBuilding(state, areaManager)).toBe(true);
+    updateBuildGhost(state, areaManager, { x: 2, y: 0, z: 0 });
+    expect(placeBuilding(state, areaManager)).toBe(true);
+    expect(state.world.placedBuildings[0].position).toMatchObject({ x: 2, z: 0 });
   });
 });

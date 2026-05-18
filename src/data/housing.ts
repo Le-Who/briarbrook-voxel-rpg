@@ -101,6 +101,18 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     minTier: 0,
     storage: { slots: 8, maxWeight: 40 }
   },
+  crate: {
+    pieceId: 'crate',
+    functionType: 'storage',
+    minTier: 0,
+    storage: { slots: 4, maxWeight: 25 }
+  },
+  reinforced_chest: {
+    pieceId: 'reinforced_chest',
+    functionType: 'storage',
+    minTier: 1,
+    storage: { slots: 14, maxWeight: 80 }
+  },
   resource_crate: {
     pieceId: 'resource_crate',
     functionType: 'storage',
@@ -173,6 +185,11 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     minTier: 0,
     stationTypes: ['cooking']
   },
+  torch: {
+    pieceId: 'torch',
+    functionType: 'utility',
+    minTier: 0
+  },
   home_marker: {
     pieceId: 'home_marker',
     functionType: 'utility',
@@ -237,6 +254,22 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     functionType: 'trophy',
     minTier: 1,
     trophy: 'Treasure clue display'
+  },
+  small_trophy_hook: {
+    pieceId: 'small_trophy_hook',
+    functionType: 'trophy',
+    minTier: 0,
+    trophy: 'First camp memory'
+  },
+  door: {
+    pieceId: 'door',
+    functionType: 'boundary',
+    minTier: 1
+  },
+  roof: {
+    pieceId: 'roof',
+    functionType: 'boundary',
+    minTier: 1
   },
   rug_home: {
     pieceId: 'rug_home',

@@ -1,5 +1,6 @@
 import { createId } from '../game/GameState';
 import { itemDefs } from '../data/items';
+import { emitAudioHook } from '../audio/AudioHooks';
 import type { CombatTelegraph, EnemyEntity, GameState, ItemDef, ItemStack, Projectile, Vec3 } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
 import { handlePlayerDamaged, setPlayerActionState } from './ActionStateSystem';
@@ -159,6 +160,7 @@ export function meleeAttack(state: GameState, entityId?: string): void {
   degradeEquippedItem(state, 'weapon', 1);
   state.combat.hitFlashes[target.id] = state.clock + 0.2;
   addFloatingText(state, `${damage}${crit ? '!' : ''}`, target.position, crit ? '#ffd968' : '#ff6262');
+  emitAudioHook('hit', { id: target.id, area: target.area, position: target.position, intensity: damage });
   attemptSkillUse(state, skill, { verb: 'melee-hit', difficulty: 20 + target.level * 5, success: true, targetId: target.id, relatedSkills: [support, 'Anatomy'] });
   gainPlayerXp(state, 4);
   if (target.health <= 0) killEnemy(state, target);
@@ -211,6 +213,7 @@ export function rangedAttack(state: GameState, entityId?: string): void {
   }
   state.combat.hitFlashes[target.id] = state.clock + 0.2;
   addFloatingText(state, `${damage}`, target.position, '#ffb966');
+  emitAudioHook('hit', { id: target.id, area: target.area, position: target.position, intensity: damage });
   attemptSkillUse(state, skill, { verb: 'ranged-hit', difficulty: 18 + target.level * 5 + dist * 2, success: true, targetId: target.id, relatedSkills: [support, 'Anatomy'] });
   gainPlayerXp(state, 4);
   if (target.health <= 0) killEnemy(state, target);
@@ -314,6 +317,7 @@ function enemyParries(state: GameState, target: EnemyEntity, attackerSkill: numb
   if (Math.random() * 100 > chance) return false;
   addFloatingText(state, 'Blocked', target.position, '#8bd9ff');
   state.combat.hitFlashes[target.id] = state.clock + 0.1;
+  emitAudioHook('block', { id: target.id, area: target.area, position: target.position });
   return true;
 }
 
@@ -331,6 +335,7 @@ function playerParries(state: GameState, enemy: EnemyEntity): boolean {
   shield.durability = Math.max(0, (shield.durability ?? itemDefs[shield.itemId]?.durability ?? 20) - 1);
   addFloatingText(state, 'Block', state.player.position, '#8bd9ff');
   addSystemMessage(state, `You block with ${itemDefs[shield.itemId]?.name ?? 'shield'}.`);
+  emitAudioHook('parry', { id: enemy.id, area: enemy.area, position: state.player.position });
   return true;
 }
 
@@ -395,6 +400,7 @@ function resolveTelegraph(state: GameState, telegraph: CombatTelegraph): void {
   state.combat.hitFlashes.player = state.clock + 0.18;
   handlePlayerDamaged(state, damage);
   addFloatingText(state, magicHit ? `${damage} spell` : `${damage}`, state.player.position, magicHit ? '#b66dff' : '#ff3f3f');
+  emitAudioHook('hit', { id: enemy.id, area: enemy.area, position: state.player.position, intensity: damage });
   attemptSkillUse(state, magicHit ? 'Resisting Spells' : 'Parrying', { verb: magicHit ? 'resist-spell' : 'take-damage', difficulty: 18 + enemy.level * 5, success: defended, targetId: enemy.id, relatedSkills: ['Focus'] });
   if (state.player.health <= 0) downPlayer(state);
 }

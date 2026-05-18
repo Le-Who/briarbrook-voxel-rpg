@@ -53,6 +53,23 @@ export function DevOverlay(state: GameState): string {
         <p><span>Tick</span><b>${state.realtime.tick} @ ${state.realtime.tickRate}hz</b></p>
         <p><span>Entities</span><b>${state.dev.renderStats.visibleEntityCount}/${state.dev.renderStats.entityCount}</b></p>
         <p><span>Draw</span><b>${state.dev.renderStats.roughDrawCalls} calls, ${state.dev.renderStats.triangles} tris</b></p>
+        <p><span>Meshes</span><b>${state.dev.renderStats.meshCount} (${state.dev.renderStats.staticMeshCount}/${state.dev.renderStats.entityMeshCount}/${state.dev.renderStats.effectMeshCount})</b></p>
+        <p><span>Instancing</span><b>${state.dev.renderStats.instancedMeshCount} meshes, ${state.dev.renderStats.instancedInstanceCount} instances</b></p>
+        <p><span>Materials</span><b>${state.dev.renderStats.materialCount} mats, ${state.dev.renderStats.geometryCount} geos</b></p>
+        <p><span>Raycast</span><b>${state.dev.renderStats.raycastCandidateCount}/${state.dev.renderStats.budget.raycastCandidateCount} candidates</b></p>
+        <p><span>Frame est.</span><b>${state.dev.renderStats.estimatedFrameMs}/${state.dev.renderStats.budget.estimatedFrameMs}ms</b></p>
+        <p><span>Heap</span><b>${state.dev.renderStats.memoryAfterTransitionMb == null ? 'n/a' : `${state.dev.renderStats.memoryAfterTransitionMb}/${state.dev.renderStats.budget.memoryAfterTransitionMb} MB`}</b></p>
+        <p><span>Input mode</span><b>${state.dev.input.mode}</b></p>
+        <p><span>Last raw</span><b>${state.dev.input.lastRawInput}</b></p>
+        <p><span>Last intent</span><b>${state.dev.input.lastIntent}</b></p>
+        <p><span>Focused window</span><b>${state.dev.input.focusedWindow}</b></p>
+        <p><span>Focused element</span><b>${state.dev.input.focusedElement}</b></p>
+        <p><span>Top window</span><b>${state.dev.input.topmostWindow}</b></p>
+        <p><span>Drag payload</span><b>${state.dev.input.dragPayload ?? 'none'}</b></p>
+        <p><span>Pointer capture</span><b>${state.dev.input.pointerCapture ?? 'none'}</b></p>
+        <p><span>Prevented default</span><b>${state.dev.input.lastPreventedDefault}</b></p>
+        <p><span>Target mode</span><b>${state.dev.input.targetMode ?? 'none'}</b></p>
+        <p><span>Viewport / scale</span><b>${state.dev.input.viewport} @ ${Math.round(state.dev.input.uiScale * 100)}%</b></p>
         <p><span>Buffs</span><b>${activeEffects.length ? activeEffects.join(', ') : 'none'}</b></p>
       </div>
       <div>
@@ -78,6 +95,10 @@ export function DevOverlay(state: GameState): string {
       <div>
         <h3>Tools</h3>
         <div class="dev-buttons">
+          <button data-action="reset-game">Reset</button>
+          <button data-action="save-game">Save</button>
+          <button data-dev-stability-kit="1">Gate Kit</button>
+          <button data-dev-open-panels="1">Open Panels</button>
           <button data-dev-spawn-item="iron_bar">Item</button>
           <button data-dev-spawn-enemy="Bandit">Enemy</button>
           <button data-dev-add-gold="250">Gold</button>

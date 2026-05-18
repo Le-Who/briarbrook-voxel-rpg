@@ -1,4 +1,4 @@
-import type { AreaId, BuildPieceDef, ChatMessage, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, SkillGainMode, StationType, TargetRef, Vec3, WorldPhase } from './types';
+import type { AreaId, BuildPieceDef, ChatMessage, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, InputDebugState, SkillGainMode, StationType, TargetRef, Vec3, WorldPhase } from './types';
 
 export type GameAction =
   | { type: 'MOVE_BY'; dx: number; dz: number }
@@ -17,7 +17,7 @@ export type GameAction =
   | { type: 'CANCEL_TARGETING' }
   | { type: 'OPEN_CONTEXT_MENU'; target: TargetRef; x: number; y: number }
   | { type: 'CLOSE_CONTEXT_MENU' }
-  | { type: 'CONTEXT_ACTION'; command: 'talk' | 'trade' | 'attack' | 'inspect' | 'use_tool' | 'cast_spell' | 'snoop' | 'steal' | 'follow' | 'mark' }
+  | { type: 'CONTEXT_ACTION'; command: 'talk' | 'trade' | 'attack' | 'inspect' | 'use_tool' | 'cast_spell' | 'detect_hidden' | 'remove_trap' | 'lockpick' | 'snoop' | 'steal' | 'follow' | 'mark' }
   | { type: 'TARGET_ENTITY'; entityId: string }
   | { type: 'TARGET_TILE'; areaId: AreaId; position: Vec3 }
   | { type: 'USE_TOOL_ON_TARGET'; toolItemId: string; target: TargetRef }
@@ -78,10 +78,19 @@ export type GameAction =
   | { type: 'DECIPHER_TREASURE_MAP'; mapId?: string }
   | { type: 'PIN_TREASURE_MAP'; mapId?: string }
   | { type: 'SELECT_SPELL'; spellId: string }
+  | { type: 'SET_SPELL_SEARCH'; search: string }
+  | { type: 'SET_SPELLBOOK_CIRCLE'; circle: number | 'all' }
+  | { type: 'SET_SPELLBOOK_FILTER'; filter: 'known' | 'all' | 'unknown' }
+  | { type: 'SET_SPELLBOOK_VIEW'; view: 'grid' | 'list' }
+  | { type: 'SET_JOURNAL_TAB'; tab: 'quests' | 'rumors' | 'skills' | 'spells' | 'locations' | 'tutorials' | 'workOrders' }
   | { type: 'SET_CRAFT_QUANTITY'; quantity: number }
   | { type: 'SET_SKILL_MODE'; skillId: string; mode: SkillGainMode }
   | { type: 'SET_SKILL_GROUP'; group: string }
   | { type: 'SET_SKILL_SEARCH'; search: string }
+  | { type: 'SET_SKILL_VIEW'; view: 'ledger' | 'atlas' | 'mastery' }
+  | { type: 'SET_PROFESSION_FILTER'; professionId: string }
+  | { type: 'SET_PROFESSION_ATLAS_ZOOM'; zoom: number }
+  | { type: 'PIN_PROFESSION_GOAL'; goalId: string | null }
   | { type: 'TOGGLE_DEV_TRAVEL' }
   | { type: 'TOGGLE_DEV_OVERLAY' }
   | { type: 'DEV_TELEPORT_SCENE'; sceneId: string }
@@ -95,10 +104,14 @@ export type GameAction =
   | { type: 'DEV_GIVE_SPELL'; spellId?: string }
   | { type: 'DEV_SIMULATE_TIME'; phase: WorldPhase }
   | { type: 'DEV_EXPORT_TELEMETRY' }
+  | { type: 'UPDATE_INPUT_DEBUG'; patch: Partial<InputDebugState> }
   | { type: 'SET_CHAT_TAB'; channel: ChatMessage['channel'] }
   | { type: 'SEND_CHAT'; text: string }
   | { type: 'USE_HOTBAR'; slot: number }
-  | { type: 'SET_HOTBAR_SLOT'; slot: number; binding: HotbarBinding }
+  | { type: 'SET_HOTBAR_SLOT'; slot: number; binding: HotbarBinding | null }
+  | { type: 'CLEAR_HOTBAR_SLOT'; slot: number }
+  | { type: 'MOVE_HOTBAR_SLOT'; from: number; to: number }
+  | { type: 'SHOW_PROMPT'; message: string }
   | { type: 'SET_UI_SCALE'; scale: number }
   | { type: 'TOGGLE_REDUCED_MOTION' }
   | { type: 'TOGGLE_PAUSE'; paused?: boolean }

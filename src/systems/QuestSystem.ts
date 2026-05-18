@@ -1,4 +1,5 @@
 import { itemDefs } from '../data/items';
+import { questPrerequisitesMet, tutorialQuestIds } from '../data/quests';
 import type { GameState } from '../game/types';
 import { addItem, getItemCount, removeItems } from './InventorySystem';
 import { addSystemMessage } from './ChatSystem';
@@ -75,13 +76,10 @@ export function completeQuest(state: GameState, questId: string): void {
 }
 
 function unlockFollowupQuests(state: GameState, questId: string): void {
-  const unlocks: Record<string, string[]> = {
-    prepare_for_road: ['patch_yourself_up', 'mages_errand', 'trouble_on_road'],
-    ore_for_brom: ['place_to_call_yours'],
-    trouble_on_road: ['bones_beneath']
-  };
-  for (const id of unlocks[questId] ?? []) {
+  void questId;
+  for (const id of tutorialQuestIds) {
     if (!state.quests[id] || state.player.completedQuestIds.includes(id) || state.player.activeQuestIds.includes(id)) continue;
+    if (!questPrerequisitesMet(id, state.player.completedQuestIds)) continue;
     state.player.activeQuestIds.push(id);
     addSystemMessage(state, `New lead: ${state.quests[id].title}.`);
   }

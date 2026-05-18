@@ -155,7 +155,7 @@ export function beginMoveLastBuilding(state: GameState, areaManager: AreaManager
     return false;
   }
   const check = canUndoHousingPlacement(state, last);
-  if (!check.ok && !last.storageId) {
+  if (!check.ok) {
     state.ui.prompt = check.message;
     addSystemMessage(state, check.message);
     return false;

@@ -17,7 +17,15 @@ export function HelpPanel(state: GameState): string {
       <div><span>Pause / Help</span><b>Esc</b></div>
       <div class="help-setting"><span>UI Scale</span><b>${Math.round((state.ui.uiScale ?? 1) * 100)}%</b><button data-action="ui-scale-down">-</button><button data-action="ui-scale-up">+</button></div>
       <div class="help-setting"><span>Reduced Motion</span><b>${state.ui.reducedMotion ? 'On' : 'Off'}</b><button data-action="toggle-reduced-motion">${state.ui.reducedMotion ? 'Disable' : 'Enable'}</button></div>
-      <div class="help-actions"><button data-action="save-game">Save</button><button data-action="toggle-pause" class="primary">${state.paused ? 'Resume' : 'Pause'}</button><button data-action="toggle-panel" data-panel="journal">Journal</button></div>
+      <div class="help-actions"><button data-action="save-game">Save</button><button data-action="reset-ui-layout">Reset Layout</button><button data-action="toggle-pause" class="primary">${state.paused ? 'Resume' : 'Pause'}</button><button data-action="toggle-panel" data-panel="journal">Journal</button></div>
+      <b>Systems</b>
+      <div><span>Skills</span><b>Rise by use; future skills are labeled in Skills.</b></div>
+      <div><span>Gathering</span><b>Axe trees, pickaxe rock faces, scissors herbs.</b></div>
+      <div><span>Reagents</span><b>Spells spend mana and listed items from your pack.</b></div>
+      <div><span>Weight / Bank</span><b>Bank spare goods with Eldon before long trips.</b></div>
+      <div><span>Repair</span><b>Brom repairs damaged gear; tools wear down too.</b></div>
+      <div><span>Work Orders</span><b>Market board shows exact item counts and rewards.</b></div>
+      <div><span>Housing</span><b>Travel to your plot, then build inside the fenced area.</b></div>
     </div>
   </section>`;
 }

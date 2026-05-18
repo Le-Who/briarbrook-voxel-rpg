@@ -26,8 +26,10 @@ Reusable builders live in `src/render/VoxelKit.ts` and should be preferred over 
 - `stoneWallBuilder`
 - `marketStallBuilder`
 - `treeBuilder`
+- `rockBuilder`
 - `oreVeinBuilder`
 - `dungeonColumnBuilder`
+- `rubbleBuilder`
 - `chestBuilder`
 - `forgeBuilder`
 - `fenceBuilder`

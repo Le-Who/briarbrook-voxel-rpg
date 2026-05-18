@@ -1,5 +1,6 @@
 import { itemDefs } from '../data/items';
 import { createInitialEconomyState, localDemandDefaults, marketOrderTemplates, vendorProfiles, workOrderTemplates } from '../data/economy';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { createId, createStack } from '../game/GameState';
 import type { EconomyOrderCategory, EconomyTransactionState, EquipmentSlot, GameState, InventoryState, ItemStack, RecipeRequirement, StationType } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
@@ -196,6 +197,7 @@ export function completeWorkOrder(state: GameState, orderId: string): boolean {
   attemptSkillUse(state, order.skill, { verb: 'work-order', difficulty: 24, success: true, itemId: order.itemId });
   pushTransaction(state, { kind: 'work_order', category: order.category, itemId: order.itemId, quantity: order.quantity, gold: order.rewardGold, actor: order.requester });
   addSystemMessage(state, `${order.requester} accepts ${formatRequirements(requiredItems)} and pays ${order.rewardGold}g.`);
+  emitAudioHook('market_transaction', { id: order.id, area: state.player.currentArea, intensity: order.rewardGold });
   return true;
 }
 
@@ -237,6 +239,7 @@ export function fulfillMarketOrder(state: GameState, orderId: string): boolean {
   state.world.economy.priceTrends[order.itemId] = [...(state.world.economy.priceTrends[order.itemId] ?? []), order.unitPrice].slice(-12);
   pushTransaction(state, { kind: 'market', category: order.category, itemId: order.itemId, quantity: order.quantity, gold: order.kind === 'buy' ? total : -total, actor: order.poster });
   addSystemMessage(state, `Market order filled with ${order.poster}: ${itemDefs[order.itemId]?.name ?? order.itemId} x${order.quantity}.`);
+  emitAudioHook('market_transaction', { id: order.id, area: state.player.currentArea, intensity: total });
   return true;
 }
 

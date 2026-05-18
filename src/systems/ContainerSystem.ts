@@ -1,9 +1,12 @@
 import { itemDefs } from '../data/items';
+import { emitAudioHook } from '../audio/AudioHooks';
 import type { ContainerEntity, GameState, TargetRef } from '../game/types';
+import { setPlayerActionState } from './ActionStateSystem';
 import { addSystemMessage } from './ChatSystem';
 import { addItem, getItemCount, removeItems } from './InventorySystem';
 import { addFloatingText } from './LootSystem';
 import { recordQuestEvent } from './QuestSystem';
+import { markSecretDisarmedByContainer, markSecretOpenedByContainer, markSecretTriggeredByContainer, revealSecretsNear, type SecretRevealMethod } from './SecretSystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
 import { recordDamageTaken, recordGoldDelta } from './TelemetrySystem';
 import { protectedContainerNotice } from './CrimeSystem';
@@ -25,8 +28,10 @@ export function interactContainer(state: GameState, container: ContainerEntity):
     const removeTrap = getSkillValue(state, 'Remove Trap');
     const success = Math.random() * 100 < Math.max(20, Math.min(92, 48 + removeTrap * 0.55 - container.trap.difficulty));
     attemptSkillUse(state, 'Remove Trap', { verb: 'trap', difficulty: container.trap.difficulty, success, targetId: container.id, relatedSkills: ['Detect Hidden'] });
+    setPlayerActionState(state, 'interacting', 0.9, `remove-trap:${container.id}`);
     if (success) {
       container.trap.armed = false;
+      markSecretDisarmedByContainer(state, container.id);
       state.ui.prompt = 'You disarm the warding trap.';
       addFloatingText(state, 'Disarmed', container.position, '#8bd9ff');
     } else {
@@ -41,6 +46,8 @@ export function interactContainer(state: GameState, container: ContainerEntity):
     }
     const lockpicking = getSkillValue(state, 'Lockpicking');
     const success = Math.random() * 100 < Math.max(18, Math.min(92, 45 + lockpicking * 0.65 - container.lockDifficulty));
+    const duration = Math.max(0.45, Math.min(1.25, 0.95 - lockpicking / 180));
+    setPlayerActionState(state, 'interacting', duration, `lockpick:${container.id}`);
     attemptSkillUse(state, 'Lockpicking', { verb: 'lockpick', difficulty: container.lockDifficulty, success, targetId: container.id, relatedSkills: ['Detect Hidden'] });
     if (!success) {
         if (Math.random() < 0.35) {
@@ -53,6 +60,9 @@ export function interactContainer(state: GameState, container: ContainerEntity):
     }
     container.locked = false;
     state.ui.prompt = 'The lock clicks open.';
+    addFloatingText(state, 'Lock Click', container.position, '#dbe7ff');
+    emitAudioHook('chest_unlock', { id: container.id, area: container.area, position: container.position });
+    return;
   }
   if (container.trap?.armed && !container.trap.detected) {
     triggerContainerTrap(state, container);
@@ -74,13 +84,15 @@ export function unlockContainerWithSpell(state: GameState, target: TargetRef): b
   }
   container.locked = false;
   if (container.trap) container.trap.detected = true;
+  revealSecretsNear(state, { method: 'spell', origin: container.position, radius: 1.5 });
   attemptSkillUse(state, 'Lockpicking', { verb: 'lockpick', difficulty: Math.max(20, container.lockDifficulty - 8), success: true, targetId: container.id, relatedSkills: ['Magery'] });
   addFloatingText(state, 'Unlocked', container.position, '#dbe7ff');
   state.ui.prompt = `${container.name} unlocks with a blue snap.`;
+  emitAudioHook('chest_unlock', { id: container.id, area: container.area, position: container.position });
   return true;
 }
 
-export function revealMagicalContainers(state: GameState): number {
+export function revealMagicalContainers(state: GameState, method: SecretRevealMethod = 'detect_magic'): number {
   let revealed = 0;
   for (const entity of Object.values(state.entities)) {
     if (entity.kind !== 'container' || entity.area !== state.player.currentArea || entity.opened) continue;
@@ -93,6 +105,7 @@ export function revealMagicalContainers(state: GameState): number {
       revealed += 1;
     }
   }
+  revealed += revealSecretsNear(state, { method, origin: state.player.position, radius: Infinity });
   if (revealed) {
     attemptSkillUse(state, 'Detect Hidden', { verb: 'detect', difficulty: 24, success: true, relatedSkills: ['Item Identification'] });
   }
@@ -102,6 +115,7 @@ export function revealMagicalContainers(state: GameState): number {
 function openContainer(state: GameState, container: ContainerEntity): void {
   container.opened = true;
   container.blocksMovement = false;
+  markSecretOpenedByContainer(state, container.id);
   if (container.gold > 0) {
     state.player.gold += container.gold;
     recordGoldDelta(state, container.gold);
@@ -114,6 +128,7 @@ function openContainer(state: GameState, container: ContainerEntity): void {
   addSystemMessage(state, `${container.name} opens. You take ${container.gold}g and the contents.`);
   addFloatingText(state, 'Opened', container.position, '#f0c957');
   state.ui.prompt = `${container.name} opened.`;
+  emitAudioHook('chest_open', { id: container.id, area: container.area, position: container.position });
 }
 
 export function triggerContainerTrap(state: GameState, container: ContainerEntity): void {
@@ -123,9 +138,11 @@ export function triggerContainerTrap(state: GameState, container: ContainerEntit
   state.combat.lastDamagedAt = state.clock;
   state.combat.hitFlashes.player = state.clock + 0.18;
   container.trap.armed = false;
+  markSecretTriggeredByContainer(state, container.id);
   recordDamageTaken(state, damage);
   attemptSkillUse(state, 'Resisting Spells', { verb: 'resist-spell', difficulty: container.trap.difficulty, success: false, targetId: container.id, relatedSkills: ['Focus'] });
   addSystemMessage(state, `${container.name} discharges a warding trap.`);
   addFloatingText(state, `Trap ${damage}`, state.player.position, '#b66dff');
   state.ui.prompt = 'A warding trap snaps open.';
+  emitAudioHook('trap_trigger', { id: container.id, area: container.area, position: container.position, intensity: damage });
 }

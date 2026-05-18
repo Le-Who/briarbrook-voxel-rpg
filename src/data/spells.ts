@@ -598,4 +598,4 @@ export const spellDefs: Record<string, SpellDefinition> = Object.fromEntries(
 ) as Record<string, SpellDefinition>;
 
 export const spellCircles = [1, 2, 3, 4] as const;
-export const beginnerSpellIds = Object.values(spellDefs).map((spell) => spell.id);
+export const beginnerSpellIds = ['magic_arrow', 'heal', 'create_food', 'night_sight', 'detect_magic'];

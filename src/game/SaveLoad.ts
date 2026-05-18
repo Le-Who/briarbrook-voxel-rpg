@@ -8,6 +8,7 @@ import { createInitialResourceTiles } from '../data/resourceMaps';
 import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
+import { createInitialRenderStats } from '../render/RenderBudgets';
 import type { BuildingEntity, EnemyEntity, GameState, HousingStorageState, ItemType, PortalEntity, ResourceNodeEntity } from './types';
 
 const SAVE_KEY = 'briarbrook.voxel-rpg.save.v1';
@@ -28,13 +29,7 @@ export function saveGame(state: GameState): void {
       ...state.dev,
       overlay: false,
       telemetryExportJson: '',
-      renderStats: {
-        frame: 0,
-        entityCount: 0,
-        visibleEntityCount: 0,
-        roughDrawCalls: 0,
-        triangles: 0
-      }
+      renderStats: createInitialRenderStats()
     },
     paused: false
   };
@@ -162,6 +157,15 @@ export function loadGame(): GameState {
     parsed.ui.targeting ??= null;
     parsed.ui.contextMenu = null;
     parsed.ui.selectedSpellId ??= 'magic_arrow';
+    parsed.ui.spellSearch ??= '';
+    parsed.ui.spellbookCircle ??= 'all';
+    parsed.ui.spellbookFilter ??= 'known';
+    parsed.ui.spellbookView ??= 'grid';
+    parsed.ui.journalTab ??= 'quests';
+    parsed.ui.skillView ??= 'ledger';
+    parsed.ui.professionFilter ??= 'all';
+    parsed.ui.professionAtlasZoom ??= 1;
+    parsed.ui.pinnedProfessionGoalId ??= null;
     parsed.ui.selectedTreasureMapId ??= 'greymont_cache';
     parsed.ui.selectedHousingStorageId ??= null;
     parsed.ui.marketCategory ??= 'all';
@@ -180,6 +184,7 @@ export function loadGame(): GameState {
     parsed.ui.panels.treasureMap ??= false;
     parsed.ui.panels.status ??= false;
     parsed.ui.hotbar ??= createDefaultHotbar();
+    parsed.ui.hotbar = Array.from({ length: 10 }, (_, index) => parsed.ui.hotbar[index] ?? createDefaultHotbar()[index] ?? null);
     parsed.ui.uiScale ??= 1;
     parsed.ui.reducedMotion ??= false;
     parsed.ui.craftQuantity ??= 1;
@@ -246,6 +251,11 @@ export function loadGame(): GameState {
       if (entity.kind === 'enemy') {
         const enemy = entity as EnemyEntity;
         const freshEnemy = fresh.entities[enemy.id];
+        if (freshEnemy?.kind === 'enemy') {
+          enemy.name = freshEnemy.name;
+          enemy.enemyType = freshEnemy.enemyType;
+          enemy.lootTable = freshEnemy.lootTable;
+        }
         enemy.patrolTimer ??= Math.random() * 6;
         enemy.magicResist ??= freshEnemy?.kind === 'enemy' ? freshEnemy.magicResist : 8;
         enemy.poisonResist ??= freshEnemy?.kind === 'enemy' ? freshEnemy.poisonResist : enemy.enemyType === 'Undead' ? 90 : 15;
@@ -273,10 +283,16 @@ export function loadGame(): GameState {
       if (entity.kind === 'resource') {
         const resource = entity as ResourceNodeEntity;
         const definition = resolveResourceDefinition(resource);
-        resource.resourceId ??= definition.id;
-        resource.baseDuration ??= definition.baseDuration;
-        resource.respawnSeconds ??= definition.respawnSeconds;
-        resource.inspectText ??= definition.inspectText;
+        resource.resourceId = definition.id;
+        resource.name = resource.name || definition.name;
+        resource.resourceType = definition.resourceType;
+        resource.toolItemId = definition.toolItemId;
+        resource.skill = definition.skill;
+        resource.yieldItemId = definition.yieldItemId;
+        resource.yieldRange = definition.yieldRange;
+        resource.baseDuration = definition.baseDuration;
+        resource.respawnSeconds = definition.respawnSeconds;
+        resource.inspectText = definition.inspectText;
       }
       if (entity.kind === 'portal') {
         const portal = entity as PortalEntity;
@@ -379,12 +395,27 @@ export function loadGame(): GameState {
     parsed.dev.telemetry.questCompletionTime ??= {};
     parsed.dev.telemetry.priceTrends ??= {};
     parsed.dev.telemetryExportJson = '';
-    parsed.dev.renderStats ??= initialDev.renderStats;
-    parsed.dev.renderStats.frame ??= 0;
-    parsed.dev.renderStats.entityCount ??= 0;
-    parsed.dev.renderStats.visibleEntityCount ??= 0;
-    parsed.dev.renderStats.roughDrawCalls ??= 0;
-    parsed.dev.renderStats.triangles ??= 0;
+    parsed.dev.renderStats = {
+      ...initialDev.renderStats,
+      ...(parsed.dev.renderStats ?? {}),
+      budget: {
+        ...initialDev.renderStats.budget,
+        ...(parsed.dev.renderStats?.budget ?? {})
+      }
+    };
+    parsed.dev.input ??= initialDev.input;
+    parsed.dev.input.mode ??= 'normal';
+    parsed.dev.input.lastRawInput ??= 'none';
+    parsed.dev.input.lastIntent ??= 'none';
+    parsed.dev.input.focusedWindow ??= 'none';
+    parsed.dev.input.focusedElement ??= 'none';
+    parsed.dev.input.topmostWindow ??= 'none';
+    parsed.dev.input.dragPayload ??= null;
+    parsed.dev.input.pointerCapture ??= null;
+    parsed.dev.input.lastPreventedDefault ??= 'none';
+    parsed.dev.input.targetMode ??= null;
+    parsed.dev.input.viewport ??= 'unknown';
+    parsed.dev.input.uiScale ??= parsed.ui?.uiScale ?? 1;
     for (const building of parsed.world.placedBuildings ?? []) {
       const piece = getHousingPieceDefinition(building.pieceId);
       building.plotId ??= parsed.world.housing.ownedPlotId ?? starterPlotId;

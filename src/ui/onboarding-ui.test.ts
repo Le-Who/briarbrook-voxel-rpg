@@ -28,9 +28,13 @@ describe('onboarding UI', () => {
     const html = JournalPanel(state);
 
     expect(html).toContain('Active Quests');
-    expect(html).toContain('Discovered Mechanics');
-    expect(html).toContain('Briarbrook Bank');
-    expect(html).toContain('Skills');
+    expect(html).toContain('Tutorials');
+    state.ui.journalTab = 'tutorials';
+    expect(JournalPanel(state)).toContain('Discovered Mechanics');
+    state.ui.journalTab = 'locations';
+    expect(JournalPanel(state)).toContain('Briarbrook Bank');
+    state.ui.journalTab = 'skills';
+    expect(JournalPanel(state)).toContain('Skills Learned');
   });
 
   it('uses functional default hotbar bindings for consumables and tools', () => {

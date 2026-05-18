@@ -64,7 +64,7 @@ export function Minimap(state: GameState): string {
     <div class="area-name">${displayAreaName(state)}</div>
     <div class="world-time">${state.world.time.hour.toString().padStart(2, '0')}:${state.world.time.minute.toString().padStart(2, '0')} · ${state.world.time.phase}</div>
     <div class="zone-status ${state.player.reputation.status}">${zone.riskLabel} · ${state.player.reputation.status}</div>
-    <div class="coords">${cx}, 64, ${cz}</div>
+    <div class="coords">Map ${cx}:${cz}</div>
     ${devTravel}
   </section>`;
 }

@@ -1,4 +1,5 @@
 import { itemDefs } from '../data/items';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { createId, createStack } from '../game/GameState';
 import type { EnemyEntity, GameState, ItemStack, Vec3 } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
@@ -61,6 +62,7 @@ export function pickupLoot(state: GameState, entityId: string): void {
     recordQuestEvent(state, { type: 'loot', itemId: stack.itemId, quantity: stack.quantity });
     addSystemMessage(state, `You receive loot: ${itemDefs[stack.itemId]?.name ?? stack.itemId}.`);
   }
+  emitAudioHook('item_pickup', { id: entity.id, area: entity.area, position: entity.position });
   delete state.entities[entityId];
 }
 

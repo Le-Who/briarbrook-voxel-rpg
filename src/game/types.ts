@@ -437,22 +437,32 @@ export interface TreasureMapDefinition {
   regionHint: AreaId;
   clueText: string;
   approximateCoordinate: Vec3;
+  approximateLocation: Vec3;
   requiredCartography: number;
+  cartographyDifficulty: number;
   digRadius: number;
+  searchRadius: number;
+  requiredTool: string;
   possibleEncounters: EnemyEntity['enemyType'][];
   lootTableId: string;
   hiddenModifiers: string[];
+  persistentStateKey: string;
 }
 
 export interface SecretDefinition {
   id: string;
   areaId: AreaId;
+  location: Vec3;
   triggerType: 'detect_hidden' | 'reveal' | 'lever' | 'pressure_plate' | 'spell' | 'excavate';
+  revealMethods: Array<'detect_hidden' | 'reveal' | 'detect_magic' | 'lever' | 'pressure_plate' | 'spell' | 'excavate'>;
   requiredSkill: SkillId;
   difficulty: number;
   revealDuration: number;
+  revealedState: 'hidden_cache' | 'trap_warning' | 'sealed_alcove' | 'pressure_plate' | 'treasure_room';
+  revealedEntityId?: string;
   reward: RecipeRequirement[];
   danger: 'none' | 'trap' | 'ambush' | 'poison' | 'alarm';
+  persistenceKey: string;
   persistentStateKey: string;
 }
 
@@ -925,12 +935,51 @@ export interface TelemetryState {
   priceTrends: Record<string, number[]>;
 }
 
+export interface RenderBudgetState {
+  roughDrawCalls: number;
+  meshCount: number;
+  visibleEntityCount: number;
+  raycastCandidateCount: number;
+  triangles: number;
+  estimatedFrameMs: number;
+  memoryAfterTransitionMb: number;
+}
+
 export interface RenderStatsState {
   frame: number;
   entityCount: number;
   visibleEntityCount: number;
   roughDrawCalls: number;
   triangles: number;
+  meshCount: number;
+  staticMeshCount: number;
+  entityMeshCount: number;
+  effectMeshCount: number;
+  instancedMeshCount: number;
+  instancedInstanceCount: number;
+  materialCount: number;
+  geometryCount: number;
+  raycastCandidateCount: number;
+  estimatedFrameMs: number;
+  memoryAfterTransitionMb: number | null;
+  budget: RenderBudgetState;
+}
+
+export type InputMode = 'normal' | 'uiDragging' | 'itemDragging' | 'spellDragging' | 'targeting' | 'building' | 'chatFocused' | 'modalOpen' | 'paused' | 'devOverlay';
+
+export interface InputDebugState {
+  mode: InputMode;
+  lastRawInput: string;
+  lastIntent: string;
+  focusedWindow: string;
+  focusedElement: string;
+  topmostWindow: string;
+  dragPayload: string | null;
+  pointerCapture: string | null;
+  lastPreventedDefault: string;
+  targetMode: string | null;
+  viewport: string;
+  uiScale: number;
 }
 
 export interface DevToolState {
@@ -940,6 +989,7 @@ export interface DevToolState {
   telemetry: TelemetryState;
   telemetryExportJson: string;
   renderStats: RenderStatsState;
+  input: InputDebugState;
 }
 
 export type HotbarBinding =
@@ -962,7 +1012,16 @@ export interface UIState {
   selectedHousingStorageId: string | null;
   selectedStationType: StationType | 'all';
   selectedSpellId: string;
+  spellSearch: string;
+  spellbookCircle: number | 'all';
+  spellbookFilter: 'known' | 'all' | 'unknown';
+  spellbookView: 'grid' | 'list';
+  journalTab: 'quests' | 'rumors' | 'skills' | 'spells' | 'locations' | 'tutorials' | 'workOrders';
   skillSearch: string;
+  skillView: 'ledger' | 'atlas' | 'mastery';
+  professionFilter: string;
+  professionAtlasZoom: number;
+  pinnedProfessionGoalId: string | null;
   devTravel: boolean;
   fadeUntil: number;
   craftQuantity: number;
@@ -971,7 +1030,7 @@ export interface UIState {
   marketSearch: string;
   chatTab: ChatMessage['channel'];
   activeHotbarSlot: number;
-  hotbar: HotbarBinding[];
+  hotbar: Array<HotbarBinding | null>;
   uiScale: number;
   reducedMotion: boolean;
   prompt: string;

@@ -1,7 +1,9 @@
 import { itemDefs } from '../data/items';
 import { areas } from '../data/areas';
 import { recipes } from '../data/recipes';
+import { questPrerequisitesMet } from '../data/quests';
 import { resolveResourceDefinition } from '../data/resources';
+import { emitAudioHook } from '../audio/AudioHooks';
 import type { GameState, PortalEntity } from '../game/types';
 import type { AreaManager } from '../world/AreaManager';
 import { updateBuildGhost } from './BuildingSystem';
@@ -173,7 +175,12 @@ function handleQuestContact(state: GameState, giver: string): void {
     return;
   }
   const available = Object.values(state.quests).find(
-    (quest) => quest.giver === giver && quest.status !== 'complete' && !state.player.activeQuestIds.includes(quest.id) && !state.player.completedQuestIds.includes(quest.id)
+    (quest) =>
+      quest.giver === giver &&
+      quest.status !== 'complete' &&
+      !state.player.activeQuestIds.includes(quest.id) &&
+      !state.player.completedQuestIds.includes(quest.id) &&
+      questPrerequisitesMet(quest.id, state.player.completedQuestIds)
   );
   if (available) {
     state.player.activeQuestIds.push(available.id);
@@ -214,6 +221,7 @@ export function gatherResource(state: GameState, entityId: string): void {
   };
   setPlayerActionState(state, 'gathering', duration, entity.id);
   state.ui.prompt = `${state.gathering.actionLabel}...`;
+  emitAudioHook(gatheringCue(entity.resourceType), { id: entity.id, area: entity.area, position: entity.position });
 }
 
 function completeGathering(state: GameState, entity: Extract<GameState['entities'][string], { kind: 'resource' }>): void {
@@ -259,6 +267,7 @@ function completeGathering(state: GameState, entity: Extract<GameState['entities
   addSystemMessage(state, `You receive: ${rewardName} x${amount}.`);
   extraRewards.forEach((reward) => addSystemMessage(state, `You also find: ${reward}.`));
   addFloatingText(state, `+${amount} ${rewardName}`, entity.position, '#e8f5be');
+  emitAudioHook(gatheringCue(entity.resourceType), { id: entity.id, area: entity.area, position: entity.position, intensity: amount });
   if (extraRewards.length) addFloatingText(state, extraRewards.join(' + '), { ...entity.position, x: entity.position.x + 0.25 }, '#78d7ff');
   degradeToolForGathering(state, entity.toolItemId);
   registerResourceHarvest(state, entity.area);
@@ -316,4 +325,10 @@ export function openTrade(state: GameState, partnerId: string): void {
   state.ui.panels.inventory = true;
   state.ui.prompt = `Trading with ${partner.name}.`;
   addSystemMessage(state, `You have invited ${partner.name} to trade.`);
+}
+
+function gatheringCue(resourceType: 'tree' | 'ore' | 'fish' | 'herb'): 'tree_chop' | 'mining_hit' | 'item_pickup' {
+  if (resourceType === 'ore') return 'mining_hit';
+  if (resourceType === 'tree') return 'tree_chop';
+  return 'item_pickup';
 }

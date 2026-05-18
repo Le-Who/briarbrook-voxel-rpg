@@ -12,7 +12,7 @@ export function CharacterPanel(state: GameState): string {
   const slot = (name: keyof typeof equipment) => {
     const stack = equipment[name];
     const def = stack ? itemDefs[stack.itemId] : null;
-    return `<div class="equip-slot">${def ? renderIcon(def.icon, def.name) : ''}</div>`;
+    return `<div class="equip-slot" data-equipment-slot="${name}" data-tooltip="${def ? def.name : `${name} slot`}" title="${def ? def.name : `${name} slot`}">${def ? renderIcon(def.icon, def.name) : ''}<small>${name}</small></div>`;
   };
   return `<section class="panel character-panel">
     <header><span>Character</span><button data-action="toggle-panel" data-panel="character">x</button></header>

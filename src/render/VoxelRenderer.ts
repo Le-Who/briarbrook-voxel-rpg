@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { areas } from '../data/areas';
 import { buildPieces, itemDefs } from '../data/items';
 import { CameraController } from '../game/CameraController';
+import { hoverRingStyleForEntity } from '../game/WorldFeedback';
 import type { AreaId, BuildPieceDef, Entity, GameState, IconDescriptor, Projectile, Vec3 } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
 import { areaAmbient, MaterialLibrary } from './Materials';
+import { estimateRenderFrameMs, renderPerformanceBudget } from './RenderBudgets';
 import { VoxelKit } from './VoxelKit';
 
 interface EntityRecord {
@@ -38,6 +40,7 @@ export class VoxelRenderer {
   private roofMeshes: THREE.Mesh[] = [];
   private roofZones: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
   private litKey: string | null = null;
+  private lastRaycastCandidateCount = 0;
 
   constructor(private canvas: HTMLCanvasElement, private areaManager: AreaManager) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -91,6 +94,7 @@ export class VoxelRenderer {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const meshes: THREE.Object3D[] = [];
     this.records.forEach((record) => meshes.push(...record.group.children));
+    this.lastRaycastCandidateCount = this.countPickableMeshes();
     const hits = this.raycaster.intersectObjects(meshes, true);
     const object = hits[0]?.object;
     if (!object) return null;
@@ -121,12 +125,30 @@ export class VoxelRenderer {
         return entity.kind !== 'building';
       }).length +
       state.world.placedBuildings.filter((building) => building.area === state.player.currentArea).length;
-    return {
+    const objectStats = this.collectObjectStats();
+    const raycastCandidateCount = this.countPickableMeshes();
+    this.lastRaycastCandidateCount = raycastCandidateCount;
+    const baseStats = {
       frame: state.realtime.tick,
       entityCount: Object.keys(state.entities).length + 1 + state.world.placedBuildings.length,
       visibleEntityCount,
       roughDrawCalls: this.renderer.info.render.calls,
-      triangles: this.renderer.info.render.triangles
+      triangles: this.renderer.info.render.triangles,
+      meshCount: objectStats.meshCount,
+      staticMeshCount: objectStats.staticMeshCount,
+      entityMeshCount: objectStats.entityMeshCount,
+      effectMeshCount: objectStats.effectMeshCount,
+      instancedMeshCount: objectStats.instancedMeshCount,
+      instancedInstanceCount: objectStats.instancedInstanceCount,
+      materialCount: objectStats.materialCount,
+      geometryCount: objectStats.geometryCount,
+      raycastCandidateCount,
+      memoryAfterTransitionMb: this.readMemoryMb()
+    };
+    return {
+      ...baseStats,
+      estimatedFrameMs: estimateRenderFrameMs(baseStats),
+      budget: { ...renderPerformanceBudget }
     };
   }
 
@@ -321,17 +343,20 @@ export class VoxelRenderer {
     const targetId = state.player.activeTargetId;
     const target = targetId ? state.entities[targetId] : null;
     if (target && target.area === state.player.currentArea && target.kind === 'enemy' && target.state !== 'dead') {
-      const ring = this.makeGroundRing(target.position, '#ff3333', 0.6, 0.78, 0.9);
+      const style = hoverRingStyleForEntity(state, target) ?? { color: '#ff3333', inner: 0.6, outer: 0.78, opacity: 0.9 };
+      const ring = this.makeGroundRing(target.position, style.color, style.inner, style.outer, style.opacity);
       this.targetRing = ring;
       this.entityGroup.add(ring);
     }
     const hoverId = state.ui.hoverTarget?.kind === 'entity' ? state.ui.hoverTarget.entityId : null;
     const hover = hoverId ? state.entities[hoverId] : null;
     if (!hover || hover.id === targetId || hover.area !== state.player.currentArea || (hover.kind === 'enemy' && hover.state === 'dead')) return;
-    const color = hover.kind === 'enemy' ? '#ff8a33' : hover.kind === 'resource' ? '#79d66f' : hover.kind === 'loot' || hover.kind === 'container' ? '#f0c957' : '#8bd9ff';
-    const ring = this.makeGroundRing(hover.position, color, 0.48, 0.62, hover.kind === 'enemy' ? 0.8 : 0.58);
-    this.hoverRing = ring;
-    this.entityGroup.add(ring);
+    const style = hoverRingStyleForEntity(state, hover);
+    if (style) {
+      const ring = this.makeGroundRing(hover.position, style.color, style.inner, style.outer, style.opacity);
+      this.hoverRing = ring;
+      this.entityGroup.add(ring);
+    }
   }
 
   private makeGroundRing(position: Vec3, color: string, inner: number, outer: number, opacity: number): THREE.Mesh {
@@ -386,6 +411,60 @@ export class VoxelRenderer {
       flash.position.set(position.x, position.y + 0.55, position.z);
       this.effectGroup.add(flash);
     });
+    this.updateActionEffects(state);
+  }
+
+  private updateActionEffects(state: GameState): void {
+    if (state.player.actionState.kind === 'attacking') {
+      const age = Math.max(0, Math.min(1, (state.clock - state.player.actionState.startedAt) / Math.max(0.1, state.player.actionState.duration || 0.35)));
+      const slash = new THREE.Mesh(
+        new THREE.RingGeometry(0.72 + age * 0.12, 0.79 + age * 0.16, 28, 1, -0.45, Math.PI * 0.72),
+        this.mats.get('attack-swing-arc', '#ffd968', { transparent: true, opacity: 0.4 * (1 - age), emissive: '#ff9f38', emissiveIntensity: 0.45, depthWrite: false })
+      );
+      slash.rotation.x = -Math.PI / 2;
+      slash.rotation.z = -0.75 + age * 1.3;
+      slash.position.set(state.player.position.x + 0.25, 0.22, state.player.position.z - 0.1);
+      this.effectGroup.add(slash);
+    }
+
+    if (state.spellCasting) {
+      const progress = 1 - state.spellCasting.remaining / state.spellCasting.total;
+      for (let i = 0; i < 5; i += 1) {
+        const angle = state.clock * 3 + i * 1.256;
+        const radius = 0.42 + progress * 0.28;
+        this.box(
+          this.effectGroup,
+          state.player.position.x + Math.cos(angle) * radius,
+          state.player.position.y + 0.72 + Math.sin(state.clock * 5 + i) * 0.12,
+          state.player.position.z + Math.sin(angle) * radius,
+          0.08,
+          0.08,
+          0.08,
+          this.mats.get('spell-windup-particle', '#7ad7ff', { emissive: '#59c8ff', emissiveIntensity: 0.9, transparent: true, opacity: 0.5 + progress * 0.32 })
+        );
+      }
+    }
+
+    const gathering = state.gathering;
+    const target = gathering ? state.entities[gathering.entityId] : null;
+    if (target?.kind === 'resource' && target.area === state.player.currentArea) {
+      const color = target.resourceType === 'ore' ? '#d8d5c9' : target.resourceType === 'tree' ? '#d29a5b' : '#d8f28a';
+      const pulse = 0.5 + Math.sin(state.clock * 18) * 0.5;
+      for (let i = 0; i < 4; i += 1) {
+        const angle = state.clock * 8 + i * Math.PI * 0.5;
+        const spread = 0.2 + i * 0.08;
+        this.box(
+          this.effectGroup,
+          target.position.x + Math.cos(angle) * spread,
+          target.position.y + 0.35 + pulse * 0.22 + i * 0.03,
+          target.position.z + Math.sin(angle) * spread,
+          target.resourceType === 'ore' ? 0.08 : 0.12,
+          target.resourceType === 'ore' ? 0.08 : 0.05,
+          target.resourceType === 'ore' ? 0.08 : 0.12,
+          this.mats.get(`gather-spark-${target.resourceType}`, color, { emissive: color, emissiveIntensity: target.resourceType === 'ore' ? 0.65 : 0.2, transparent: true, opacity: 0.52 })
+        );
+      }
+    }
   }
 
   private updateBuildGhost(state: GameState): void {
@@ -549,6 +628,10 @@ export class VoxelRenderer {
     this.worktable(18, 10, '#8f5f2a');
     this.worktable(-12, 2, '#a66b2e');
     this.tinkerBench(13, 12);
+    this.crates(6, 5);
+    this.sack(7.1, 5.25);
+    this.crates(-8, 5);
+    this.sack(-6.9, 4.75);
     this.well(-6, 8);
     this.cart(10, 8, '#7f4a24');
     this.cart(-14, -6, '#7f4a24');
@@ -617,6 +700,9 @@ export class VoxelRenderer {
     this.oreCluster(-7, 3, '#b77745');
     this.oreCluster(8, -3, '#9ba5a3');
     this.oreCluster(12, -7, '#b77745');
+    this.rockScatter(6, -5);
+    this.rockScatter(9, -7);
+    this.brokenWeapon(6, -9);
     for (let z = 2; z <= 12; z += 1) this.streamTile(-5 + Math.sin(z * 0.7) * 1.2, z);
     this.bridge(0, 6);
     this.bridge(-5, 8);
@@ -713,13 +799,18 @@ export class VoxelRenderer {
     this.torchPost(1, 2);
     this.torchPost(-5, -1);
     this.torchPost(7, 4);
+    this.torchPost(-1, -5);
+    this.torchPost(4, -2);
     this.sign(-7, 1, 'Town Gate');
     this.sign(9, -4, 'Old Bridge');
+    this.sign(2, -6, 'Bandit Warning');
     this.wagonTracks(-2, -3);
     this.wagonTracks(4, -2);
     this.bushPatch(-9, 5);
     this.bushPatch(6, 5);
     this.logPile(-11, 4);
+    this.bones(7, -3);
+    this.barrel(-6, 2.4);
     this.streamTile(6, 8);
     this.bridge(6, 8);
     this.waterEdge(9);
@@ -735,6 +826,9 @@ export class VoxelRenderer {
     this.house(10, -6, 4, 3, false);
     this.tree(8, 0, 0.8);
     this.bench(-5, -5);
+    this.gardenPatch(-2, 3);
+    this.worktable(4, -4, '#d9bd89');
+    this.lantern(-6, -2);
     this.barrel(-7, 6);
     this.crates(6, -6);
     this.flowerBox(9, -7);
@@ -1417,10 +1511,19 @@ export class VoxelRenderer {
   }
 
   private rockScatter(x: number, z: number): void {
-    const rock = this.mats.get('scatter-rock', '#6b6963');
-    this.box(this.staticGroup, x, 0.16, z, 0.54, 0.32, 0.42, rock, { ry: 0.3 });
-    this.box(this.staticGroup, x + 0.55, 0.11, z + 0.2, 0.32, 0.22, 0.3, this.mats.get('scatter-rock2', '#575650'), { ry: -0.2 });
-    this.box(this.staticGroup, x - 0.4, 0.08, z - 0.28, 0.24, 0.16, 0.28, this.mats.get('scatter-rock3', '#77746d'));
+    this.addKitGroup(
+      this.staticGroup,
+      this.kit.rockBuilder({
+        seed: this.tileHash(x, z),
+        variation: 'scatter',
+        theme: 'forest',
+        wear: 0.24,
+        colorVariation: 0.035,
+        metadata: { affordance: 'environment-detail' }
+      }),
+      x,
+      z
+    );
   }
 
   private fallenBranch(x: number, z: number): void {
@@ -1441,11 +1544,19 @@ export class VoxelRenderer {
   }
 
   private rubble(x: number, z: number): void {
-    for (let i = 0; i < 5; i += 1) {
-      const ox = ((i * 3) % 5 - 2) * 0.18;
-      const oz = ((i * 5) % 7 - 3) * 0.13;
-      this.box(this.staticGroup, x + ox, 0.08 + i * 0.018, z + oz, 0.28, 0.16, 0.24, this.mats.get(`rubble-${i}`, i % 2 ? '#4b4946' : '#64615b'), { ry: i * 0.4 });
-    }
+    this.addKitGroup(
+      this.staticGroup,
+      this.kit.rubbleBuilder({
+        seed: this.tileHash(x, z),
+        variation: 'crypt-floor',
+        theme: 'crypt',
+        damage: 0.55,
+        colorVariation: 0.025,
+        metadata: { affordance: 'danger-detail' }
+      }),
+      x,
+      z
+    );
   }
 
   private candle(x: number, z: number): void {
@@ -1488,5 +1599,65 @@ export class VoxelRenderer {
       const mesh = child as THREE.Mesh;
       if (mesh.geometry && !mesh.geometry.userData.sharedBox) mesh.geometry.dispose();
     });
+  }
+
+  private collectObjectStats(): {
+    meshCount: number;
+    staticMeshCount: number;
+    entityMeshCount: number;
+    effectMeshCount: number;
+    instancedMeshCount: number;
+    instancedInstanceCount: number;
+    materialCount: number;
+    geometryCount: number;
+  } {
+    const materials = new Set<string>();
+    const geometries = new Set<number>();
+    let instancedMeshCount = 0;
+    let instancedInstanceCount = 0;
+    const countGroup = (group: THREE.Object3D) => {
+      let count = 0;
+      group.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        count += 1;
+        geometries.add(child.geometry.id);
+        const materialList = Array.isArray(child.material) ? child.material : [child.material];
+        materialList.forEach((material) => materials.add(material.uuid));
+        if (child instanceof THREE.InstancedMesh) {
+          instancedMeshCount += 1;
+          instancedInstanceCount += child.count;
+        }
+      });
+      return count;
+    };
+    const staticMeshCount = countGroup(this.staticGroup);
+    const entityMeshCount = countGroup(this.entityGroup);
+    const effectMeshCount = countGroup(this.effectGroup) + countGroup(this.ghostGroup);
+    return {
+      meshCount: staticMeshCount + entityMeshCount + effectMeshCount,
+      staticMeshCount,
+      entityMeshCount,
+      effectMeshCount,
+      instancedMeshCount,
+      instancedInstanceCount,
+      materialCount: materials.size,
+      geometryCount: geometries.size
+    };
+  }
+
+  private countPickableMeshes(): number {
+    let count = 0;
+    this.records.forEach((record) => {
+      record.group.traverse((child) => {
+        if (child instanceof THREE.Mesh) count += 1;
+      });
+    });
+    return count;
+  }
+
+  private readMemoryMb(): number | null {
+    const maybeMemory = (performance as Performance & { memory?: { usedJSHeapSize?: number } }).memory;
+    if (!maybeMemory?.usedJSHeapSize) return null;
+    return Math.round((maybeMemory.usedJSHeapSize / 1024 / 1024) * 10) / 10;
   }
 }

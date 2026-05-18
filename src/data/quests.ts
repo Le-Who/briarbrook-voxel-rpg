@@ -10,6 +10,19 @@ export const tutorialQuestIds = [
   'place_to_call_yours'
 ];
 
+export const tutorialQuestPrerequisites: Partial<Record<string, string[]>> = {
+  ore_for_brom: ['prepare_for_road'],
+  mages_errand: ['prepare_for_road'],
+  patch_yourself_up: ['prepare_for_road'],
+  trouble_on_road: ['ore_for_brom', 'mages_errand', 'patch_yourself_up'],
+  bones_beneath: ['trouble_on_road'],
+  place_to_call_yours: ['bones_beneath']
+};
+
+export function questPrerequisitesMet(questId: string, completedQuestIds: string[]): boolean {
+  return (tutorialQuestPrerequisites[questId] ?? []).every((id) => completedQuestIds.includes(id));
+}
+
 export const createInitialQuests = (): Record<string, QuestState> => ({
   prepare_for_road: {
     id: 'prepare_for_road',
@@ -122,7 +135,7 @@ export const createInitialQuests = (): Record<string, QuestState> => ({
     description: 'Joryn points Valen toward the river plot and the first persistent house piece.',
     objectives: [
       { type: 'enter_area', label: 'Travel to the housing plot', areaId: 'housing', required: 1, progress: 0 },
-      { type: 'build', label: 'Place one floor, wall, fence, or torch', required: 1, progress: 0 }
+      { type: 'build', label: 'Place one camp sign, plant pot, bedroll, chest, or campfire', required: 1, progress: 0 }
     ],
     rewards: {
       gold: 40,

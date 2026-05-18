@@ -13,7 +13,7 @@ export function QuestTracker(state: GameState): string {
       <b>${quest.title}</b>
       ${next ? `<span>${next.label} <strong>${next.progress}/${next.required}</strong></span>` : '<span>Return to the quest giver.</span>'}
       <small>${completed}/${quest.objectives.length} steps complete</small>
-      ${quest.status === 'ready' ? `<button data-complete-quest="${quest.id}">Complete</button>` : ''}
+      ${quest.status === 'ready' ? `<small>Ready: speak with ${quest.giver}.</small>` : ''}
       ${quests.length > 1 ? `<small>${quests.length - 1} more lead${quests.length > 2 ? 's' : ''} in Journal</small>` : ''}
     </div>
   </section>`;

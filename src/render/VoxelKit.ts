@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 export interface VoxelBuilderOptions {
   seed?: number;
+  variation?: number | string;
   size?: number;
   theme?: string;
   wear?: number;
@@ -9,6 +10,7 @@ export interface VoxelBuilderOptions {
   color?: string;
   colorVariation?: number;
   props?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 interface VoxelKitContext {
@@ -118,6 +120,37 @@ export class VoxelKit {
     return this.scaled(g, options);
   }
 
+  rockBuilder(options: VoxelBuilderOptions & { count?: number } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const seed = options.seed ?? 0;
+    const palette =
+      options.theme === 'crypt'
+        ? ['#4b4946', '#57534e', '#343231']
+        : options.theme === 'road'
+          ? ['#777368', '#5c574f', '#868073']
+          : ['#6b6963', '#575650', '#77746d'];
+    const count = Math.max(2, Math.min(5, Math.round(options.count ?? 3)));
+    for (let i = 0; i < count; i += 1) {
+      const hash = this.hash(i, seed, typeof options.variation === 'number' ? options.variation : seed);
+      const x = ((hash % 7) - 3) * 0.16;
+      const z = (((hash / 7) % 7) - 3) * 0.12;
+      const scale = 0.82 + (hash % 4) * 0.08;
+      this.context.box(
+        g,
+        x,
+        0.09 + i * 0.026,
+        z,
+        (0.28 + (hash % 3) * 0.08) * scale,
+        (0.16 + (hash % 2) * 0.08) * scale,
+        (0.24 + (hash % 4) * 0.05) * scale,
+        this.mat(`kit-rock-${i}`, palette[i % palette.length], options),
+        { ry: hash * 0.03 }
+      );
+    }
+    if ((options.wear ?? 0) > 0.2) this.context.box(g, -0.22, 0.2, 0.24, 0.18, 0.05, 0.12, this.context.material('kit-rock-moss', '#415c34'));
+    return this.scaled(g, options);
+  }
+
   oreVeinBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
     const g = new THREE.Group();
     const color = options.color ?? '#9ba5a3';
@@ -135,6 +168,32 @@ export class VoxelKit {
     this.context.box(g, 0, 1.05, 0, 0.62, 1.7, 0.62, stone);
     this.context.box(g, 0, 1.95, 0, 0.9, 0.35, 0.9, stone);
     if ((options.damage ?? 0) > 0.3) this.context.box(g, 0.28, 1.8, 0.28, 0.2, 0.16, 0.22, this.context.material('kit-column-chip', '#343231'));
+    return this.scaled(g, options);
+  }
+
+  rubbleBuilder(options: VoxelBuilderOptions & { count?: number } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const seed = options.seed ?? 0;
+    const palette = options.theme === 'crypt' ? ['#4b4946', '#64615b', '#373532'] : ['#69655d', '#56524c', '#7a756a'];
+    const count = Math.max(3, Math.min(8, Math.round(options.count ?? 5)));
+    for (let i = 0; i < count; i += 1) {
+      const hash = this.hash(i + 3, seed + 5, typeof options.variation === 'number' ? options.variation : seed);
+      const ox = ((hash % 9) - 4) * 0.1;
+      const oz = (((hash / 9) % 9) - 4) * 0.09;
+      const damageScale = 1 + (options.damage ?? 0) * 0.22;
+      this.context.box(
+        g,
+        ox,
+        0.06 + i * 0.014,
+        oz,
+        (0.2 + (hash % 3) * 0.04) * damageScale,
+        0.12 + (hash % 2) * 0.04,
+        0.18 + (hash % 4) * 0.035,
+        this.mat(`kit-rubble-${i}`, palette[i % palette.length], options),
+        { ry: hash * 0.04 }
+      );
+    }
+    if ((options.damage ?? 0) > 0.35) this.context.box(g, 0.18, 0.16, -0.18, 0.36, 0.035, 0.05, this.context.material('kit-rubble-crack-shadow', '#151515'), { ry: 0.5 });
     return this.scaled(g, options);
   }
 
@@ -220,6 +279,10 @@ export class VoxelKit {
   }
 
   private scaled(group: THREE.Group, options: VoxelBuilderOptions): THREE.Group {
+    if (options.seed != null) group.userData.seed = options.seed;
+    if (options.variation != null) group.userData.variation = options.variation;
+    if (options.theme) group.userData.theme = options.theme;
+    if (options.metadata) group.userData.metadata = options.metadata;
     if (options.size && options.size !== 1) group.scale.setScalar(options.size);
     return group;
   }

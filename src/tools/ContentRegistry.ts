@@ -10,7 +10,7 @@ import { areaZoneTypes, zoneRules } from '../data/riskZones';
 import { skillDefinitions } from '../data/skillDefinitions';
 import { spellDefs } from '../data/spells';
 import { lockDefinitions, secretDefinitions, trapDefinitions, treasureLootTables, treasureMapDefinitions } from '../data/treasure';
-import { createInitialEntities } from '../game/GameState';
+import { createDefaultHotbar, createInitialEntities } from '../game/GameState';
 import type { GameState } from '../game/types';
 
 export interface ContentRegistry {
@@ -41,6 +41,7 @@ export interface ContentRegistry {
     traps: typeof trapDefinitions;
     lootTables: typeof treasureLootTables;
   };
+  hotbarDefaults: ReturnType<typeof createDefaultHotbar>;
 }
 
 export function createContentRegistry(state?: GameState): ContentRegistry {
@@ -71,7 +72,8 @@ export function createContentRegistry(state?: GameState): ContentRegistry {
       locks: lockDefinitions,
       traps: trapDefinitions,
       lootTables: treasureLootTables
-    }
+    },
+    hotbarDefaults: createDefaultHotbar()
   };
 }
 
@@ -98,7 +100,8 @@ export function exportContentSnapshot(registry: ContentRegistry = createContentR
       economy: registry.economy,
       housing: registry.housing,
       riskZones: registry.riskZones,
-      treasure: registry.treasure
+      treasure: registry.treasure,
+      hotbarDefaults: registry.hotbarDefaults
     },
     null,
     2

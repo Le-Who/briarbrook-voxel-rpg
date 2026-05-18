@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spellDefs } from '../data/spells';
 import { createInitialGameState } from '../game/GameState';
+import { addItem } from './InventorySystem';
 import { castSpellIntent, updateSpellCasting } from './SpellSystem';
+
+function prepareUtilityMage(state: ReturnType<typeof createInitialGameState>, spellIds: string[]): void {
+  state.player.spellbook.knownSpellIds = Array.from(new Set([...state.player.spellbook.knownSpellIds, ...spellIds]));
+  for (const reagent of ['blood_moss', 'sulfurous_ash', 'spider_silk', 'garlic', 'mandrake_root']) {
+    addItem(state.player.inventory, reagent, 3);
+  }
+}
 
 describe('systemic utility magic', () => {
   afterEach(() => {
@@ -29,6 +37,7 @@ describe('systemic utility magic', () => {
     state.player.combatProfile.hidden = true;
     state.player.combatProfile.hiddenUntil = 99;
     state.player.mana = 200;
+    prepareUtilityMage(state, ['reveal']);
 
     castSpellIntent(state, 'reveal', { kind: 'self' });
     updateSpellCasting(state, 10);
@@ -43,6 +52,7 @@ describe('systemic utility magic', () => {
     state.player.skills.Magery.value = 80;
     state.player.skills.Magery.realValue = 80;
     state.player.mana = 200;
+    prepareUtilityMage(state, ['magic_trap', 'dispel_field']);
     const tile = { kind: 'tile' as const, areaId: state.player.currentArea, position: { x: 2, y: 0, z: 2 } };
 
     castSpellIntent(state, 'magic_trap', tile);

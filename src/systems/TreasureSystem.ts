@@ -1,11 +1,14 @@
 import { treasureLootTables, treasureMapDefinitions } from '../data/treasure';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { createId } from '../game/GameState';
 import type { ContainerEntity, GameState, TargetRef, Vec3 } from '../game/types';
+import { setPlayerActionState } from './ActionStateSystem';
 import type { AreaManager } from '../world/AreaManager';
 import { addSystemMessage } from './ChatSystem';
 import { triggerContainerTrap } from './ContainerSystem';
 import { addItem, getItemCount, removeItems } from './InventorySystem';
 import { addFloatingText } from './LootSystem';
+import { markSecretDisarmedByContainer, markSecretTriggeredByContainer, revealSecretsNear } from './SecretSystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
 
 export function combineMapFragments(state: GameState, mapId = 'greymont_cache'): boolean {
@@ -55,6 +58,10 @@ export function decipherTreasureMap(state: GameState, mapId = state.ui.selectedT
 export function pinTreasureMap(state: GameState, mapId = state.ui.selectedTreasureMapId): void {
   const runtime = state.world.treasure.maps[mapId];
   if (!runtime) return;
+  if (runtime.decipheredPrecision < 0.55) {
+    state.ui.prompt = 'Decipher the clue further before pinning it.';
+    return;
+  }
   runtime.pinned = !runtime.pinned;
   state.ui.prompt = runtime.pinned ? 'Treasure mark pinned to the map.' : 'Treasure mark removed.';
 }
@@ -64,8 +71,9 @@ export function digWithShovel(state: GameState, areaManager: AreaManager, target
     state.ui.prompt = 'Select ground to dig.';
     return false;
   }
-  if (getItemCount(state.player.inventory, 'shovel') <= 0 && !Object.values(state.player.equipment).some((stack) => stack?.itemId === 'shovel')) {
-    state.ui.prompt = 'You need a shovel to dig here.';
+  const requiredTool = 'shovel';
+  if (getItemCount(state.player.inventory, requiredTool) <= 0 && !Object.values(state.player.equipment).some((stack) => stack?.itemId === requiredTool)) {
+    state.ui.prompt = `You need a ${requiredTool} to dig here.`;
     return false;
   }
   const area = target.areaId;
@@ -84,6 +92,7 @@ export function digWithShovel(state: GameState, areaManager: AreaManager, target
     return false;
   }
   const candidate = bestMapForDig(state, area, position);
+  setPlayerActionState(state, 'interacting', candidate ? 0.9 : 0.45, 'dig:treasure');
   attemptSkillUse(state, 'Mining', { verb: 'harvest-resource', difficulty: 20, success: Boolean(candidate), tile: position, relatedSkills: ['Cartography', 'Detect Hidden'] });
   state.world.treasure.excavationCooldowns[cooldownKey] = state.clock + 4;
   if (!candidate) {
@@ -99,6 +108,7 @@ export function detectHiddenPulse(state: GameState, target: TargetRef = null): n
   const center = target?.kind === 'tile' ? target.position : state.player.position;
   const detect = getSkillValue(state, 'Detect Hidden');
   let revealed = 0;
+  setPlayerActionState(state, 'interacting', 0.6, 'detect-hidden');
   for (const entity of Object.values(state.entities)) {
     if (entity.kind !== 'container' || entity.area !== state.player.currentArea || entity.opened) continue;
     if (distance(entity.position, center) > 7) continue;
@@ -115,6 +125,7 @@ export function detectHiddenPulse(state: GameState, target: TargetRef = null): n
       revealed += 1;
     }
   }
+  revealed += revealSecretsNear(state, { method: 'detect_hidden', origin: center, radius: 7, train: false });
   state.ui.prompt = revealed ? `Detect Hidden reveals ${revealed} sign${revealed === 1 ? '' : 's'}.` : 'Detect Hidden finds no hidden seams nearby.';
   addFloatingText(state, revealed ? `Reveal ${revealed}` : 'No secrets', center, revealed ? '#6fd4ff' : '#d8d8d8');
   return revealed;
@@ -137,6 +148,7 @@ export function removeTrapFromTarget(state: GameState, target: TargetRef): boole
   const removeTrap = getSkillValue(state, 'Remove Trap');
   const difficulty = container.trap.difficulty + 4;
   const success = Math.random() * 100 < Math.max(18, Math.min(90, 45 + removeTrap * 0.6 - difficulty));
+  setPlayerActionState(state, 'interacting', 0.9, `remove-trap:${container.id}`);
   attemptSkillUse(state, 'Remove Trap', { verb: 'trap', difficulty, success, targetId: container.id, relatedSkills: ['Detect Hidden', 'Tinkering'] });
   if (!success) {
     if (Math.random() < 0.5) triggerContainerTrap(state, container);
@@ -144,6 +156,7 @@ export function removeTrapFromTarget(state: GameState, target: TargetRef): boole
     return false;
   }
   container.trap.armed = false;
+  markSecretDisarmedByContainer(state, container.id);
   state.ui.prompt = 'The trap is safely disabled.';
   addSystemMessage(state, `${container.name}: trap disabled.`);
   return true;
@@ -154,9 +167,11 @@ export function triggerTrapWithTelekinesis(state: GameState, target: TargetRef):
   if (!container || container.kind !== 'container' || !container.trap?.armed) return false;
   container.trap.detected = true;
   container.trap.armed = false;
+  markSecretTriggeredByContainer(state, container.id);
   addFloatingText(state, 'Trap Snap', container.position, '#b66dff');
   addSystemMessage(state, `${container.name} discharges at a safe distance.`);
   state.ui.prompt = 'Telekinesis snaps the trap from a safer distance.';
+  emitAudioHook('trap_trigger', { id: container.id, area: container.area, position: container.position });
   return true;
 }
 
@@ -166,8 +181,8 @@ function bestMapForDig(state: GameState, area: string, position: Vec3): { mapId:
     const runtime = state.world.treasure.maps[mapId];
     if (!runtime || runtime.found || definition.regionHint !== area) continue;
     if (getItemCount(state.player.inventory, 'rough_treasure_map') <= 0) continue;
-    const precisionRadius = Math.max(1.2, definition.digRadius - runtime.decipheredPrecision * 2.2);
-    const dist = distance(position, definition.approximateCoordinate);
+    const precisionRadius = Math.max(1.2, definition.searchRadius - runtime.decipheredPrecision * 2.2);
+    const dist = distance(position, definition.approximateLocation);
     if (dist <= precisionRadius && (!best || dist < best.distance)) best = { mapId, distance: dist };
   }
   return best;
@@ -177,7 +192,7 @@ function nearestMapDistance(state: GameState, area: string, position: Vec3): num
   return Math.min(
     ...Object.values(treasureMapDefinitions)
       .filter((definition) => definition.regionHint === area)
-      .map((definition) => distance(position, definition.approximateCoordinate)),
+      .map((definition) => distance(position, definition.approximateLocation)),
     Infinity
   );
 }

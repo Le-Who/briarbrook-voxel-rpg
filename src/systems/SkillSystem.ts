@@ -1,4 +1,5 @@
 import { createSkillState, skillDefinitionById } from '../data/skillDefinitions';
+import { emitAudioHook } from '../audio/AudioHooks';
 import type { AttributeName, GameState, SkillId, SkillName, SkillState, Vec3 } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
 import { recordSkillGainTelemetry } from './TelemetrySystem';
@@ -138,6 +139,7 @@ function applySkillGain(state: GameState, skill: SkillState, amount: number): bo
   skill.xp = skill.gainProgress;
   recordSkillGainTelemetry(state, skill.id, cappedAmount);
   addSystemMessage(state, `${skill.name} increased to ${skill.value.toFixed(1)}.`);
+  emitAudioHook('skill_gain', { id: skill.id, intensity: cappedAmount });
   return true;
 }
 

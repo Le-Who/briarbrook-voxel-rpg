@@ -94,9 +94,24 @@ export function moveStackBetween(
   const stack = fromSlots[slot];
   if (!stack) return;
 
-  if (typeof targetSlot === 'number' && targetSlot >= 0 && targetSlot < toSlots.length && !toSlots[targetSlot]) {
+  if (typeof targetSlot === 'number' && targetSlot >= 0 && targetSlot < toSlots.length) {
+    if (fromSlots === toSlots && slot === targetSlot) return;
+    const targetStack = toSlots[targetSlot];
+    if (!targetStack) {
+      toSlots[targetSlot] = stack;
+      fromSlots[slot] = null;
+      return;
+    }
+    const def = itemDefs[stack.itemId];
+    if (def?.stackable && targetStack.itemId === stack.itemId && targetStack.quantity < def.maxStack) {
+      const moved = Math.min(def.maxStack - targetStack.quantity, stack.quantity);
+      targetStack.quantity += moved;
+      stack.quantity -= moved;
+      if (stack.quantity <= 0) fromSlots[slot] = null;
+      return;
+    }
     toSlots[targetSlot] = stack;
-    fromSlots[slot] = null;
+    fromSlots[slot] = targetStack;
     return;
   }
 
@@ -116,11 +131,12 @@ export function splitStack(inventory: InventoryState, slot: number): boolean {
   return true;
 }
 
-export function offerTradeItem(state: GameState, inventorySlot: number): void {
+export function offerTradeItem(state: GameState, inventorySlot: number, targetSlot?: number): void {
   const trade = state.ui.trade;
   const stack = state.player.inventory.slots[inventorySlot];
   if (!trade || !stack) return;
-  const emptyIndex = trade.playerSlots.findIndex((slot) => !slot);
+  const requestedSlot = typeof targetSlot === 'number' && targetSlot >= 0 && targetSlot < trade.playerSlots.length ? targetSlot : null;
+  const emptyIndex = requestedSlot != null && !trade.playerSlots[requestedSlot] ? requestedSlot : trade.playerSlots.findIndex((slot) => !slot);
   if (emptyIndex === -1) {
     addSystemMessage(state, 'Your trade offer is full.');
     return;

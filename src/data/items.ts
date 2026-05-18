@@ -354,6 +354,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 3,
     value: 28,
+    durability: 48,
     icon: { shape: 'pickaxe', primary: '#bfc2c1', secondary: '#7a4b25' }
   },
   axe: {
@@ -364,6 +365,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 3,
     value: 30,
+    durability: 50,
     icon: { shape: 'axe', primary: '#c7c9c8', secondary: '#815027' }
   },
   fishing_pole: {
@@ -374,6 +376,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 1.5,
     value: 18,
+    durability: 36,
     icon: { shape: 'bow', primary: '#8f5f2a', secondary: '#d9bd89' }
   },
   shovel: {
@@ -384,6 +387,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 1,
     weight: 2.5,
     value: 20,
+    durability: 44,
     icon: { shape: 'pickaxe', primary: '#9da1a0', secondary: '#7a4b25' }
   },
   stone_block: {
@@ -1135,6 +1139,19 @@ export const buildPieces: BuildPieceDef[] = [
     icon: { shape: 'bag', primary: '#7b4a24', secondary: '#333434' }
   },
   {
+    id: 'reinforced_chest',
+    name: 'Reinforced Chest',
+    category: 'Storage',
+    description: 'Tier-one mixed storage with more slots and weight than a camp chest.',
+    cost: [
+      { itemId: 'storage_chest', quantity: 1 },
+      { itemId: 'iron_bar', quantity: 2 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: true,
+    icon: { shape: 'bag', primary: '#5a3824', secondary: '#a7aaa7' }
+  },
+  {
     id: 'resource_crate',
     name: 'Resource Crate',
     category: 'Storage',
@@ -1381,6 +1398,19 @@ export const buildPieces: BuildPieceDef[] = [
     size: { x: 1, z: 1 },
     blocksMovement: true,
     icon: { shape: 'food', primary: '#d9822f', secondary: '#67c56b' }
+  },
+  {
+    id: 'small_trophy_hook',
+    name: 'Small Trophy Hook',
+    category: 'Trophies',
+    description: 'Tier-zero memory hook for a first token or small relic.',
+    cost: [
+      { itemId: 'wood', quantity: 1 },
+      { itemId: 'leather', quantity: 1 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: false,
+    icon: { shape: 'ring', primary: '#8f5f2a', secondary: '#d8d5c9' }
   },
   {
     id: 'skull_trophy_home',

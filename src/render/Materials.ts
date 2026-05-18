@@ -23,6 +23,15 @@ export class MaterialLibrary {
   animate(clock: number): void {
     this.materials.forEach((material) => {
       const name = material.name.toLowerCase();
+      if (name.includes('fire') || name.includes('flame') || name.includes('torch') || name.includes('candle') || name.includes('lamp')) {
+        const base = new THREE.Color(material.userData.baseColor ?? '#ff9b2f');
+        const pulse = Math.sin(clock * 8.5 + name.length) * 0.08;
+        base.offsetHSL(0.015, 0.1, pulse);
+        material.color.copy(base);
+        material.emissive.copy(base);
+        material.emissiveIntensity = 0.65 + Math.sin(clock * 11 + name.length) * 0.22;
+        return;
+      }
       if (!name.includes('water') && !name.includes('river') && !name.includes('stream')) return;
       const base = new THREE.Color(material.userData.baseColor ?? '#2c6f8d');
       const pulse = Math.sin(clock * 1.8 + name.length) * 0.035;

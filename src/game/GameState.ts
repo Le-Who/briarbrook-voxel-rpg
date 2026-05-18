@@ -8,6 +8,7 @@ import { createInitialResourceTiles } from '../data/resourceMaps';
 import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
+import { createInitialRenderStats } from '../render/RenderBudgets';
 import type {
   ActionState,
   ContentValidationState,
@@ -109,12 +110,20 @@ export function createInitialDevState(clock = 0): DevToolState {
       priceTrends: {}
     },
     telemetryExportJson: '',
-    renderStats: {
-      frame: 0,
-      entityCount: 0,
-      visibleEntityCount: 0,
-      roughDrawCalls: 0,
-      triangles: 0
+    renderStats: createInitialRenderStats(),
+    input: {
+      mode: 'normal',
+      lastRawInput: 'none',
+      lastIntent: 'none',
+      focusedWindow: 'none',
+      focusedElement: 'none',
+      topmostWindow: 'none',
+      dragPayload: null,
+      pointerCapture: null,
+      lastPreventedDefault: 'none',
+      targetMode: null,
+      viewport: 'unknown',
+      uiScale: 1
     }
   };
 }
@@ -485,9 +494,9 @@ export function createInitialEntities(): Record<string, Entity> {
     enemy('enemy_skel_2', 'crypt', 'Skeletal Warrior', 'Undead', 5, 5, -2, 40, [5, 9]),
     enemy('enemy_skel_3', 'crypt', 'Skeletal Warrior', 'Undead', 6, 3, 5, 48, [6, 10]),
     enemy('enemy_cultist_1', 'crypt', 'Mage Cultist', 'Cultist', 7, -3, 4, 46, [5, 8], 'mage'),
-    enemy('enemy_bandit_1', 'road', 'Highway Bandit', 'Bandit', 6, 2, -2, 70, [7, 12]),
-    enemy('enemy_bandit_2', 'road', 'Bandit Archer', 'Bandit', 6, 5, 1, 58, [5, 9], 'archer'),
-    enemy('enemy_brigand_1', 'road', 'Brigand Swordsman', 'Bandit', 7, 7, -2, 82, [8, 13]),
+    enemy('enemy_bandit_1', 'road', 'Highway Bandit', 'Bandit', 4, 2, -2, 56, [5, 9]),
+    enemy('enemy_bandit_2', 'road', 'Bandit Archer', 'Bandit', 4, 5, 1, 46, [4, 8], 'archer'),
+    enemy('enemy_brigand_1', 'road', 'Brigand Swordsman', 'Bandit', 6, 7, -2, 70, [7, 11]),
     enemy('enemy_wolf_1', 'forest', 'Grey Wolf', 'Beast', 4, -4, 2, 36, [4, 8], 'beast')
   ].forEach((entity) => {
     entities[entity.id] = entity;
@@ -500,41 +509,21 @@ export function createInitialGameState(): GameState {
   const inventory = createInventory(36, [
     createStack('iron_sword'),
     createStack('simple_bow'),
-    createStack('dagger'),
-    createStack('iron_armor'),
-    createStack('silver_ring'),
-    createStack('backpack'),
     createStack('beginner_spellbook'),
-    createStack('health_potion', 3),
-    createStack('mana_potion', 3),
-    createStack('parchment_scroll', 8),
-    createStack('pickaxe'),
-    createStack('shovel'),
+    createStack('health_potion', 2),
+    createStack('mana_potion', 1),
+    createStack('bandage', 6),
+    createStack('arrow', 25),
     createStack('axe'),
-    createStack('fishing_pole'),
-    createStack('bandage', 8),
-    createStack('poison_potion', 1),
-    createStack('arrow', 35),
-    createStack('lute'),
-    createStack('stone_block', 16),
-    createStack('torch', 8),
-    createStack('wood', 10),
-    createStack('logs', 6),
-    createStack('iron_ore', 6),
-    createStack('iron_bar', 10),
-    createStack('copper_bar', 4),
-    createStack('leather', 6),
-    createStack('black_pearl', 8),
-    createStack('blood_moss', 8),
-    createStack('garlic', 8),
-    createStack('ginseng', 8),
-    createStack('mandrake_root', 8),
-    createStack('nightshade', 8),
-    createStack('spider_silk', 8),
-    createStack('sulfurous_ash', 8),
-    createStack('clean_cloth', 6),
+    createStack('pickaxe'),
+    createStack('sulfurous_ash', 4),
+    createStack('ginseng', 3),
+    createStack('garlic', 3),
+    createStack('spider_silk', 3),
+    createStack('clean_cloth', 2),
+    createStack('torch', 3),
     createStack('scissors'),
-    createStack('carrot', 10)
+    createStack('carrot', 4)
   ]);
 
   return {
@@ -545,18 +534,18 @@ export function createInitialGameState(): GameState {
     player: {
       id: 'player',
       name: 'Valen',
-      level: 7,
-      xp: 120,
-      xpToNext: 220,
-      health: 120,
-      mana: 80,
+      level: 1,
+      xp: 0,
+      xpToNext: 120,
+      health: 115,
+      mana: 60,
       stamina: 25,
       attributes: {
-        Strength: 21,
-        Agility: 16,
-        Dexterity: 16,
-        Intelligence: 12,
-        Constitution: 18,
+        Strength: 18,
+        Agility: 14,
+        Dexterity: 14,
+        Intelligence: 14,
+        Constitution: 16,
         Luck: 10
       },
       statModes: {
@@ -571,35 +560,15 @@ export function createInitialGameState(): GameState {
       skillCap: 700,
       selectedSkillGroup: 'Combat',
       inventory,
-      bank: createInventory(24, [
-        createStack('iron_sword'),
-        createStack('axe'),
-        createStack('pickaxe'),
-        createStack('backpack'),
-        createStack('iron_shield'),
-        createStack('iron_armor'),
-        createStack('iron_boots'),
-        createStack('copper_ore', 7),
-        createStack('pickaxe'),
-        createStack('health_potion', 3),
-        createStack('parchment_scroll', 20),
-        createStack('iron_ore', 7),
-        createStack('cracked_shield'),
-        createStack('leather', 7),
-        createStack('iron_helmet'),
-        createStack('torch', 20),
-        createStack('stone_block', 32),
-        createStack('wood', 15)
-      ]),
+      bank: createInventory(24),
       equipment: {
         weapon: createStack('iron_sword'),
-        armor: createStack('iron_armor'),
-        accessory: createStack('silver_ring'),
+        armor: createStack('leather_armor'),
         backpack: createStack('backpack'),
-        shield: createStack('iron_shield')
+        shield: createStack('cracked_shield')
       },
-      gold: 341,
-      bankGold: 140,
+      gold: 95,
+      bankGold: 0,
       position: { ...areas.town.spawn },
       movement: {
         velocity: { x: 0, z: 0 },
@@ -717,11 +686,20 @@ export function createInitialGameState(): GameState {
       selectedTarget: null,
       targeting: null,
       contextMenu: null,
-      selectedRecipeId: 'iron_armor',
+      selectedRecipeId: 'smelt_iron',
       selectedTreasureMapId: 'greymont_cache',
       selectedHousingStorageId: null,
       selectedSpellId: 'magic_arrow',
+      spellSearch: '',
+      spellbookCircle: 'all',
+      spellbookFilter: 'known',
+      spellbookView: 'grid',
+      journalTab: 'quests',
       skillSearch: '',
+      skillView: 'ledger',
+      professionFilter: 'all',
+      professionAtlasZoom: 1,
+      pinnedProfessionGoalId: null,
       devTravel: false,
       fadeUntil: 0,
       selectedStationType: 'forge',

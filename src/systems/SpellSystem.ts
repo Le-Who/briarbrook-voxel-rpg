@@ -1,4 +1,5 @@
 import { areas } from '../data/areas';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { itemDefs } from '../data/items';
 import { spellDefs, type SpellDefinition } from '../data/spells';
 import { createId } from '../game/GameState';
@@ -75,6 +76,7 @@ export function castSpellIntent(state: GameState, spellId: string, target: Targe
   };
   setPlayerActionState(state, 'casting', spell.castTime, spell.id);
   state.ui.prompt = spell.wordsOfPower ? `${spell.wordsOfPower}...` : `Casting ${spell.displayName}...`;
+  emitAudioHook('spell_cast', { id: spell.id, area: state.player.currentArea, position: state.player.position, intensity: spell.circle });
 }
 
 export function updateSpellCasting(state: GameState, dt: number): void {
@@ -117,6 +119,7 @@ function completeSpell(state: GameState, spell: SpellDefinition, target: TargetR
     state.ui.prompt = `${spell.displayName} fizzles.`;
     addFloatingText(state, 'Fizzle', state.player.position, '#bce6ff');
     addSystemMessage(state, `${spell.displayName} fizzles.`);
+    emitAudioHook('spell_fizzle', { id: spell.id, area: state.player.currentArea, position: state.player.position, intensity: spell.circle });
     return;
   }
   recordQuestEvent(state, { type: 'cast', spellId: spell.id });
@@ -157,7 +160,7 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
   if (spell.effectType === 'detect_magic') {
     addEffect(state, { type: 'detect_magic', remaining: spell.power, amount: 1 });
     const fieldCount = state.world.magicFields.filter((field) => field.area === state.player.currentArea).length;
-    const containerAuras = revealMagicalContainers(state);
+    const containerAuras = revealMagicalContainers(state, 'detect_magic');
     const auraCount = fieldCount + containerAuras;
     addFloatingText(state, auraCount ? `${auraCount} aura${auraCount === 1 ? '' : 's'}` : 'No auras', state.player.position, '#6fd4ff');
     state.ui.prompt = auraCount ? 'Magical auras shimmer nearby.' : 'No active magic nearby.';
@@ -166,7 +169,7 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
   if (spell.effectType === 'reveal') {
     state.player.combatProfile.hidden = false;
     state.player.combatProfile.hiddenUntil = 0;
-    const revealed = revealMagicalContainers(state);
+    const revealed = revealMagicalContainers(state, 'reveal');
     addEffect(state, { type: 'reveal', remaining: 8, amount: spell.power });
     addFloatingText(state, revealed ? `Reveal ${revealed}` : 'Reveal', state.player.position, '#ffe98d');
     state.ui.prompt = revealed ? 'Hidden caches and traps are revealed.' : 'Hidden presences are revealed.';

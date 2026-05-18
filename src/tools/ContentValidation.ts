@@ -61,6 +61,7 @@ export function validateContent(registry: ContentRegistry = createContentRegistr
   validateHousing(context);
   validateRiskZones(context);
   validateTreasure(context);
+  validateHotbarDefaults(context);
 
   return {
     ...createInitialContentValidationState(checkedAt),
@@ -115,6 +116,7 @@ function validateBuildPieces(context: ValidationContext): void {
 function validateTreasure(context: ValidationContext): void {
   Object.values(context.registry.treasure.maps).forEach((map) => {
     requireArea(context, map.regionHint, `treasure map ${map.id}.regionHint`);
+    requireItem(context, map.requiredTool, `treasure map ${map.id}.requiredTool`);
     if (!context.registry.treasure.lootTables[map.lootTableId]) context.errors.push(`treasure map ${map.id} references missing loot table "${map.lootTableId}"`);
     map.possibleEncounters.forEach((encounter) => {
       if (!['Undead', 'Bandit', 'Beast', 'Cultist'].includes(encounter)) context.errors.push(`treasure map ${map.id} has invalid encounter "${encounter}"`);
@@ -123,6 +125,7 @@ function validateTreasure(context: ValidationContext): void {
   Object.values(context.registry.treasure.secrets).forEach((secret) => {
     requireArea(context, secret.areaId, `secret ${secret.id}.areaId`);
     requireSkill(context, secret.requiredSkill, `secret ${secret.id}.requiredSkill`);
+    if (secret.revealedEntityId && !context.registry.entities[secret.revealedEntityId]) context.errors.push(`secret ${secret.id} references missing revealed entity "${secret.revealedEntityId}"`);
     secret.reward.forEach((reward) => requireItemQuantity(context, reward, `secret ${secret.id}.reward`));
   });
   Object.entries(context.registry.treasure.lootTables).forEach(([id, entries]) => {
@@ -130,6 +133,26 @@ function validateTreasure(context: ValidationContext): void {
   });
   Object.entries(context.registry.treasure.locks).forEach(([id, lock]) => {
     requireItem(context, lock.requiredTool, `lock ${id}.requiredTool`);
+  });
+}
+
+function validateHotbarDefaults(context: ValidationContext): void {
+  const actions = new Set(['attack', 'ranged', 'utility', 'hide', 'defend', 'interact', 'build']);
+  if (context.registry.hotbarDefaults.length !== 10) context.errors.push(`hotbar defaults: expected 10 slots, got ${context.registry.hotbarDefaults.length}`);
+  context.registry.hotbarDefaults.forEach((binding, index) => {
+    if (!binding) {
+      context.errors.push(`hotbar defaults slot ${index}: empty binding`);
+      return;
+    }
+    if (binding.kind === 'action' && !actions.has(binding.id)) context.errors.push(`hotbar defaults slot ${index}: unknown action "${binding.id}"`);
+    if (binding.kind === 'item') requireItem(context, binding.id, `hotbar defaults slot ${index}`);
+    if (binding.kind === 'tool') {
+      requireItem(context, binding.id, `hotbar defaults slot ${index}`);
+      const item = context.registry.items[binding.id];
+      if (item && item.type !== 'tool') context.errors.push(`hotbar defaults slot ${index}: "${binding.id}" is not a tool`);
+    }
+    if (binding.kind === 'spell' && !context.spellIds.has(binding.id)) context.errors.push(`hotbar defaults slot ${index}: missing spell "${binding.id}"`);
+    if (binding.kind === 'skill') requireSkill(context, binding.id, `hotbar defaults slot ${index}`);
   });
 }
 

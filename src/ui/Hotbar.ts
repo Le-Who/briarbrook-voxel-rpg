@@ -19,14 +19,22 @@ const actionIcons: Record<string, { label: string; icon: IconDescriptor; hint: s
   build: { label: 'Build', icon: { shape: 'block', primary: '#8f8d84', secondary: '#5b5b59' }, hint: 'Toggle housing build mode.' }
 };
 
-function cooldownFor(state: GameState, binding: HotbarBinding): { remaining: number; total: number } {
+function cooldownFor(state: GameState, binding: HotbarBinding | null): { remaining: number; total: number } {
+  if (!binding) return { remaining: 0, total: 1 };
   if (binding.kind === 'action' && binding.id === 'attack') return { remaining: state.combat.meleeCooldown, total: 1.6 };
   if (binding.kind === 'action' && binding.id === 'ranged') return { remaining: state.combat.rangedCooldown, total: 1.1 };
   if (binding.kind === 'spell') return { remaining: state.combat.magicCooldown, total: spellDefs[binding.id]?.cooldown ?? 1.2 };
   return { remaining: 0, total: 1 };
 }
 
-function bindingView(state: GameState, binding: HotbarBinding): { label: string; icon: IconDescriptor; qty?: number; cost?: string; invalid?: string; tooltip: string } {
+function bindingView(state: GameState, binding: HotbarBinding | null): { label: string; icon: IconDescriptor; qty?: number; cost?: string; invalid?: string; tooltip: string } {
+  if (!binding) {
+    return {
+      label: 'Empty',
+      icon: actionIcons.utility.icon,
+      tooltip: 'Empty slot\nDrop an item, spell, skill, or tool here.'
+    };
+  }
   if (binding.kind === 'action') {
     const action = actionIcons[binding.id] ?? actionIcons.utility;
     const label = binding.id === 'utility' && state.player.currentArea === 'housing' ? 'Build / Pack' : action.label;
@@ -82,7 +90,8 @@ export function Hotbar(state: GameState): string {
         const cooldownPct = cooldown.remaining > 0 ? Math.max(0, Math.min(100, (cooldown.remaining / cooldown.total) * 100)) : 0;
         const active = state.ui.activeHotbarSlot === index ? ' active' : '';
         const invalid = view.invalid ? ' invalid' : '';
-        return `<button class="hotbar-slot${active}${invalid}" data-hotbar="${index}" data-hotbar-drop="${index}" data-tooltip="${attr(view.tooltip)}" title="${attr(view.tooltip)}">
+        const source = binding ? ` data-hotbar-source="hotbarSlot:${index}" data-drag-kind="hotbarSlot" data-source-window-id="hotbar" data-source-slot-id="${index}"` : '';
+        return `<button class="hotbar-slot${active}${invalid}${binding ? '' : ' empty'}" data-hotbar="${index}" data-hotbar-drop="${index}"${source} data-tooltip="${attr(view.tooltip)}" title="${attr(view.tooltip)}">
           <span>${key}</span>
           ${renderIcon(view.icon, view.label)}
           ${view.qty ? `<b>${view.qty}</b>` : ''}

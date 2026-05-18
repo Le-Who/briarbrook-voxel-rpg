@@ -9,7 +9,7 @@ export function TreasureMapPanel(state: GameState): string {
   const definition = treasureMapDefinitions[mapId] ?? treasureMapDefinitions.greymont_cache;
   const runtime = state.world.treasure.maps[definition.id];
   const precision = runtime?.decipheredPrecision ?? 0;
-  const radius = Math.max(1.2, definition.digRadius - precision * 2.2);
+  const radius = Math.max(1.2, definition.searchRadius - precision * 2.2);
   const fragments = getItemCount(state.player.inventory, 'map_fragment');
   const hasMap = getItemCount(state.player.inventory, 'rough_treasure_map') > 0;
   return `<section class="panel treasure-map-panel">
@@ -17,7 +17,7 @@ export function TreasureMapPanel(state: GameState): string {
     <div class="parchment">
       <div class="map-sketch">
         <i class="sketch-road"></i>
-        <i class="sketch-mark" style="left:${50 + definition.approximateCoordinate.x * 1.8}%;top:${50 + definition.approximateCoordinate.z * 1.8}%"></i>
+        <i class="sketch-mark" style="left:${50 + definition.approximateLocation.x * 1.8}%;top:${50 + definition.approximateLocation.z * 1.8}%"></i>
       </div>
       <div class="map-copy">
         <b>${areas[definition.regionHint].name}</b>
@@ -25,6 +25,7 @@ export function TreasureMapPanel(state: GameState): string {
         <div><span>Fragments</span><strong>${fragments}/3</strong></div>
         <div><span>Cartography</span><strong>${precision ? `${Math.round(precision * 100)}% precision` : 'undeciphered'}</strong></div>
         <div><span>Search Radius</span><strong>${hasMap ? `${radius.toFixed(1)} tiles` : 'needs map'}</strong></div>
+        <div><span>Tool</span><strong>${definition.requiredTool}</strong></div>
         <div><span>Pin</span><strong>${runtime?.pinned ? 'on minimap' : 'off'}</strong></div>
         <div class="map-actions">
           <button data-action="decipher-map" class="primary">Decipher</button>

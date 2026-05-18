@@ -53,13 +53,15 @@ export function CraftingPanel(state: GameState): string {
             return `<div class="requirement output">${renderIcon(def.icon, def.name)}<span>${def.name}</span><b>x${output.quantity * quantity}</b><i>${output.materialType ?? ''}</i></div>`;
           })
           .join('')}
-        <div class="quantity-stepper">
-          <span>Quantity</span>
-          <button data-action="craft-qty-down">-</button>
-          <b>${quantity}</b>
-          <button data-action="craft-qty-up">+</button>
+        <div class="recipe-actions-sticky">
+          <div class="quantity-stepper">
+            <span>Quantity</span>
+            <button data-action="craft-qty-down">-</button>
+            <b>${quantity}</b>
+            <button data-action="craft-qty-up">+</button>
+          </div>
+          <button class="primary" data-action="craft-selected">Craft x${quantity}</button>
         </div>
-        <button class="primary" data-action="craft-selected">Craft x${quantity}</button>
         <h4>Crafting Queue</h4>
         <div class="queue">
           ${state.craftQueue

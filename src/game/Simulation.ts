@@ -229,7 +229,7 @@ export class Simulation {
         break;
       case 'MOVE_ITEM':
         if (action.from === 'inventory' && action.to === 'trade-player') {
-          offerTradeItem(this.state, action.slot);
+          offerTradeItem(this.state, action.slot, action.targetSlot);
         } else if (action.from === 'trade-player' && action.to === 'inventory') {
           removeTradeOffer(this.state, action.slot);
         } else {
@@ -290,9 +290,18 @@ export class Simulation {
         fulfillMarketOrder(this.state, action.orderId);
         break;
       case 'TOGGLE_BUILD_MODE':
-        this.state.buildMode.active = action.active ?? !this.state.buildMode.active;
+        {
+          const nextActive = action.active ?? !this.state.buildMode.active;
+          if (nextActive && this.state.player.currentArea !== 'housing') {
+            this.state.buildMode.active = false;
+            this.state.ui.panels.build = false;
+            this.state.ui.prompt = 'Travel to your housing plot before building.';
+            addSystemMessage(this.state, this.state.ui.prompt);
+            break;
+          }
+          this.state.buildMode.active = nextActive;
+        }
         this.state.ui.panels.build = this.state.buildMode.active;
-        if (this.state.buildMode.active && this.state.player.currentArea !== 'housing') this.enterArea('housing');
         if (this.state.buildMode.active && this.state.player.currentArea === 'housing') claimPlotAndRefreshBuild(this.state, this.areaManager);
         updateBuildGhost(this.state, this.areaManager, this.state.buildMode.active ? { ...this.state.player.position, x: this.state.player.position.x + 2 } : this.state.player.position);
         setPlayerActionState(this.state, this.state.buildMode.active ? 'building' : 'idle', this.state.buildMode.active ? 0.2 : 0, 'build-mode');
@@ -399,6 +408,21 @@ export class Simulation {
       case 'SELECT_SPELL':
         this.state.ui.selectedSpellId = action.spellId;
         break;
+      case 'SET_SPELL_SEARCH':
+        this.state.ui.spellSearch = action.search.slice(0, 40);
+        break;
+      case 'SET_SPELLBOOK_CIRCLE':
+        this.state.ui.spellbookCircle = action.circle;
+        break;
+      case 'SET_SPELLBOOK_FILTER':
+        this.state.ui.spellbookFilter = action.filter;
+        break;
+      case 'SET_SPELLBOOK_VIEW':
+        this.state.ui.spellbookView = action.view;
+        break;
+      case 'SET_JOURNAL_TAB':
+        this.state.ui.journalTab = action.tab;
+        break;
       case 'SET_CRAFT_QUANTITY':
         this.state.ui.craftQuantity = Math.max(1, Math.min(20, Math.floor(action.quantity)));
         break;
@@ -410,6 +434,21 @@ export class Simulation {
         break;
       case 'SET_SKILL_SEARCH':
         this.state.ui.skillSearch = action.search;
+        break;
+      case 'SET_SKILL_VIEW':
+        this.state.ui.skillView = action.view;
+        break;
+      case 'SET_PROFESSION_FILTER':
+        this.state.ui.professionFilter = action.professionId;
+        break;
+      case 'SET_PROFESSION_ATLAS_ZOOM':
+        this.state.ui.professionAtlasZoom = Math.max(0.75, Math.min(1.35, Number(action.zoom.toFixed(2))));
+        break;
+      case 'PIN_PROFESSION_GOAL':
+        this.state.ui.pinnedProfessionGoalId = action.goalId;
+        this.state.ui.journalTab = 'tutorials';
+        this.state.ui.panels.journal = true;
+        this.state.ui.prompt = action.goalId ? 'Profession goal pinned to Journal.' : 'Profession goal unpinned.';
         break;
       case 'TOGGLE_DEV_TRAVEL':
         this.state.ui.devTravel = !this.state.ui.devTravel;
@@ -452,11 +491,17 @@ export class Simulation {
       case 'DEV_EXPORT_TELEMETRY':
         devExportTelemetry(this.state);
         break;
+      case 'UPDATE_INPUT_DEBUG':
+        this.state.dev.input = { ...this.state.dev.input, ...action.patch };
+        break;
       case 'SET_CHAT_TAB':
         this.state.ui.chatTab = action.channel;
         break;
       case 'SEND_CHAT':
         if (action.text.trim()) addChat(this.state, action.text.trim(), { speaker: 'Valen' });
+        break;
+      case 'SHOW_PROMPT':
+        this.state.ui.prompt = action.message;
         break;
       case 'USE_HOTBAR':
         this.useHotbar(action.slot);
@@ -464,11 +509,25 @@ export class Simulation {
       case 'SET_HOTBAR_SLOT':
         if (action.slot >= 0 && action.slot < this.state.ui.hotbar.length) {
           this.state.ui.hotbar[action.slot] = action.binding;
-          this.state.ui.prompt = `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} updated.`;
+          this.state.ui.prompt = action.binding ? `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} updated.` : `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} cleared.`;
+        }
+        break;
+      case 'CLEAR_HOTBAR_SLOT':
+        if (action.slot >= 0 && action.slot < this.state.ui.hotbar.length) {
+          this.state.ui.hotbar[action.slot] = null;
+          this.state.ui.prompt = `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} cleared.`;
+        }
+        break;
+      case 'MOVE_HOTBAR_SLOT':
+        if (action.from >= 0 && action.from < this.state.ui.hotbar.length && action.to >= 0 && action.to < this.state.ui.hotbar.length && action.from !== action.to) {
+          const fromBinding = this.state.ui.hotbar[action.from];
+          this.state.ui.hotbar[action.from] = this.state.ui.hotbar[action.to];
+          this.state.ui.hotbar[action.to] = fromBinding;
+          this.state.ui.prompt = `Hotbar ${action.from === 9 ? 0 : action.from + 1} moved to ${action.to === 9 ? 0 : action.to + 1}.`;
         }
         break;
       case 'SET_UI_SCALE':
-        this.state.ui.uiScale = Math.max(0.85, Math.min(1.25, Number(action.scale.toFixed(2))));
+        this.state.ui.uiScale = Math.max(0.8, Math.min(1.25, Number(action.scale.toFixed(2))));
         this.state.ui.prompt = `UI scale ${Math.round(this.state.ui.uiScale * 100)}%.`;
         break;
       case 'TOGGLE_REDUCED_MOTION':
@@ -681,6 +740,12 @@ export class Simulation {
       else this.state.ui.prompt = 'Select a tool first.';
     } else if (command === 'cast_spell') {
       this.applyAction({ type: 'USE_SPELL_ON_TARGET', spellId: this.state.ui.selectedSpellId, target });
+    } else if (command === 'detect_hidden') {
+      this.applyAction({ type: 'USE_SKILL_ON_TARGET', skillId: 'Detect Hidden', target });
+    } else if (command === 'remove_trap') {
+      this.applyAction({ type: 'USE_SKILL_ON_TARGET', skillId: 'Remove Trap', target });
+    } else if (command === 'lockpick' && entityId) {
+      this.applyAction({ type: 'INTERACT_ENTITY', entityId });
     } else if (command === 'snoop') {
       this.applyAction({ type: 'USE_SKILL_ON_TARGET', skillId: 'Snooping', target });
     } else if (command === 'steal') {

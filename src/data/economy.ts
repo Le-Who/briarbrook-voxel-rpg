@@ -129,6 +129,31 @@ export const workOrderTemplates: WorkOrderState[] = [
     status: 'open'
   },
   {
+    id: 'wo_ysolda_herbs',
+    issuerNpcId: 'npc_ysolda_town',
+    requester: 'Ysolda',
+    category: 'reagents',
+    title: 'Alchemist Herb Stock',
+    description: 'Ysolda needs nightshade and blood moss for antidotes and field tonics.',
+    itemId: 'nightshade',
+    quantity: 8,
+    requiredItems: [
+      { itemId: 'nightshade', quantity: 8 },
+      { itemId: 'blood_moss', quantity: 6 }
+    ],
+    delivered: 0,
+    rewardGold: 146,
+    rewardItems: [{ itemId: 'cure_potion', quantity: 1 }],
+    rewardSkillHints: ['Alchemy', 'Item Identification'],
+    reputationGain: 1,
+    skill: 'Alchemy',
+    expiresAt: 96,
+    expiresAtWorldTime: 96,
+    repeatPolicy: 'daily',
+    difficultyTier: 1,
+    status: 'open'
+  },
+  {
     id: 'wo_torren_fish_bread',
     issuerNpcId: 'npc_torren_town',
     requester: 'Marshal Torren',

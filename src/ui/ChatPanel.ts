@@ -7,7 +7,6 @@ export function ChatPanel(state: GameState): string {
   return `<section class="panel chat-panel">
     <div class="chat-tabs">
       ${tabs.map((tab) => `<button class="${state.ui.chatTab === tab ? 'active' : ''}" data-chat-tab="${tab}">${tab}</button>`).join('')}
-      <button data-action="save-game">+</button>
     </div>
     <div class="chat-log">
       ${visible

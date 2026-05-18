@@ -1,4 +1,5 @@
 import { itemDefs } from '../data/items';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { resourceTileKey } from '../data/resourceMaps';
 import { createId } from '../game/GameState';
 import type { GameState, ResourceKind, ResourceTile, TargetRef, Vec3 } from '../game/types';
@@ -141,6 +142,11 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
   addSystemMessage(state, `You receive: ${text}.`);
   state.ui.prompt = `You receive: ${text}.`;
   addFloatingText(state, text, { x: tile.x, y: 0, z: tile.z }, config.kind === 'water' ? '#9ad8ff' : '#e8f5be');
+  emitAudioHook(config.kind === 'ore' ? 'mining_hit' : config.kind === 'tree' ? 'tree_chop' : config.kind === 'water' ? 'item_pickup' : 'item_pickup', {
+    area: state.player.currentArea,
+    position: { x: tile.x, y: 0, z: tile.z },
+    intensity: rewards.length
+  });
 }
 
 export function updateResourceTiles(state: GameState): void {
@@ -160,6 +166,19 @@ export function inspectTargetForTool(state: GameState, toolItemId: string, targe
   if (!tile) return null;
   if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) return `${tile.name} (depleted)`;
   return tile.name;
+}
+
+export function resourceTileAtPosition(state: GameState, position: Vec3, kind?: ResourceKind, radius = 0): ResourceTile | null {
+  const x = Math.round(position.x);
+  const z = Math.round(position.z);
+  const kinds: ResourceKind[] = kind ? [kind] : ['tree', 'ore', 'water', 'herb'];
+  for (const candidateKind of kinds) {
+    const exact = state.world.resourceTiles[resourceTileKey(state.player.currentArea, x, z, candidateKind)];
+    if (exact) return exact;
+    const nearby = nearbyResourceTile(state, x, z, candidateKind, radius);
+    if (nearby) return nearby;
+  }
+  return null;
 }
 
 function resolveResourceTile(state: GameState, target: TargetRef, kind: ResourceKind): ResourceTile | null {

@@ -1,4 +1,5 @@
 import { itemDefs } from '../data/items';
+import { emitAudioHook } from '../audio/AudioHooks';
 import type { GameState, InventoryState, ItemStack } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
 import { addItem, removeItems } from './InventorySystem';
@@ -63,6 +64,7 @@ export function buyMerchantItem(state: GameState, slot: number): void {
   recordQuestEvent(state, { type: 'buy', itemId, quantity });
   refreshQuestProgress(state);
   addSystemMessage(state, `Bought ${itemName} x${quantity} for ${cost}g.`);
+  emitAudioHook('market_transaction', { id: itemId, area: state.player.currentArea, intensity: cost });
 }
 
 export function sellMerchantItem(state: GameState, slot: number): void {
@@ -87,6 +89,7 @@ export function sellMerchantItem(state: GameState, slot: number): void {
   recordGoldDelta(state, value);
   if (merchant && (merchant.kind === 'npc' || merchant.kind === 'social')) merchant.tradeGold = Math.max(0, (merchant.tradeGold ?? 0) - value);
   addSystemMessage(state, `Sold ${itemName} x${quantity} for ${value}g.`);
+  emitAudioHook('market_transaction', { id: itemId, area: state.player.currentArea, intensity: value });
 }
 
 export function trainSkill(state: GameState, skillId: string): void {
@@ -113,4 +116,5 @@ export function trainSkill(state: GameState, skillId: string): void {
   skill.value = Number((skill.realValue + skill.bonusValue).toFixed(1));
   skill.lastGainAt = state.clock;
   addSystemMessage(state, `${merchant.name} trains ${skillId} to ${skill.value.toFixed(1)} for ${cost}g.`);
+  emitAudioHook('market_transaction', { id: skillId, area: state.player.currentArea, intensity: cost });
 }

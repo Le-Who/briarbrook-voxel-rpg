@@ -22,12 +22,19 @@ function tooltip(stack: ItemStack | null): string {
 
 export function renderSlots(inventory: InventoryState | Array<ItemStack | null>, kind: string, selected: number | null = null): string {
   const slots = Array.isArray(inventory) ? inventory : inventory.slots;
+  const container = kind === 'inv' ? 'inventory' : kind === 'trade' ? 'trade-player' : kind;
+  const validDropContainer = container === 'inventory' || container === 'bank' || container === 'trade-player';
   return `<div class="slot-grid ${kind}-grid">${slots
     .map((stack, index) => {
       const def = stack ? itemDefs[stack.itemId] : null;
       const selectedClass = selected === index ? ' selected' : '';
-      const source = stack && def ? `${def.type === 'tool' ? 'tool' : 'item'}:${stack.itemId}` : '';
-      return `<button class="slot${selectedClass}" data-${kind}-slot="${index}" ${source ? `data-hotbar-source="${attr(source)}" draggable="true"` : ''} data-tooltip="${attr(tooltip(stack))}" title="${def?.name ?? 'Empty'}">
+      const source = validDropContainer && stack && def ? `${def.type === 'tool' ? 'tool' : 'item'}:${stack.itemId}` : '';
+      const dragAttrs =
+        validDropContainer && stack && def
+          ? ` data-hotbar-source="${attr(source)}" data-drag-kind="item" data-source-window-id="${attr(container)}" data-source-slot-id="${index}" data-item-instance-id="${attr(stack.uid)}" data-item-definition-id="${attr(stack.itemId)}" data-quantity="${stack.quantity}" data-display-name="${attr(def.name)}"`
+          : '';
+      const dropAttr = validDropContainer ? ` data-item-drop-target="${attr(container)}:${index}"` : '';
+      return `<button class="slot${selectedClass}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs} data-tooltip="${attr(tooltip(stack))}" title="${attr(def?.name ?? 'Empty')}">
         ${def ? renderIcon(def.icon, def.name) : ''}
         ${stack && stack.quantity > 1 ? `<span class="qty">${stack.quantity}</span>` : ''}
       </button>`;
