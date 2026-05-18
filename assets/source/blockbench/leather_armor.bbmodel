@@ -1,0 +1,12 @@
+{
+  "meta": { "format_version": "4.10", "model_format": "free" },
+  "name": "leather_armor",
+  "resolution": { "width": 16, "height": 16 },
+  "elements": [
+    { "name": "chest", "from": [4.5, 5, 6.75], "to": [11.5, 13, 9.25], "color": 0 },
+    { "name": "belt", "from": [4, 4.5, 6.5], "to": [12, 5.5, 9.5], "color": 1 },
+    { "name": "left_strap", "from": [5.25, 11, 6.45], "to": [6.25, 15, 9.55], "color": 1 },
+    { "name": "right_strap", "from": [9.75, 11, 6.45], "to": [10.75, 15, 9.55], "color": 1 }
+  ],
+  "outliner": ["chest", "belt", "left_strap", "right_strap"]
+}

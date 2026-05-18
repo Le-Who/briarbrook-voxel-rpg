@@ -1,13 +1,21 @@
 import type { IconDescriptor } from '../game/types';
+import type { IconVisualCategory } from '../ui/IconVisualSystem';
+
+const iconMarkupCache = new Map<string, string>();
+let iconRenderRequestCount = 0;
 
 function esc(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
 }
 
-export function renderIcon(icon?: IconDescriptor, label = ''): string {
+export function renderIcon(icon?: IconDescriptor, label = '', category?: IconVisualCategory): string {
+  iconRenderRequestCount += 1;
   const primary = esc(icon?.primary ?? '#b98b52');
   const secondary = esc(icon?.secondary ?? '#e8d7ae');
   const shape = icon?.shape ?? 'block';
+  const cacheKey = `${shape}|${primary}|${secondary}|${esc(label)}|${category ?? ''}`;
+  const cached = iconMarkupCache.get(cacheKey);
+  if (cached) return cached;
   const title = label ? `<title>${esc(label)}</title>` : '';
 
   const paths: Record<string, string> = {
@@ -30,5 +38,18 @@ export function renderIcon(icon?: IconDescriptor, label = ''): string {
     wood: `<rect x="12" y="20" width="40" height="25" rx="7" fill="${primary}"/><path d="M18 26h27M16 34h32M22 42h19" stroke="${secondary}" stroke-opacity=".55" stroke-width="3"/>`
   };
 
-  return `<svg class="item-icon" viewBox="0 0 64 64" aria-hidden="true">${title}${paths[shape] ?? paths.block}</svg>`;
+  const categoryClass = category ? ` icon-category-${category}` : '';
+  const categoryData = category ? ` data-icon-category="${esc(category)}"` : '';
+  const markup = `<svg class="item-icon${categoryClass}"${categoryData} viewBox="0 0 64 64" aria-hidden="true">${title}${paths[shape] ?? paths.block}</svg>`;
+  iconMarkupCache.set(cacheKey, markup);
+  return markup;
+}
+
+export function iconCacheStats(): { iconRenderRequestCount: number; cachedIconCount: number } {
+  return { iconRenderRequestCount, cachedIconCount: iconMarkupCache.size };
+}
+
+export function resetIconCacheStatsForTests(): void {
+  iconMarkupCache.clear();
+  iconRenderRequestCount = 0;
 }

@@ -1,26 +1,90 @@
 import { itemDefs } from '../data/items';
-import type { GameState, InventoryState, ItemStack } from '../game/types';
+import type { EquipmentSlot, GameState, InventoryState, ItemDef, ItemStack } from '../game/types';
 import { calculateWeight } from '../systems/InventorySystem';
 import { calculateDerivedStats } from '../systems/EquipmentSystem';
 import { renderIcon } from '../render/IconRenderer';
+import { buildItemTooltip, itemIconCategory } from './IconVisualSystem';
 
 function attr(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
 }
 
-function tooltip(stack: ItemStack | null): string {
-  if (!stack) return 'Empty';
-  const def = itemDefs[stack.itemId];
-  if (!def) return 'Unknown item';
-  const weapon = def.weaponClass ? `\nWeapon: ${def.weaponClass} · ${def.skillUsed ?? 'Wrestling'}\nDamage: ${def.baseDamageMin ?? 0}-${def.baseDamageMax ?? 0} · Speed: ${def.swingSpeed ?? 1}s` : '';
-  const durability = stack.maxDurability ? `\nDurability: ${stack.durability ?? stack.maxDurability}/${stack.maxDurability}` : '';
-  const provenance = [stack.quality, stack.materialType, stack.makerName ? `by ${stack.makerName}` : '', stack.trait].filter(Boolean).join(' · ');
-  const crafted = provenance ? `\nCrafted: ${provenance}` : '';
-  const poison = stack.poisonCharges ? `\nPoison: ${stack.poisonCharges} hits` : '';
-  return `${def.name}\nType: ${def.type}\nQty: ${stack.quantity}\nWeight: ${(def.weight * stack.quantity).toFixed(1)}\nValue: ${def.value}g${weapon}${durability}${crafted}${poison}`;
+function durabilityState(stack: ItemStack | null): 'broken' | 'damaged' | 'worn' | null {
+  if (!stack?.maxDurability) return null;
+  const ratio = (stack.durability ?? stack.maxDurability) / stack.maxDurability;
+  if (ratio <= 0) return 'broken';
+  if (ratio <= 0.25) return 'damaged';
+  if (ratio <= 0.55) return 'worn';
+  return null;
 }
 
-export function renderSlots(inventory: InventoryState | Array<ItemStack | null>, kind: string, selected: number | null = null): string {
+function equippedSlotForItem(state: GameState | undefined, itemId: string): EquipmentSlot | null {
+  if (!state) return null;
+  const entry = Object.entries(state.player.equipment).find(([, stack]) => stack?.itemId === itemId);
+  return (entry?.[0] as EquipmentSlot | undefined) ?? null;
+}
+
+function hotbarSlotForItem(state: GameState | undefined, itemId: string): number | null {
+  if (!state) return null;
+  const index = state.ui.hotbar.findIndex((binding) => (binding?.kind === 'item' || binding?.kind === 'tool') && binding.id === itemId);
+  return index >= 0 ? index : null;
+}
+
+function slotBadges(stack: ItemStack | null, state: GameState | undefined): string {
+  if (!stack) return '';
+  const badges: Array<{ cls: string; title: string; label: string }> = [];
+  const equippedSlot = equippedSlotForItem(state, stack.itemId);
+  const hotbarSlot = hotbarSlotForItem(state, stack.itemId);
+  const wear = durabilityState(stack);
+  if (equippedSlot) badges.push({ cls: 'equipped', title: `Equipped in ${equippedSlot}`, label: 'E' });
+  if (hotbarSlot != null) badges.push({ cls: 'hotbar-assigned', title: `Assigned to hotbar ${hotbarSlot === 9 ? 0 : hotbarSlot + 1}`, label: 'H' });
+  if (wear === 'broken') badges.push({ cls: 'broken', title: 'Broken', label: '!' });
+  else if (wear === 'damaged' || wear === 'worn') badges.push({ cls: wear, title: wear === 'damaged' ? 'Damaged' : 'Worn', label: 'cr' });
+  if (stack.quality === 'exceptional' || stack.exceptional) badges.push({ cls: 'exceptional', title: 'Exceptional quality', label: '*' });
+  const visible = badges.length > 3 ? [...badges.slice(0, 2), { cls: 'summary', title: `${badges.length - 2} more states`, label: `+${badges.length - 2}` }] : badges;
+  return visible.length ? `<span class="slot-badges">${visible.map((badge) => `<i class="slot-badge ${badge.cls}" title="${attr(badge.title)}">${badge.label}</i>`).join('')}</span>` : '';
+}
+
+function statValue(def: ItemDef | undefined, stack: ItemStack | null, key: 'armor' | 'minDamage' | 'maxDamage'): number {
+  if (!def) return 0;
+  if (key === 'minDamage') return def.baseDamageMin ?? 0;
+  if (key === 'maxDamage') return def.baseDamageMax ?? 0;
+  return Number(stack?.statModifiers?.[key] ?? def.statModifiers?.[key] ?? 0);
+}
+
+function deltaRow(label: string, next: number, current: number, lowerIsBetter = false): string {
+  const delta = Number((next - current).toFixed(2));
+  const good = lowerIsBetter ? delta < 0 : delta > 0;
+  const bad = lowerIsBetter ? delta > 0 : delta < 0;
+  const cls = good ? 'up' : bad ? 'down' : 'same';
+  const marker = good ? '+' : bad ? '-' : '=';
+  return `<span class="${cls}"><i>${marker}</i><b>${label}</b><em>${next || '-'}</em></span>`;
+}
+
+function itemComparison(state: GameState, stack: ItemStack | null, def: ItemDef | null): string {
+  if (!stack || !def?.equipmentSlot) return '';
+  const current = state.player.equipment[def.equipmentSlot];
+  const currentDef = current ? itemDefs[current.itemId] : undefined;
+  const nextDamage = statValue(def, stack, 'minDamage') + statValue(def, stack, 'maxDamage');
+  const currentDamage = statValue(currentDef, current ?? null, 'minDamage') + statValue(currentDef, current ?? null, 'maxDamage');
+  const nextArmor = statValue(def, stack, 'armor');
+  const currentArmor = statValue(currentDef, current ?? null, 'armor');
+  const nextSpeed = def.swingSpeed ?? 0;
+  const currentSpeed = currentDef?.swingSpeed ?? 0;
+  const nextDurability = stack.maxDurability ? Math.round(((stack.durability ?? stack.maxDurability) / stack.maxDurability) * 100) : 0;
+  const currentDurability = current?.maxDurability ? Math.round(((current.durability ?? current.maxDurability) / current.maxDurability) * 100) : 0;
+  return `<div class="item-compare">
+    <b>Compare ${def.equipmentSlot}</b>
+    <div>
+      ${deltaRow('Damage', nextDamage, currentDamage)}
+      ${deltaRow('Armor', nextArmor, currentArmor)}
+      ${deltaRow('Speed', nextSpeed, currentSpeed, true)}
+      ${deltaRow('Durability', nextDurability, currentDurability)}
+    </div>
+  </div>`;
+}
+
+export function renderSlots(inventory: InventoryState | Array<ItemStack | null>, kind: string, selected: number | null = null, state?: GameState): string {
   const slots = Array.isArray(inventory) ? inventory : inventory.slots;
   const container = kind === 'inv' ? 'inventory' : kind === 'trade' ? 'trade-player' : kind;
   const validDropContainer = container === 'inventory' || container === 'bank' || container === 'trade-player';
@@ -28,6 +92,7 @@ export function renderSlots(inventory: InventoryState | Array<ItemStack | null>,
     .map((stack, index) => {
       const def = stack ? itemDefs[stack.itemId] : null;
       const selectedClass = selected === index ? ' selected' : '';
+      const wearClass = durabilityState(stack);
       const source = validDropContainer && stack && def ? `${def.type === 'tool' ? 'tool' : 'item'}:${stack.itemId}` : '';
       const dragAttrs =
         validDropContainer && stack && def
@@ -35,9 +100,12 @@ export function renderSlots(inventory: InventoryState | Array<ItemStack | null>,
           : '';
       const dropAttr = validDropContainer ? ` data-item-drop-target="${attr(container)}:${index}"` : '';
       const tooltipId = `${kind}:${index}:${stack?.itemId ?? 'empty'}`;
-      return `<button class="slot${selectedClass}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs} data-tooltip-id="${attr(tooltipId)}" data-tooltip-source="${attr(kind)}" data-tooltip="${attr(tooltip(stack))}" title="${attr(def?.name ?? 'Empty')}">
-        ${def ? renderIcon(def.icon, def.name) : ''}
+      const compactTooltip = buildItemTooltip(stack, state, 'compact');
+      const advancedTooltip = buildItemTooltip(stack, state, 'advanced');
+      return `<button class="slot${selectedClass}${wearClass ? ` ${wearClass}` : ''}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs} data-tooltip-id="${attr(tooltipId)}" data-tooltip-source="${attr(kind)}" data-tooltip="${attr(compactTooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}" title="${attr(def?.name ?? 'Empty')}">
+        ${def ? renderIcon(def.icon, def.name, itemIconCategory(def)) : ''}
         ${stack && stack.quantity > 1 ? `<span class="qty">${stack.quantity}</span>` : ''}
+        ${slotBadges(stack, state)}
       </button>`;
     })
     .join('')}</div>`;
@@ -51,7 +119,7 @@ export function InventoryPanel(state: GameState): string {
   const stats = calculateDerivedStats(state);
   return `<section class="panel inventory-panel" data-window-id="inventory">
     <header><span>Inventory</span><button data-action="toggle-panel" data-panel="inventory">x</button></header>
-    ${renderSlots(state.player.inventory, 'inv', selected)}
+    ${renderSlots(state.player.inventory, 'inv', selected, state)}
     <footer class="panel-footer">
       <span class="gold">●</span><span>${state.player.gold}</span>
       <span class="spacer"></span><span>${calculateWeight(state).toFixed(0)}/${stats.carryCapacity.toFixed(0)}</span>
@@ -66,6 +134,7 @@ export function InventoryPanel(state: GameState): string {
             ${state.ui.trade ? '<button data-action="offer-selected">Offer</button>' : ''}
             ${state.ui.merchant ? '<button data-action="sell-selected">Sell</button>' : ''}
             ${state.ui.panels.bank ? '<button data-action="deposit-selected">Bank</button>' : ''}
+            ${itemComparison(state, stack, def)}
           </div>`
         : ''
     }

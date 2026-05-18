@@ -1,0 +1,11 @@
+{
+  "meta": { "format_version": "4.10", "model_format": "free" },
+  "name": "simple_bow",
+  "resolution": { "width": 16, "height": 16 },
+  "elements": [
+    { "name": "upper_limb", "from": [7, 8, 7.5], "to": [8.5, 15, 8.5], "rotation": { "origin": [8, 8, 8], "axis": "z", "angle": -22 }, "color": 0 },
+    { "name": "lower_limb", "from": [7, 1, 7.5], "to": [8.5, 8, 8.5], "rotation": { "origin": [8, 8, 8], "axis": "z", "angle": 22 }, "color": 0 },
+    { "name": "string", "from": [9.2, 1.25, 7.85], "to": [9.45, 14.75, 8.15], "color": 1 }
+  ],
+  "outliner": ["upper_limb", "lower_limb", "string"]
+}

@@ -1,4 +1,4 @@
-import type { AreaId, BuildPieceDef, CameraSmoothingMode, ChatMessage, CombatApproachMode, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, InputDebugState, ManagedWindowId, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, UILayoutPreset, UIWindowLayout, Vec3, WorldPhase } from './types';
+import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, CombatApproachMode, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapWaypointSource, MarketViewMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldPhase } from './types';
 import type { InteractionCommand } from '../systems/InteractionAffordanceSystem';
 
 export type GameAction =
@@ -74,16 +74,20 @@ export type GameAction =
   | { type: 'SELECT_RECIPE'; recipeId: string }
   | { type: 'SET_CRAFT_STATION'; stationType: StationType | 'all' }
   | { type: 'SET_MARKET_FILTER'; category: EconomyOrderCategory | 'all' }
+  | { type: 'SET_MARKET_VIEW'; view: MarketViewMode }
   | { type: 'SET_MARKET_SEARCH'; search: string }
   | { type: 'SET_TREASURE_MAP'; mapId: string }
   | { type: 'DECIPHER_TREASURE_MAP'; mapId?: string }
   | { type: 'PIN_TREASURE_MAP'; mapId?: string }
+  | { type: 'SET_MAP_WAYPOINT'; areaId: AreaId; position: Vec3; label?: string; source?: MapWaypointSource }
+  | { type: 'CLEAR_MAP_WAYPOINT' }
   | { type: 'SELECT_SPELL'; spellId: string }
   | { type: 'SET_SPELL_SEARCH'; search: string }
   | { type: 'SET_SPELLBOOK_CIRCLE'; circle: number | 'all' }
   | { type: 'SET_SPELLBOOK_FILTER'; filter: 'known' | 'all' | 'unknown' }
   | { type: 'SET_SPELLBOOK_VIEW'; view: 'grid' | 'list' }
   | { type: 'SET_JOURNAL_TAB'; tab: 'quests' | 'rumors' | 'skills' | 'spells' | 'locations' | 'tutorials' | 'workOrders' }
+  | { type: 'PIN_RUMOR'; eventId: string | null }
   | { type: 'SET_SPELLBOOK_SEARCH'; search: string }
   | { type: 'SET_SPELLBOOK_KNOWLEDGE_FILTER'; filter: SpellbookKnowledgeFilter }
   | { type: 'SET_SPELLBOOK_CIRCLE_FILTER'; circle: number | 'all' }
@@ -121,12 +125,29 @@ export type GameAction =
   | { type: 'SET_CHAT_TAB'; channel: ChatMessage['channel'] }
   | { type: 'SEND_CHAT'; text: string }
   | { type: 'USE_HOTBAR'; slot: number }
+  | { type: 'SET_ACTIVE_HOTBAR_SLOT'; slot: number }
   | { type: 'SET_HOTBAR_SLOT'; slot: number; binding: HotbarBinding | null }
   | { type: 'CLEAR_HOTBAR_SLOT'; slot: number }
   | { type: 'MOVE_HOTBAR_SLOT'; from: number; to: number }
   | { type: 'SHOW_PROMPT'; message: string }
   | { type: 'SET_UI_SCALE'; scale: number }
+  | { type: 'SET_FONT_SCALE'; scale: number }
+  | { type: 'SET_TOOLTIP_DELAY'; delayMs: number }
+  | { type: 'SET_TOOLTIP_MODE'; mode: TooltipDetailMode }
+  | { type: 'SET_ADVANCED_TOOLTIP_MODIFIER'; modifier: AdvancedTooltipModifier }
   | { type: 'TOGGLE_REDUCED_MOTION' }
+  | { type: 'TOGGLE_COLORBLIND_STATUS' }
+  | { type: 'TOGGLE_DAMAGE_NUMBERS' }
+  | { type: 'TOGGLE_SKILL_GAIN_TOASTS' }
+  | { type: 'TOGGLE_CHAT_TABS' }
+  | { type: 'SET_AUDIO_VOLUME'; category: AudioVolumeCategory; volume: number }
+  | { type: 'TOGGLE_MUTE_WHEN_UNFOCUSED' }
+  | { type: 'TOGGLE_VISUAL_AUDIO_CUES' }
+  | { type: 'TOGGLE_LOCK_UI_LAYOUT' }
+  | { type: 'SET_HUD_DENSITY'; density: HudDensityMode }
+  | { type: 'BEGIN_KEYBIND_CAPTURE'; actionId: InputActionId; context: InputBindingContext }
+  | { type: 'SET_INPUT_BINDING'; actionId: InputActionId; context: InputBindingContext; key: string }
+  | { type: 'RESET_INPUT_BINDINGS' }
   | { type: 'SET_CAMERA_SMOOTHING'; mode: CameraSmoothingMode }
   | { type: 'SET_WINDOW_LAYOUT'; windowId: ManagedWindowId; layout: UIWindowLayout }
   | { type: 'FOCUS_WINDOW'; windowId: ManagedWindowId }

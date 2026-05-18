@@ -16,6 +16,7 @@ const socialLines = [
   { speaker: 'Kippa', text: 'WTS [Iron Sword] 50g', tone: 'trade' as const }
 ];
 
+export const AMBIENT_CHAT_INTERVAL_SECONDS = 24;
 let socialCursor = 0;
 
 export function addChat(
@@ -45,7 +46,7 @@ export function addAreaWelcome(state: GameState): void {
 }
 
 export function updateAmbientChat(state: GameState, dt: number): void {
-  if (!state.ui.panels.trade && Math.floor((state.clock - dt) / 14) !== Math.floor(state.clock / 14)) {
+  if (!state.ui.panels.trade && Math.floor((state.clock - dt) / AMBIENT_CHAT_INTERVAL_SECONDS) !== Math.floor(state.clock / AMBIENT_CHAT_INTERVAL_SECONDS)) {
     const activeEvent = state.world.activeEvents?.find((event) => event.discovered) ?? null;
     if (activeEvent) {
       addChat(state, activeEvent.rumor, { speaker: activeEvent.type === 'market_day' ? 'Town Crier' : 'Rumor', tone: activeEvent.type === 'bandit_ambush' || activeEvent.type === 'crypt_spill' ? 'danger' : 'normal' });

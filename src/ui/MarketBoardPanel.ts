@@ -15,6 +15,7 @@ function requirementsLabel(requirements: RecipeRequirement[]): string {
 export function MarketBoardPanel(state: GameState): string {
   if (!state.ui.panels.market) return '';
   const category = state.ui.marketCategory ?? 'all';
+  const view = state.ui.marketView ?? 'work';
   const search = (state.ui.marketSearch ?? '').trim().toLowerCase();
   const matches = (itemId: string, itemCategory = 'misc', extra = '') => {
     const item = itemDefs[itemId];
@@ -31,16 +32,22 @@ export function MarketBoardPanel(state: GameState): string {
     return `${order.title ?? ''} ${order.requester} ${requirementsLabel(order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }])}`.toLowerCase().includes(search);
   });
 
-  return `<section class="panel market-panel" data-window-id="market">
-    <header><span>Briarbrook Market Board</span><button data-action="toggle-panel" data-panel="market">x</button></header>
-    <div class="market-controls">
-      <input class="market-search" data-action="market-search" value="${attr(state.ui.marketSearch ?? '')}" placeholder="Search item or issuer" />
-      <div class="market-categories">
-        ${marketCategories.map((entry) => `<button class="${category === entry ? 'active' : ''}" data-market-category="${entry}">${entry}</button>`).join('')}
-      </div>
-    </div>
-    <div class="market-columns">
-      <div>
+  const workOrdersHtml = `<div class="market-work-column">
+        <h3>Available Work Orders</h3>
+        ${workOrders
+          .map((order) => {
+            const required = order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }];
+            const ready = required.every((requirement) => getItemCount(state.player.inventory, requirement.itemId) >= requirement.quantity);
+            return `<article class="market-order work ${ready ? 'ready' : ''}">
+              ${renderIcon(itemDefs[order.itemId].icon, itemDefs[order.itemId].name)}
+              <span><b>${order.title ?? order.requester}</b><small>${order.requester} · ${requirementsLabel(required)} · ${order.rewardSkillHints?.slice(0, 2).join(', ') ?? order.skill}</small></span>
+              <strong>${order.rewardGold}g</strong>
+              <button data-work-order="${order.id}">Deliver</button>
+            </article>`;
+          })
+          .join('') || '<small>No matching work orders.</small>'}
+      </div>`;
+  const buyOrdersHtml = `<div>
         <h3>Buy Orders</h3>
         ${buyOrders
           .map((order) => {
@@ -54,8 +61,8 @@ export function MarketBoardPanel(state: GameState): string {
             </article>`;
           })
           .join('') || '<small>No matching buy orders.</small>'}
-      </div>
-      <div>
+      </div>`;
+  const sellOrdersHtml = `<div>
         <h3>Sell Orders</h3>
         ${sellOrders
           .map((order) => {
@@ -68,22 +75,22 @@ export function MarketBoardPanel(state: GameState): string {
             </article>`;
           })
           .join('') || '<small>No matching sell orders.</small>'}
+      </div>`;
+  const columns = view === 'work' ? workOrdersHtml : view === 'trade' ? `${buyOrdersHtml}${sellOrdersHtml}` : `${workOrdersHtml}${buyOrdersHtml}${sellOrdersHtml}`;
+
+  return `<section class="panel market-panel market-mode-${view}" data-window-id="market">
+    <header><span>Briarbrook Market Board</span><button data-action="toggle-panel" data-panel="market">x</button></header>
+    <div class="market-controls">
+      <div class="market-view-tabs">
+        ${(['work', 'trade', 'all'] as const).map((entry) => `<button class="${view === entry ? 'active' : ''}" data-market-view="${entry}">${entry === 'work' ? 'Work Orders' : entry === 'trade' ? 'Trade' : 'Advanced'}</button>`).join('')}
       </div>
-      <div>
-        <h3>Work Orders</h3>
-        ${workOrders
-          .map((order) => {
-            const required = order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }];
-            const ready = required.every((requirement) => getItemCount(state.player.inventory, requirement.itemId) >= requirement.quantity);
-            return `<article class="market-order work ${ready ? 'ready' : ''}">
-              ${renderIcon(itemDefs[order.itemId].icon, itemDefs[order.itemId].name)}
-              <span><b>${order.title ?? order.requester}</b><small>${order.requester} · ${requirementsLabel(required)} · ${order.rewardSkillHints?.slice(0, 2).join(', ') ?? order.skill}</small></span>
-              <strong>${order.rewardGold}g</strong>
-              <button data-work-order="${order.id}">Deliver</button>
-            </article>`;
-          })
-          .join('') || '<small>No matching work orders.</small>'}
+      <input class="market-search" data-action="market-search" value="${attr(state.ui.marketSearch ?? '')}" placeholder="Search item or issuer" />
+      <div class="market-categories">
+        ${marketCategories.map((entry) => `<button class="${category === entry ? 'active' : ''}" data-market-category="${entry}">${entry}</button>`).join('')}
       </div>
+    </div>
+    <div class="market-columns">
+      ${columns}
     </div>
   </section>`;
 }

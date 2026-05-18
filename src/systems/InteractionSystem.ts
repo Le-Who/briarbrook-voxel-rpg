@@ -22,6 +22,7 @@ import { degradeToolForGathering, findUsableTool } from './EconomySystem';
 import { recordResourceYield } from './TelemetrySystem';
 import { interactContainer } from './ContainerSystem';
 import { transitionPlayerToArea } from './TransitionSystem';
+import { pushVisualEffect, queueGatheringEffect } from './VfxSystem';
 
 function randomInt(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min + 1));
@@ -56,6 +57,7 @@ export function interactEntity(state: GameState, areaManager: AreaManager, entit
 
   if (entity.kind === 'portal') {
     facePlayerTowardEntity(state, entity.id, 'interact', 0.25);
+    pushVisualEffect(state, { kind: 'interact_gesture', tier: 1, position: state.player.position, targetPosition: entity.position, color: '#6fd4ff', duration: 0.32 });
     enterThroughPortal(state, areaManager, entity);
     return;
   }
@@ -63,6 +65,7 @@ export function interactEntity(state: GameState, areaManager: AreaManager, entit
   if (entity.kind === 'npc' || entity.kind === 'social') {
     facePlayerTowardEntity(state, entity.id, 'interact', 0.55);
     faceEntityTowardPosition(entity, state.player.position, 'interact', state.clock, 0.75);
+    pushVisualEffect(state, { kind: 'interact_gesture', tier: 1, position: state.player.position, targetPosition: entity.position, color: '#f0c957', duration: 0.36 });
     const line = entity.dialogue[Math.floor(Math.random() * entity.dialogue.length)];
     addChat(state, line, { speaker: entity.name, tone: entity.role === 'merchant' ? 'trade' : 'normal' });
     recordQuestEvent(state, { type: 'talk', npcName: entity.name });
@@ -112,12 +115,14 @@ export function interactEntity(state: GameState, areaManager: AreaManager, entit
 
   if (entity.kind === 'loot') {
     facePlayerTowardEntity(state, entity.id, 'interact', 0.25);
+    pushVisualEffect(state, { kind: 'pickup_gesture', tier: 1, position: state.player.position, targetPosition: entity.position, color: '#f6df8b', duration: 0.34 });
     pickupLoot(state, entity.id);
     return;
   }
 
   if (entity.kind === 'container') {
     facePlayerTowardEntity(state, entity.id, 'interact', 0.35);
+    pushVisualEffect(state, { kind: 'interact_gesture', tier: 1, position: state.player.position, targetPosition: entity.position, color: '#dbe7ff', duration: 0.34 });
     interactContainer(state, entity);
   }
 }
@@ -163,6 +168,7 @@ function enterThroughPortal(state: GameState, areaManager: AreaManager, portal: 
 
   state.ui.prompt = `Entered ${areas[destination].name} through ${portal.name}.`;
   addSystemMessage(state, `You pass through ${portal.name} to ${areas[destination].name}.`);
+  emitAudioHook('door_portal', { id: portal.id, area: destination, position: state.player.position });
 }
 
 function handleQuestContact(state: GameState, giver: string): void {
@@ -191,6 +197,7 @@ export function gatherResource(state: GameState, entityId: string): void {
   if (!entity || entity.kind !== 'resource') return;
   if (entity.depleted) {
     state.ui.prompt = `${entity.name} is depleted.`;
+    queueGatheringEffect(state, entity.resourceType, entity.position, 'depleted');
     return;
   }
   if (distToPlayer(state, entityId) > 2) {
@@ -219,6 +226,7 @@ export function gatherResource(state: GameState, entityId: string): void {
   };
   setPlayerActionState(state, 'gathering', duration, entity.id);
   state.ui.prompt = `${state.gathering.actionLabel}...`;
+  queueGatheringEffect(state, entity.resourceType, entity.position, 'active');
   emitAudioHook(gatheringCue(entity.resourceType), { id: entity.id, area: entity.area, position: entity.position });
 }
 
@@ -265,6 +273,7 @@ function completeGathering(state: GameState, entity: Extract<GameState['entities
   addSystemMessage(state, `You receive: ${rewardName} x${amount}.`);
   extraRewards.forEach((reward) => addSystemMessage(state, `You also find: ${reward}.`));
   addFloatingText(state, `+${amount} ${rewardName}`, entity.position, '#e8f5be');
+  queueGatheringEffect(state, entity.resourceType, entity.position, 'success');
   emitAudioHook(gatheringCue(entity.resourceType), { id: entity.id, area: entity.area, position: entity.position, intensity: amount });
   if (extraRewards.length) addFloatingText(state, extraRewards.join(' + '), { ...entity.position, x: entity.position.x + 0.25 }, '#78d7ff');
   degradeToolForGathering(state, entity.toolItemId);
@@ -325,8 +334,9 @@ export function openTrade(state: GameState, partnerId: string): void {
   addSystemMessage(state, `You have invited ${partner.name} to trade.`);
 }
 
-function gatheringCue(resourceType: 'tree' | 'ore' | 'fish' | 'herb'): 'tree_chop' | 'mining_hit' | 'item_pickup' {
-  if (resourceType === 'ore') return 'mining_hit';
-  if (resourceType === 'tree') return 'tree_chop';
+function gatheringCue(resourceType: 'tree' | 'ore' | 'fish' | 'herb'): 'gather_chop' | 'gather_mine' | 'gather_fish' | 'item_pickup' {
+  if (resourceType === 'ore') return 'gather_mine';
+  if (resourceType === 'tree') return 'gather_chop';
+  if (resourceType === 'fish') return 'gather_fish';
   return 'item_pickup';
 }

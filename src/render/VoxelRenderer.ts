@@ -3,13 +3,14 @@ import { areas } from '../data/areas';
 import { buildPieces, itemDefs } from '../data/items';
 import { CameraController } from '../game/CameraController';
 import { hoverRingStyleForEntity } from '../game/WorldFeedback';
-import type { AreaId, BuildPieceDef, Entity, GameState, IconDescriptor, Projectile, Vec3 } from '../game/types';
+import type { AreaId, BuildPieceDef, Entity, GameState, IconDescriptor, Projectile, Vec3, VisualEffect } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
 import { MODEL_FORWARD_OFFSET } from '../systems/FacingSystem';
 import { areaAmbient, MaterialLibrary } from './Materials';
 import { estimateRenderFrameMs, renderPerformanceBudget } from './RenderBudgets';
 import { RenderMotionTracker, type RenderMotionSample } from './RenderMotion';
 import { VoxelKit } from './VoxelKit';
+import { characterAttachPoints, resolveEquipmentVisuals, type EquipmentVisualContract } from './EquipmentVisuals';
 
 interface EntityRecord {
   group: THREE.Group;
@@ -135,6 +136,8 @@ export class VoxelRenderer {
     this.lastRaycastCandidateCount = raycastCandidateCount;
     const baseStats = {
       frame: state.realtime.tick,
+      fps: state.dev.renderStats.fps ?? 0,
+      frameTimeMs: state.dev.renderStats.frameTimeMs ?? 0,
       entityCount: Object.keys(state.entities).length + 1 + state.world.placedBuildings.length,
       visibleEntityCount,
       roughDrawCalls: this.renderer.info.render.calls,
@@ -148,7 +151,12 @@ export class VoxelRenderer {
       materialCount: objectStats.materialCount,
       geometryCount: objectStats.geometryCount,
       raycastCandidateCount,
-      memoryAfterTransitionMb: this.readMemoryMb()
+      memoryAfterTransitionMb: this.readMemoryMb(),
+      domNodeCount: state.dev.renderStats.domNodeCount ?? 0,
+      visibleWindowCount: state.dev.renderStats.visibleWindowCount ?? 0,
+      iconRenderRequestCount: state.dev.renderStats.iconRenderRequestCount ?? 0,
+      cachedIconCount: state.dev.renderStats.cachedIconCount ?? 0,
+      eventListenerCount: state.dev.renderStats.eventListenerCount ?? 0
     };
     return {
       ...baseStats,
@@ -266,10 +274,12 @@ export class VoxelRenderer {
 
   private updateEntities(state: GameState): void {
     const visible = new Set<string>();
-    const playerRecord = this.ensureEntity('player', 'player', () => this.makeCharacter('#6d4a2c', '#2f5841', '#d0d0c8'));
+    const playerRecord = this.ensureEntity('player', 'player', () => this.makeCharacter('#6d4a2c', '#2f5841', '#d0d0c8', false));
+    this.updatePlayerEquipmentVisuals(playerRecord.group, state);
     const playerMoving = state.player.actionState.kind === 'moving' || Math.hypot(state.player.movement.velocity.x, state.player.movement.velocity.z) > 0.08;
     const playerVisual = this.visualPlayerSample(state);
     const playerBob = this.animateActor(playerRecord.group, state.clock, 'player', playerMoving, Boolean(state.combat.hitFlashes.player), playerVisual.facing, state.ui.reducedMotion);
+    this.animatePlayerEquipmentVisuals(playerRecord.group, state);
     playerRecord.group.position.set(playerVisual.position.x, playerVisual.position.y + playerBob, playerVisual.position.z);
     const actionScale = state.player.actionState.kind === 'attacking' ? 1.06 : state.player.actionState.kind === 'casting' ? 1.03 : 1;
     playerRecord.group.scale.setScalar((state.combat.hitFlashes.player ? 1.08 : 1) * actionScale);
@@ -414,6 +424,10 @@ export class VoxelRenderer {
     this.clearGroup(this.effectGroup);
     const projectileLead = (state.realtime.renderAlpha ?? 1) * state.realtime.fixedDelta;
     state.projectiles.forEach((projectile) => this.effectGroup.add(this.makeProjectile(projectile, projectileLead)));
+    state.visualEffects.forEach((effect) => {
+      if (effect.area !== state.player.currentArea) return;
+      this.effectGroup.add(this.makeVisualEffect(effect, state.clock));
+    });
     state.combat.telegraphs.forEach((telegraph) => {
       const progress = 1 - telegraph.remaining / telegraph.duration;
       const ring = new THREE.Mesh(
@@ -457,18 +471,6 @@ export class VoxelRenderer {
   }
 
   private updateActionEffects(state: GameState): void {
-    if (state.player.actionState.kind === 'attacking') {
-      const age = Math.max(0, Math.min(1, (state.clock - state.player.actionState.startedAt) / Math.max(0.1, state.player.actionState.duration || 0.35)));
-      const slash = new THREE.Mesh(
-        new THREE.RingGeometry(0.72 + age * 0.12, 0.79 + age * 0.16, 28, 1, -0.45, Math.PI * 0.72),
-        this.mats.get('attack-swing-arc', '#ffd968', { transparent: true, opacity: 0.4 * (1 - age), emissive: '#ff9f38', emissiveIntensity: 0.45, depthWrite: false })
-      );
-      slash.rotation.x = -Math.PI / 2;
-      slash.rotation.z = -0.75 + age * 1.3;
-      slash.position.set(state.player.position.x + 0.25, 0.22, state.player.position.z - 0.1);
-      this.effectGroup.add(slash);
-    }
-
     if (state.spellCasting) {
       const progress = 1 - state.spellCasting.remaining / state.spellCasting.total;
       for (let i = 0; i < 5; i += 1) {
@@ -687,9 +689,12 @@ export class VoxelRenderer {
       this.tree(x, z, 0.72 + (i % 3) * 0.08);
     }
     this.sign(2, 8, 'Briarbrook');
+    this.sign(-8, -2, 'Bank');
+    this.sign(6, -3, 'Smithy');
     this.sign(0, 15, 'North Gate');
     this.sign(14, 5, 'Old Road');
     this.sign(-15, 13, 'Ferry');
+    this.forgeSmokeMarker(6, -3);
     this.wallLine(-21, -13, -21, 15);
     this.wallLine(-21, 15, -15, 15);
     this.wallLine(21, -12, 21, 13);
@@ -860,6 +865,7 @@ export class VoxelRenderer {
     this.chain(13, 9);
     this.brokenWeapon(1, 6);
     this.brokenWeapon(-8, -2);
+    this.cryptDoorMarker(-9, 4);
   }
 
   private buildRoad(): void {
@@ -911,6 +917,7 @@ export class VoxelRenderer {
     this.barrel(-7, 6);
     this.crates(6, -6);
     this.flowerBox(9, -7);
+    this.plotMarker(0, 0);
   }
 
   private makeEntity(entity: Entity): THREE.Group {
@@ -961,7 +968,157 @@ export class VoxelRenderer {
     return new THREE.Group();
   }
 
-  private makeCharacter(hair: string, tunic: string, metal: string): THREE.Group {
+  private updatePlayerEquipmentVisuals(player: THREE.Group, state: GameState): void {
+    const visuals = resolveEquipmentVisuals(state).filter((visual) => visual.showInWorld);
+    const key = visuals.map((visual) => [
+      visual.itemId ?? '',
+      visual.equipmentSlot,
+      visual.visualPrefabId,
+      visual.attachPoint,
+      visual.heldPose,
+      visual.color,
+      visual.actionVisual ?? ''
+    ].join(':')).join('|');
+    if (player.userData.equipmentVisualKey === key) return;
+    player.userData.equipmentVisualKey = key;
+
+    const existing = player.getObjectByName('equipment-visuals');
+    if (existing) {
+      player.remove(existing);
+      this.disposeObject(existing);
+    }
+
+    const equipmentGroup = new THREE.Group();
+    equipmentGroup.name = 'equipment-visuals';
+    visuals.forEach((visual) => this.addEquipmentVisual(equipmentGroup, visual));
+    player.add(equipmentGroup);
+  }
+
+  private addEquipmentVisual(parent: THREE.Group, visual: EquipmentVisualContract): void {
+    const attach = characterAttachPoints[visual.attachPoint];
+    const holder = new THREE.Group();
+    holder.name = this.equipmentObjectName(visual);
+    holder.userData.actionVisual = visual.actionVisual;
+    holder.userData.visualPrefabId = visual.visualPrefabId;
+    holder.position.set(attach.x + visual.offset.x, attach.y + visual.offset.y, attach.z + visual.offset.z);
+    holder.rotation.set(visual.rotation.x, visual.rotation.y, visual.rotation.z);
+    holder.scale.setScalar(visual.scale);
+    parent.add(holder);
+    this.buildEquipmentPrefab(holder, visual);
+  }
+
+  private equipmentObjectName(visual: EquipmentVisualContract): string {
+    if ((visual.equipmentSlot === 'weapon' || visual.equipmentSlot === 'action') && visual.attachPoint === 'rightHand') return 'weapon';
+    if (visual.equipmentSlot === 'shield') return 'shield';
+    return `equipment-${visual.visualPrefabId.replace(/[^a-z0-9]+/gi, '-')}`;
+  }
+
+  private buildEquipmentPrefab(parent: THREE.Group, visual: EquipmentVisualContract): void {
+    const color = visual.color;
+    const metal = this.mats.get(`gear-metal-${color}`, color, { metalness: visual.materialVariant === 'iron' ? 0.45 : 0.12 });
+    const wood = this.mats.get(`gear-wood-${color}`, color);
+    const dark = this.mats.get('gear-dark', '#2b1a12');
+    const cloth = this.mats.get(`gear-cloth-${color}`, color, { roughness: 0.8 });
+    const magic = this.mats.get(`gear-magic-${color}`, color, { emissive: color, emissiveIntensity: visual.materialVariant === 'fire' ? 1.3 : 0.75, transparent: true, opacity: 0.78 });
+
+    if (visual.visualPrefabId === 'weapon:sword' || visual.visualPrefabId === 'weapon:staff') {
+      const shaftMat = visual.visualPrefabId === 'weapon:staff' ? wood : metal;
+      this.box(parent, 0, 0.24, 0, 0.1, 0.76, 0.08, shaftMat, { rz: -0.04 });
+      this.box(parent, 0, -0.2, 0, 0.18, 0.12, 0.1, dark);
+      if (visual.visualPrefabId === 'weapon:staff') this.box(parent, 0, 0.68, 0, 0.2, 0.18, 0.2, magic);
+      return;
+    }
+
+    if (visual.visualPrefabId === 'weapon:bow') {
+      this.box(parent, -0.03, 0.16, 0, 0.08, 0.78, 0.08, wood, { rz: -0.18 });
+      this.box(parent, 0.1, 0.16, 0, 0.04, 0.7, 0.04, this.mats.get('gear-bow-string', '#e8dcc0'), { rz: 0.18 });
+      this.box(parent, 0.22, 0.18, 0, 0.52, 0.05, 0.05, this.mats.get('gear-arrow', '#d9bf77'), { rz: 0.02 });
+      return;
+    }
+
+    if (visual.visualPrefabId === 'tool:axe' || visual.visualPrefabId === 'tool:pickaxe') {
+      this.box(parent, 0, 0.08, 0, 0.09, 0.7, 0.08, dark, { rz: -0.04 });
+      const headWidth = visual.visualPrefabId === 'tool:pickaxe' ? 0.42 : 0.3;
+      this.box(parent, -0.02, 0.44, 0, headWidth, 0.12, 0.1, metal, { rz: visual.visualPrefabId === 'tool:pickaxe' ? 0 : 0.2 });
+      return;
+    }
+
+    if (visual.visualPrefabId === 'tool:torch') {
+      this.box(parent, 0, 0.06, 0, 0.1, 0.58, 0.1, dark);
+      this.box(parent, 0, 0.42, 0, 0.2, 0.18, 0.2, magic);
+      return;
+    }
+
+    if (visual.visualPrefabId === 'shield:round') {
+      this.box(parent, 0, 0, 0, 0.12, 0.46, 0.36, metal);
+      this.box(parent, -0.07, 0, -0.01, 0.08, 0.28, 0.2, dark);
+      return;
+    }
+
+    if (visual.visualPrefabId.startsWith('armor:')) {
+      if (visual.visualPrefabId === 'armor:helmet') {
+        this.box(parent, 0, 0, -0.02, 0.48, 0.18, 0.42, metal);
+        this.box(parent, 0, -0.08, -0.22, 0.32, 0.08, 0.08, dark);
+        return;
+      }
+      if (visual.visualPrefabId === 'armor:boots') {
+        this.box(parent, -0.15, 0, 0, 0.2, 0.16, 0.28, metal);
+        this.box(parent, 0.15, 0, 0, 0.2, 0.16, 0.28, metal);
+        return;
+      }
+      const mat = visual.materialVariant === 'cloth' ? cloth : metal;
+      this.box(parent, 0, 0, -0.03, 0.56, 0.54, 0.12, mat);
+      this.box(parent, -0.22, 0.02, -0.02, 0.08, 0.4, 0.1, mat);
+      this.box(parent, 0.22, 0.02, -0.02, 0.08, 0.4, 0.1, mat);
+      return;
+    }
+
+    if (visual.visualPrefabId === 'pack:backpack') {
+      this.box(parent, 0, 0, 0, 0.42, 0.56, 0.16, wood);
+      this.box(parent, 0, 0.17, -0.08, 0.3, 0.08, 0.06, dark);
+      return;
+    }
+
+    if (visual.visualPrefabId === 'ammo:quiver') {
+      this.box(parent, 0, 0, 0, 0.16, 0.52, 0.14, dark, { rz: -0.18 });
+      for (let i = 0; i < 3; i += 1) this.box(parent, -0.04 + i * 0.04, 0.33, -0.02, 0.03, 0.28, 0.03, metal, { rz: -0.18 });
+      return;
+    }
+
+    if (visual.visualPrefabId === 'tool:bandage-wrap') {
+      this.box(parent, 0, 0, 0, 0.22, 0.12, 0.16, cloth);
+      this.box(parent, 0.02, 0.07, 0, 0.24, 0.04, 0.18, this.mats.get('bandage-shadow', '#b8a88c'));
+      return;
+    }
+
+    if (visual.visualPrefabId.startsWith('effect:')) {
+      this.box(parent, 0, 0, 0, 0.18, 0.18, 0.18, magic);
+      return;
+    }
+
+    this.box(parent, 0, 0, 0, 0.18, 0.18, 0.18, wood);
+  }
+
+  private animatePlayerEquipmentVisuals(player: THREE.Group, state: GameState): void {
+    const equipmentGroup = player.getObjectByName('equipment-visuals');
+    if (!equipmentGroup) return;
+    const action = state.player.actionState;
+    const actionProgress = Math.max(0, Math.min(1, (state.clock - action.startedAt) / Math.max(0.1, action.duration || 0.1)));
+    const activeFrame = Math.sin(actionProgress * Math.PI);
+    equipmentGroup.children.forEach((child) => {
+      const actionVisual = child.userData.actionVisual as EquipmentVisualContract['actionVisual'] | undefined;
+      if (!actionVisual) return;
+      const wave = Math.sin(state.clock * 11);
+      if (actionVisual === 'tool-swing' && action.kind === 'gathering') child.rotation.z = -1.05 + activeFrame * 0.68;
+      if (actionVisual === 'bow-draw' && action.kind === 'attacking') child.scale.set(1 + Math.min(0.18, actionProgress * 0.22), 1, 1);
+      if (actionVisual === 'spell-windup') child.scale.setScalar(1 + (state.spellCasting ? 0.12 + actionProgress * 0.2 : Math.abs(Math.sin(state.clock * 8)) * 0.14));
+      if (actionVisual === 'bandage-wrap') child.rotation.z = action.kind === 'interacting' ? -0.18 + activeFrame * 0.36 : wave * 0.08;
+      if (actionVisual === 'shield-block') child.scale.setScalar(1 + (state.combat.defenseUntil >= state.clock ? activeFrame * 0.22 : Math.abs(wave) * 0.06));
+      if (actionVisual === 'broken-spark') child.scale.setScalar(0.7 + Math.abs(wave) * 0.45);
+    });
+  }
+
+  private makeCharacter(hair: string, tunic: string, metal: string, includeStarterWeapon = true): THREE.Group {
     const g = new THREE.Group();
     g.userData.actor = true;
     this.box(g, 0, 0.35, 0, 0.48, 0.7, 0.34, this.mats.get(`tunic-${tunic}`, tunic));
@@ -971,7 +1128,9 @@ export class VoxelRenderer {
     this.box(g, 0.32, 0.4, 0, 0.16, 0.52, 0.18, this.mats.get(`sleeve2-${tunic}`, tunic)).name = 'right-arm';
     this.box(g, -0.14, -0.1, 0, 0.18, 0.42, 0.18, this.mats.get('pants', '#2d251e')).name = 'left-leg';
     this.box(g, 0.14, -0.1, 0, 0.18, 0.42, 0.18, this.mats.get('pants2', '#2d251e')).name = 'right-leg';
-    this.box(g, 0.5, 0.35, -0.12, 0.12, 0.92, 0.08, this.mats.get(`weapon-${metal}`, metal, { metalness: 0.25 }), { rz: -0.6 }).name = 'weapon';
+    if (includeStarterWeapon) {
+      this.box(g, 0.5, 0.35, -0.12, 0.12, 0.92, 0.08, this.mats.get(`weapon-${metal}`, metal, { metalness: 0.25 }), { rz: -0.6 }).name = 'weapon';
+    }
     this.box(g, 0, 0.1, -0.2, 0.54, 0.12, 0.14, this.mats.get('belt', '#2b1a12'));
     return g;
   }
@@ -1156,6 +1315,129 @@ export class VoxelRenderer {
     return this.mats.get('placed-wood', '#86552b');
   }
 
+  private makeVisualEffect(effect: VisualEffect, clock: number): THREE.Object3D {
+    const t = Math.max(0, Math.min(1, (clock - effect.startedAt) / Math.max(0.01, effect.duration)));
+    const fade = Math.max(0.12, Math.round((1 - t) * 10) / 10);
+    const group = new THREE.Group();
+    group.position.set(effect.position.x, effect.position.y, effect.position.z);
+    if (effect.yaw !== undefined) group.rotation.y = effect.yaw;
+    const material = (name: string, color = effect.color, opacity = fade, emissiveIntensity = 0.6) =>
+      this.mats.get(`vfx-${name}`, color, { transparent: true, opacity, emissive: color, emissiveIntensity, depthWrite: false, side: THREE.DoubleSide });
+    const groundRing = (inner: number, outer: number, color = effect.color, opacity = fade) => {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 32), material(`${effect.kind}-ring-${Math.round(opacity * 10)}`, color, opacity));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.07;
+      group.add(ring);
+    };
+    const lineToTarget = (thickness: number, color = effect.color) => {
+      if (!effect.targetPosition) return;
+      const dx = effect.targetPosition.x - effect.position.x;
+      const dz = effect.targetPosition.z - effect.position.z;
+      const length = Math.hypot(dx, dz);
+      if (length < 0.05) return;
+      const midX = dx * 0.5;
+      const midZ = dz * 0.5;
+      const yaw = Math.atan2(dx, dz);
+      this.box(group, midX, 0.55, midZ, thickness, thickness, length, material(`${effect.kind}-line`, color, 0.45), { ry: yaw });
+    };
+
+    switch (effect.kind) {
+      case 'slash_arc': {
+        const arc = new THREE.Mesh(new THREE.RingGeometry(0.6 + t * 0.08, 0.68 + t * 0.1, 28, 1, -0.65, Math.PI * 0.82), material('slash-arc', effect.color, fade * 0.55, 0.7));
+        arc.position.set(0, 0.8, 0.7);
+        arc.rotation.z = -0.35 + t * 0.9;
+        group.add(arc);
+        break;
+      }
+      case 'pierce_thrust':
+        this.box(group, 0, 0.72, 0.45 + t * 0.58, 0.08, 0.08, 0.95, material('pierce-thrust', effect.color, fade * 0.65), { ry: 0 });
+        break;
+      case 'mace_impact':
+      case 'hit_impact':
+      case 'armor_sparks':
+        for (let i = 0; i < 5; i += 1) {
+          const angle = i * 1.256 + t * 1.4;
+          const radius = 0.12 + t * (effect.kind === 'mace_impact' ? 0.48 : 0.34);
+          this.box(group, Math.cos(angle) * radius, 0.72 + Math.sin(i) * 0.12, Math.sin(angle) * radius, effect.kind === 'mace_impact' ? 0.16 : 0.08, 0.08, effect.kind === 'armor_sparks' ? 0.2 : 0.08, material(effect.kind, effect.color, fade * 0.7, 0.85));
+        }
+        break;
+      case 'shield_block': {
+        const shield = new THREE.Mesh(new THREE.RingGeometry(0.38, 0.56 + t * 0.16, 6), material('shield-block', effect.color, fade * 0.62, 0.85));
+        shield.position.set(0, 0.72, 0.42);
+        shield.rotation.z = Math.PI / 6;
+        group.add(shield);
+        break;
+      }
+      case 'dodge_cue':
+      case 'miss_cue':
+        groundRing(0.24 + t * 0.18, 0.32 + t * 0.2, effect.color, fade * 0.45);
+        this.box(group, 0, 0.42, 0, 0.52, 0.05, 0.05, material(effect.kind, effect.color, fade * 0.62), { ry: Math.PI / 4 });
+        this.box(group, 0, 0.42, 0, 0.05, 0.05, 0.52, material(`${effect.kind}-cross`, effect.color, fade * 0.62), { ry: Math.PI / 4 });
+        break;
+      case 'crit_cue':
+        groundRing(0.28, 0.48 + t * 0.2, effect.color, fade * 0.42);
+        this.box(group, 0, 1.0 + t * 0.35, 0, 0.18, 0.18, 0.18, material('crit-cue', effect.color, fade * 0.8, 1.2), { ry: t * Math.PI });
+        break;
+      case 'wood_chips':
+      case 'ore_sparks':
+      case 'herb_sparkle':
+        for (let i = 0; i < 6; i += 1) {
+          const angle = i * 1.047 + t * 1.8;
+          const radius = 0.14 + t * 0.52;
+          const tall = effect.kind === 'herb_sparkle';
+          this.box(group, Math.cos(angle) * radius, 0.32 + t * (tall ? 0.7 : 0.35), Math.sin(angle) * radius, effect.kind === 'wood_chips' ? 0.14 : 0.08, tall ? 0.14 : 0.06, effect.kind === 'ore_sparks' ? 0.08 : 0.14, material(effect.kind, effect.color, fade * 0.72, effect.kind === 'ore_sparks' ? 1.0 : 0.45));
+        }
+        break;
+      case 'water_ripple':
+        groundRing(0.18 + t * 0.32, 0.24 + t * 0.46, effect.color, fade * 0.42);
+        groundRing(0.42 + t * 0.26, 0.48 + t * 0.36, effect.color, fade * 0.24);
+        break;
+      case 'depleted_cue':
+        groundRing(0.36, 0.48 + Math.sin(t * Math.PI) * 0.08, effect.color, 0.24);
+        break;
+      case 'heal_particles':
+        for (let i = 0; i < 6; i += 1) {
+          const angle = i * 1.047 + clock * 1.2;
+          this.box(group, Math.cos(angle) * 0.32, 0.25 + t * 0.95 + i * 0.025, Math.sin(angle) * 0.32, 0.08, 0.08, 0.08, material('heal-particles', effect.color, fade * 0.68, 0.9));
+        }
+        break;
+      case 'buff_ring':
+        groundRing(0.42 + t * 0.08, 0.56 + t * 0.12, effect.color, fade * 0.42);
+        this.box(group, 0, 1.0, 0, 0.78, 0.04, 0.78, material('buff-glow', effect.color, fade * 0.2, 0.5));
+        break;
+      case 'debuff_mark':
+        groundRing(0.22, 0.38 + t * 0.08, effect.color, fade * 0.5);
+        this.box(group, 0, 1.1, 0, 0.12, 0.34, 0.12, material('debuff-mark', effect.color, fade * 0.7, 0.85), { ry: t * Math.PI });
+        break;
+      case 'utility_line':
+        lineToTarget(0.06, effect.color);
+        groundRing(0.18, 0.32 + t * 0.1, effect.color, fade * 0.32);
+        break;
+      case 'reveal_pulse':
+      case 'rune_circle':
+        groundRing(0.34 + t * 0.42, 0.44 + t * 0.58, effect.color, fade * 0.5);
+        for (let i = 0; i < 4; i += 1) {
+          const angle = i * Math.PI * 0.5 + (effect.kind === 'rune_circle' ? clock * 0.8 : 0);
+          this.box(group, Math.cos(angle) * (0.46 + t * 0.18), 0.09, Math.sin(angle) * (0.46 + t * 0.18), 0.12, 0.05, 0.12, material(effect.kind, effect.color, fade * 0.55, 0.75));
+        }
+        break;
+      case 'fizzle_smoke':
+        for (let i = 0; i < 5; i += 1) {
+          const angle = i * 1.256;
+          this.box(group, Math.cos(angle) * t * 0.36, 0.78 + t * 0.25, Math.sin(angle) * t * 0.36, 0.14 + t * 0.08, 0.14 + t * 0.08, 0.14 + t * 0.08, material('fizzle-smoke', effect.color, fade * 0.38, 0.25));
+        }
+        break;
+      case 'pickup_gesture':
+      case 'interact_gesture':
+      case 'craft_loop':
+        this.box(group, 0, 0.62 + Math.sin(t * Math.PI) * 0.18, 0.44, 0.18, 0.1, 0.34, material(effect.kind, effect.color, fade * 0.42), { rz: -0.35 + t * 0.7 });
+        break;
+      default:
+        groundRing(0.22, 0.34, effect.color, fade * 0.35);
+    }
+    return group;
+  }
+
   private makeProjectile(projectile: Projectile, renderLead = 0): THREE.Object3D {
     const t = Math.min(1, (projectile.age + renderLead) / projectile.duration);
     const x = THREE.MathUtils.lerp(projectile.from.x, projectile.to.x, t);
@@ -1335,6 +1617,29 @@ export class VoxelRenderer {
     this.box(this.staticGroup, x - 1, 0.75, z, 0.18, 1.5, 0.18, wood);
     this.box(this.staticGroup, x + 1, 0.75, z, 0.18, 1.5, 0.18, wood);
     this.box(this.staticGroup, x, 1.1, z, 2.4, 0.55, 0.14, wood);
+  }
+
+  private forgeSmokeMarker(x: number, z: number): void {
+    const ember = this.mats.get('smithy-door-ember', '#ff8a2e', { emissive: '#ff5c1f', emissiveIntensity: 1.2 });
+    const smoke = this.mats.get('smithy-smoke-marker', '#7b7f80', { transparent: true, opacity: 0.38 });
+    this.box(this.staticGroup, x + 0.55, 0.28, z - 0.45, 0.5, 0.18, 0.5, ember);
+    this.box(this.staticGroup, x + 0.4, 1.25, z - 0.6, 0.32, 0.48, 0.32, smoke);
+    this.box(this.staticGroup, x + 0.74, 1.7, z - 0.48, 0.42, 0.42, 0.42, smoke);
+  }
+
+  private cryptDoorMarker(x: number, z: number): void {
+    const stone = this.mats.get('crypt-door-stone', '#42403d');
+    const dark = this.mats.get('crypt-door-dark', '#11100f');
+    this.box(this.staticGroup, x, 1.0, z - 0.7, 2.2, 2.0, 0.28, stone);
+    this.box(this.staticGroup, x, 0.88, z - 0.86, 1.15, 1.55, 0.18, dark);
+    this.box(this.staticGroup, x, 1.72, z - 0.98, 1.55, 0.16, 0.16, this.mats.get('crypt-door-lintel', '#5a5750'));
+  }
+
+  private plotMarker(x: number, z: number): void {
+    const post = this.mats.get('plot-marker-post', '#6b421f');
+    const cloth = this.mats.get('plot-marker-cloth', '#8ee0a1');
+    this.box(this.staticGroup, x, 0.75, z, 0.18, 1.5, 0.18, post);
+    this.box(this.staticGroup, x + 0.45, 1.3, z, 0.8, 0.45, 0.08, cloth);
   }
 
   private counter(x: number, z: number, width: number): void {

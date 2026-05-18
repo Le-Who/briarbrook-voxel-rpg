@@ -13,6 +13,7 @@ import { recordKill } from './QuestSystem';
 import { attemptSkillUse, gainPlayerXp, getSkillValue } from './SkillSystem';
 import { removeItems } from './InventorySystem';
 import { recordDamageDealt, recordDamageTaken, recordDeath } from './TelemetrySystem';
+import { pruneVisualEffects, queueBlockEffect, queueMissEffect, queueSpellRoleEffect, queueWeaponImpactEffect, queueWeaponSwingEffect } from './VfxSystem';
 
 function distance(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
@@ -126,6 +127,8 @@ export function meleeAttack(state: GameState, entityId?: string): void {
   }
   facePlayerTowardEntity(state, target.id, 'target', 0.5);
   setPlayerActionState(state, 'attacking', 0.38, target.id);
+  queueWeaponSwingEffect(state, def.weaponClass, target.position);
+  emitAudioHook('weapon_swing', { id: target.id, area: target.area, position: target.position });
   breakHidden(state, 'attacking');
   const stats = calculateDerivedStats(state);
   const staminaCost = def.staminaCost ?? 4;
@@ -140,6 +143,7 @@ export function meleeAttack(state: GameState, entityId?: string): void {
   if (Math.random() * 100 > chance) {
     degradeEquippedItem(state, 'weapon', 1);
     addFloatingText(state, 'Miss', target.position, '#d8d8d8');
+    queueMissEffect(state, target.position);
     attemptSkillUse(state, skill, { verb: 'melee-miss', difficulty: target.defenseSkill, success: false, targetId: target.id, relatedSkills: [support] });
     return;
   }
@@ -162,6 +166,8 @@ export function meleeAttack(state: GameState, entityId?: string): void {
   degradeEquippedItem(state, 'weapon', 1);
   state.combat.hitFlashes[target.id] = state.clock + 0.2;
   addFloatingText(state, `${damage}${crit ? '!' : ''}`, target.position, crit ? '#ffd968' : '#ff6262');
+  queueWeaponImpactEffect(state, def.weaponClass, target.position, { crit, armor: target.armor });
+  emitAudioHook('weapon_hit', { id: target.id, area: target.area, position: target.position, intensity: damage });
   emitAudioHook('hit', { id: target.id, area: target.area, position: target.position, intensity: damage });
   attemptSkillUse(state, skill, { verb: 'melee-hit', difficulty: 20 + target.level * 5, success: true, targetId: target.id, relatedSkills: [support, 'Anatomy'] });
   gainPlayerXp(state, 4);
@@ -186,6 +192,8 @@ export function rangedAttack(state: GameState, entityId?: string): void {
   }
   facePlayerTowardEntity(state, target.id, 'target', 0.45);
   setPlayerActionState(state, 'attacking', 0.34, target.id);
+  queueWeaponSwingEffect(state, 'bow', target.position);
+  emitAudioHook('bow_draw', { id: target.id, area: target.area, position: state.player.position });
   if (def.requiredAmmo && !removeItems(state.player.inventory, def.requiredAmmo, 1)) {
     state.ui.prompt = `You need ${itemDefs[def.requiredAmmo]?.name ?? def.requiredAmmo}.`;
     addSystemMessage(state, state.ui.prompt);
@@ -196,12 +204,14 @@ export function rangedAttack(state: GameState, entityId?: string): void {
   const archery = getSkillValue(state, skill);
   const hit = hitChance(archery, defenderScore(target), state.player.attributes.Dexterity, dist * 2.1);
   launchProjectile(state, 'arrow', state.player.position, target.position, '#d9bf77');
+  emitAudioHook('bow_release', { id: target.id, area: target.area, position: target.position });
   if (Math.random() * 100 > hit) {
     if (stack) {
       const broke = degradeItemStack(stack, 1);
       if (broke) addSystemMessage(state, `${def.name} is broken and needs repair.`);
     }
     addFloatingText(state, 'Miss', target.position, '#d8d8d8');
+    queueMissEffect(state, target.position);
     attemptSkillUse(state, skill, { verb: 'ranged-miss', difficulty: 18 + target.level * 5 + dist * 2, success: false, targetId: target.id, relatedSkills: [support] });
     return;
   }
@@ -216,6 +226,8 @@ export function rangedAttack(state: GameState, entityId?: string): void {
   }
   state.combat.hitFlashes[target.id] = state.clock + 0.2;
   addFloatingText(state, `${damage}`, target.position, '#ffb966');
+  queueWeaponImpactEffect(state, def.weaponClass, target.position, { armor: target.armor });
+  emitAudioHook('weapon_hit', { id: target.id, area: target.area, position: target.position, intensity: damage });
   emitAudioHook('hit', { id: target.id, area: target.area, position: target.position, intensity: damage });
   attemptSkillUse(state, skill, { verb: 'ranged-hit', difficulty: 18 + target.level * 5 + dist * 2, success: true, targetId: target.id, relatedSkills: [support, 'Anatomy'] });
   gainPlayerXp(state, 4);
@@ -232,6 +244,7 @@ export function updateProjectiles(state: GameState, dt: number): void {
     text.position.y += dt * 0.55;
   });
   state.floatingTexts = state.floatingTexts.filter((text) => text.age < text.lifetime);
+  pruneVisualEffects(state);
 }
 
 export function updateEnemyCombat(state: GameState, areaManager: AreaManager, dt: number): void {
@@ -320,6 +333,8 @@ function enemyParries(state: GameState, target: EnemyEntity, attackerSkill: numb
   if (Math.random() * 100 > chance) return false;
   addFloatingText(state, 'Blocked', target.position, '#8bd9ff');
   state.combat.hitFlashes[target.id] = state.clock + 0.1;
+  queueBlockEffect(state, target.position, target.facing?.facingYaw);
+  emitAudioHook('weapon_block', { id: target.id, area: target.area, position: target.position });
   emitAudioHook('block', { id: target.id, area: target.area, position: target.position });
   return true;
 }
@@ -337,7 +352,9 @@ function playerParries(state: GameState, enemy: EnemyEntity): boolean {
   if (!success) return false;
   shield.durability = Math.max(0, (shield.durability ?? itemDefs[shield.itemId]?.durability ?? 20) - 1);
   addFloatingText(state, 'Block', state.player.position, '#8bd9ff');
+  queueBlockEffect(state, state.player.position, state.player.facing.facingYaw);
   addSystemMessage(state, `You block with ${itemDefs[shield.itemId]?.name ?? 'shield'}.`);
+  emitAudioHook('weapon_block', { id: enemy.id, area: enemy.area, position: state.player.position });
   emitAudioHook('parry', { id: enemy.id, area: enemy.area, position: state.player.position });
   return true;
 }
@@ -360,6 +377,7 @@ function startEnemyTelegraph(state: GameState, enemy: EnemyEntity): void {
     radius: enemy.aiStyle === 'archer' || enemy.aiStyle === 'mage' ? enemy.attackRange : Math.max(1.15, enemy.attackRange + 0.35),
     color: kind === 'cast' ? '#b66dff' : kind === 'shot' ? '#d9bf77' : '#ff6a3a'
   });
+  emitAudioHook('danger_warning', { id: enemy.id, area: enemy.area, position: enemy.position });
   addFloatingText(state, kind === 'cast' ? 'Casting' : kind === 'shot' ? 'Aiming' : 'Wind-up', enemy.position, kind === 'cast' ? '#b66dff' : '#ffb966');
 }
 
@@ -381,6 +399,7 @@ function resolveTelegraph(state: GameState, telegraph: CombatTelegraph): void {
   const dist = distance(enemy.position, state.player.position);
   if (dist > telegraph.radius + 0.35) {
     addFloatingText(state, 'Evade', state.player.position, '#8bd9ff');
+    queueMissEffect(state, state.player.position, true);
     attemptSkillUse(state, 'Wrestling', { verb: 'dodge', difficulty: 18 + enemy.level * 5, success: true, targetId: enemy.id, relatedSkills: ['Focus'] });
     return;
   }
@@ -389,6 +408,7 @@ function resolveTelegraph(state: GameState, telegraph: CombatTelegraph): void {
   const defended = state.combat.defenseUntil >= state.clock;
   if (defended) {
     addFloatingText(state, 'Guard', state.player.position, '#8bd9ff');
+    queueBlockEffect(state, state.player.position, state.player.facing.facingYaw);
     attemptSkillUse(state, 'Parrying', { verb: 'guard', difficulty: 18 + enemy.level * 5, success: true, targetId: enemy.id, relatedSkills: ['Focus'] });
   }
   const discord = enemy.discordUntil > state.clock ? enemy.discordAmount : 0;
@@ -404,6 +424,8 @@ function resolveTelegraph(state: GameState, telegraph: CombatTelegraph): void {
   state.combat.hitFlashes.player = state.clock + 0.18;
   handlePlayerDamaged(state, damage);
   addFloatingText(state, magicHit ? `${damage} spell` : `${damage}`, state.player.position, magicHit ? '#b66dff' : '#ff3f3f');
+  if (magicHit) queueSpellRoleEffect(state, 'debuff', state.player.position, enemy.position, '#b66dff');
+  else queueWeaponImpactEffect(state, enemy.combatRole === 'brute' ? 'mace' : 'sword', state.player.position, { armor: stats.armor });
   emitAudioHook('hit', { id: enemy.id, area: enemy.area, position: state.player.position, intensity: damage });
   attemptSkillUse(state, magicHit ? 'Resisting Spells' : 'Parrying', { verb: magicHit ? 'resist-spell' : 'take-damage', difficulty: 18 + enemy.level * 5, success: defended, targetId: enemy.id, relatedSkills: ['Focus'] });
   if (state.player.health <= 0) downPlayer(state);

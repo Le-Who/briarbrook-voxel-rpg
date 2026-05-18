@@ -8,8 +8,10 @@ import { createInitialResourceTiles } from '../data/resourceMaps';
 import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
+import { createDefaultAudioSettings } from '../audio/AudioSettings';
 import { createInitialRenderStats } from '../render/RenderBudgets';
 import { createFacingState } from '../systems/FacingSystem';
+import { createDefaultInputBindings } from './InputActionMap';
 import type {
   ActionState,
   ContentValidationState,
@@ -95,6 +97,16 @@ export function createInitialDevState(clock = 0): DevToolState {
     telemetry: {
       startedAt: clock,
       firstHourPathCompletionTime: null,
+      playtest: {
+        timeToFirstMovement: null,
+        timeToFirstSuccessfulInteraction: null,
+        timeToIdentifyEquippedItem: null,
+        timeToAssignHotbar: null,
+        invalidActionCount: 0,
+        tooltipRelianceCount: 0,
+        windowsOpened: {},
+        objectiveCompletions: {}
+      },
       damageDealtBySource: {},
       damageTaken: 0,
       skillEvents: {},
@@ -848,7 +860,7 @@ export function createInitialGameState(): GameState {
       },
       skills: createInitialSkills(),
       skillCap: 700,
-      selectedSkillGroup: 'Combat',
+      selectedSkillGroup: 'Build-relevant',
       inventory,
       bank: createInventory(24),
       equipment: {
@@ -931,6 +943,7 @@ export function createInitialGameState(): GameState {
     ],
     floatingTexts: [],
     projectiles: [],
+    visualEffects: [],
     realtime: {
       tickRate: 30,
       fixedDelta: 1 / 30,
@@ -1007,18 +1020,34 @@ export function createInitialGameState(): GameState {
       skillProfessionFilter: 'all',
       professionAtlasZoom: 1,
       pinnedProfessionGoalId: null,
+      pinnedRumorId: null,
+      mapWaypoint: null,
       devTravel: false,
       fadeUntil: 0,
       selectedStationType: 'forge',
       craftQuantity: 1,
       selectedBuildCategory: 'Walls',
       marketCategory: 'all',
+      marketView: 'work',
       marketSearch: '',
       chatTab: 'Local',
       activeHotbarSlot: 0,
       hotbar: createDefaultHotbar(),
       uiScale: 1,
+      fontScale: 1,
+      tooltipDelayMs: 240,
+      tooltipMode: 'compact',
+      advancedTooltipModifier: 'shift',
       reducedMotion: false,
+      colorblindStatusColors: false,
+      showDamageNumbers: true,
+      showSkillGainToasts: true,
+      showChatTabs: true,
+      audio: createDefaultAudioSettings(),
+      lockUILayout: false,
+      hudDensity: 'normal',
+      inputBindings: createDefaultInputBindings(),
+      keybindingCapture: null,
       cameraSmoothing: 'medium',
       windowLayouts: {},
       windowLayoutPreset: 'default',

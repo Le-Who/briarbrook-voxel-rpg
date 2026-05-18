@@ -1,9 +1,11 @@
 import { buildPieces, itemDefs } from '../data/items';
 import { spellDefs } from '../data/spells';
 import type { GameAction } from '../game/Actions';
-import type { EquipmentSlot, GameState, HotbarBinding, Vec3 } from '../game/types';
+import type { AudioVolumeCategory, EquipmentSlot, GameState, HotbarBinding, InputActionId, InputBindingContext, MapWaypointSource, Vec3 } from '../game/types';
+import { inputActionDefinitions } from '../game/InputActionMap';
 import { worldLabelForEntity } from '../game/WorldFeedback';
 import type { VoxelRenderer } from '../render/VoxelRenderer';
+import { iconCacheStats, renderIcon } from '../render/IconRenderer';
 import { calculateDerivedStats } from '../systems/EquipmentSystem';
 import { calculateWeight } from '../systems/InventorySystem';
 import { inspectTargetForTool } from '../systems/ResourceSystem';
@@ -39,7 +41,8 @@ import {
   type DropTarget,
   type ItemContainerId
 } from './DragPayload';
-import { isEditableTarget, isScrollableTarget, WindowManager } from './WindowManager';
+import { captureManagedScrollPositions, isEditableTarget, isScrollableTarget, restoreManagedScrollPositions, WindowManager } from './WindowManager';
+import { shouldDeferHudReplacement, shouldThrottleHudReplacement } from './UIRenderGuards';
 
 type Dispatch = (action: GameAction) => void;
 
@@ -69,6 +72,9 @@ type HotbarMenu =
   | { mode: 'assign'; payload: DragPayload; x: number; y: number }
   | { mode: 'slot'; slot: number; binding: HotbarBinding | null; x: number; y: number };
 
+const UI_SCROLL_SETTLE_MS = 360;
+const UI_HUD_REPLACE_MIN_INTERVAL_MS = 180;
+
 export function shouldShowMarketQuickButton(state: GameState): boolean {
   const gatheredGoods =
     Object.values(state.dev.telemetry.resourceYields).some((amount) => amount > 0) ||
@@ -95,6 +101,10 @@ export class UIManager {
   private highlightedDropTarget: HTMLElement | null = null;
   private openWindowSnapshot = new Set<string>();
   private windowSnapshotReady = false;
+  private scrollSettleUntil = 0;
+  private scrollFlushTimer: number | null = null;
+  private hudReplacementTimer: number | null = null;
+  private lastHudReplacementAt = 0;
 
   constructor(private root: HTMLDivElement, private dispatch: Dispatch) {
     this.root.innerHTML = '<div class="hud-layer"></div><div class="label-layer"></div>';
@@ -110,33 +120,120 @@ export class UIManager {
     this.bindEvents();
   }
 
+  getPerformanceStats(): Pick<GameState['dev']['renderStats'], 'domNodeCount' | 'visibleWindowCount' | 'iconRenderRequestCount' | 'cachedIconCount' | 'eventListenerCount'> {
+    const iconStats = iconCacheStats();
+    return {
+      domNodeCount: this.root.querySelectorAll('*').length,
+      visibleWindowCount: this.root.querySelectorAll('[data-window-id]').length,
+      iconRenderRequestCount: iconStats.iconRenderRequestCount,
+      cachedIconCount: iconStats.cachedIconCount,
+      eventListenerCount: 13
+    };
+  }
+
   render(state: GameState, renderer: VoxelRenderer): void {
     this.currentState = state;
     this.root.style.setProperty('--ui-scale', String(state.ui.uiScale ?? 1));
+    this.root.style.setProperty('--ui-font-scale', String(state.ui.fontScale ?? 1));
+    this.root.style.setProperty('--tooltip-delay-ms', `${state.ui.tooltipDelayMs ?? 240}ms`);
     this.root.classList.toggle('reduced-motion', Boolean(state.ui.reducedMotion));
+    this.root.classList.toggle('colorblind-status', Boolean(state.ui.colorblindStatusColors));
+    this.root.classList.toggle('layout-locked', Boolean(state.ui.lockUILayout));
+    this.root.dataset.hudDensity = state.ui.hudDensity ?? 'normal';
     this.emitWindowAudioHooks(state);
     const hudHtml = this.renderHud(state);
-    const active = document.activeElement;
-    const editingUiField =
-      active instanceof HTMLElement &&
-      this.root.contains(active) &&
-      (active.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement);
-    if (!editingUiField && hudHtml !== this.lastHud) {
-      if (this.uiPointerDown) {
-        this.pendingHud = hudHtml;
+    const editingUiField = this.isEditingUiField();
+    if (hudHtml !== this.lastHud) {
+      if (this.shouldDelayHudReplacement(editingUiField) || this.shouldThrottleHudReplacement()) {
+        this.queueHudReplacement(hudHtml);
       } else {
         this.replaceHud(hudHtml);
       }
     }
+    this.syncTooltipMode(state);
     this.labels.innerHTML = this.renderLabels(state, renderer);
   }
 
+  private syncTooltipMode(state: GameState): void {
+    const advanced = state.ui.tooltipMode === 'advanced';
+    this.hud.querySelectorAll<HTMLElement>('[data-tooltip-advanced]').forEach((element) => {
+      element.dataset.tooltipCompact ??= element.dataset.tooltip ?? '';
+      element.dataset.tooltip = advanced ? element.dataset.tooltipAdvanced ?? element.dataset.tooltipCompact ?? '' : element.dataset.tooltipCompact ?? '';
+    });
+  }
+
   private replaceHud(html: string): void {
+    const scrollSnapshot = captureManagedScrollPositions(this.hud);
+    const focusedContextCommand = this.focusedContextCommand();
     this.hud.innerHTML = html;
     this.lastHud = html;
     this.pendingHud = null;
+    this.lastHudReplacementAt = performance.now();
+    if (this.hudReplacementTimer != null) {
+      window.clearTimeout(this.hudReplacementTimer);
+      this.hudReplacementTimer = null;
+    }
     this.windowManager.decorate(this.hud);
+    restoreManagedScrollPositions(this.hud, scrollSnapshot);
     this.renderLocalOverlays();
+    this.syncContextMenuFocus(focusedContextCommand);
+  }
+
+  private isEditingUiField(): boolean {
+    const active = document.activeElement;
+    return (
+      active instanceof HTMLElement &&
+      this.root.contains(active) &&
+      (active.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)
+    );
+  }
+
+  private shouldDelayHudReplacement(editingUiField = this.isEditingUiField()): boolean {
+    return shouldDeferHudReplacement({
+      editingUiField,
+      uiPointerDown: this.uiPointerDown,
+      windowDragActive: this.windowManager.hasActiveDrag(),
+      hotbarDragActive: Boolean(this.hotbarDrag),
+      scrollSettleUntil: this.scrollSettleUntil,
+      now: performance.now()
+    });
+  }
+
+  private shouldThrottleHudReplacement(): boolean {
+    return shouldThrottleHudReplacement({
+      lastReplacementAt: this.lastHudReplacementAt,
+      minIntervalMs: UI_HUD_REPLACE_MIN_INTERVAL_MS,
+      now: performance.now()
+    });
+  }
+
+  private queueHudReplacement(html: string): void {
+    this.pendingHud = html;
+    if (this.hudReplacementTimer != null) return;
+    const elapsed = performance.now() - this.lastHudReplacementAt;
+    const delay = Math.max(0, UI_HUD_REPLACE_MIN_INTERVAL_MS - elapsed);
+    this.hudReplacementTimer = window.setTimeout(() => {
+      this.hudReplacementTimer = null;
+      this.flushPendingHud();
+    }, delay);
+  }
+
+  private markScrollInteraction(target: EventTarget | null): void {
+    if (!isScrollableTarget(target)) return;
+    this.scrollSettleUntil = performance.now() + UI_SCROLL_SETTLE_MS;
+    if (this.scrollFlushTimer != null) window.clearTimeout(this.scrollFlushTimer);
+    this.scrollFlushTimer = window.setTimeout(() => {
+      this.scrollFlushTimer = null;
+      this.flushPendingHud();
+    }, UI_SCROLL_SETTLE_MS + 20);
+  }
+
+  private flushPendingHud(): void {
+    if (this.pendingHud == null || this.shouldDelayHudReplacement() || this.shouldThrottleHudReplacement()) {
+      if (this.pendingHud != null && this.hudReplacementTimer == null) this.queueHudReplacement(this.pendingHud);
+      return;
+    }
+    this.replaceHud(this.pendingHud);
   }
 
   private updateInputDebug(patch: Partial<GameState['dev']['input']> = {}): void {
@@ -252,9 +349,9 @@ export class UIManager {
       target ? ['follow', 'Follow'] : null,
       ['mark', 'Mark on Map']
     ].filter(Boolean) as Array<[string, string]>;
-    return `<section class="context-menu" style="left:${menu.x}px;top:${menu.y}px">
+    return `<section class="context-menu" role="menu" tabindex="-1" aria-label="Context actions" style="left:${menu.x}px;top:${menu.y}px">
       ${target ? `<b>${target.name}</b>` : `<b>Ground</b>`}
-      ${options.map(([command, label]) => `<button data-context-command="${command}">${label}</button>`).join('')}
+      ${options.map(([command, label], index) => `<button role="menuitem" data-context-command="${command}" data-menu-index="${index}">${label}</button>`).join('')}
     </section>`;
   }
 
@@ -268,6 +365,10 @@ export class UIManager {
   private playerStatus(state: GameState): string {
     const stats = calculateDerivedStats(state);
     const pct = (value: number, max: number) => Math.round(Math.max(0, Math.min(100, (value / max) * 100)));
+    const weapon = state.player.equipment.weapon;
+    const weaponDef = weapon ? itemDefs[weapon.itemId] : null;
+    const spell = spellDefs[state.ui.selectedSpellId] ?? spellDefs.magic_arrow;
+    const approach = state.player.combatPreferences.approachMode;
     const flags = [
       state.player.combatProfile.hidden ? 'Hidden' : '',
       state.player.combatProfile.poison ? 'Poisoned' : '',
@@ -285,6 +386,11 @@ export class UIManager {
         <div class="bar mana"><i style="width:${pct(state.player.mana, stats.maxMana)}%"></i><span>${Math.round(state.player.mana)}/${stats.maxMana}</span></div>
         <div class="bar stamina"><i style="width:${pct(state.player.stamina, stats.maxStamina)}%"></i><span>${Math.round(state.player.stamina)}/${stats.maxStamina}</span></div>
         ${flags.length ? `<div class="combat-flags">${flags.map((flag) => `<span>${flag}</span>`).join('')}</div>` : ''}
+        <div class="hud-loadout" aria-label="Active combat loadout">
+          <span data-tooltip-id="loadout:weapon" data-tooltip-source="hud" data-tooltip="${this.attr(weaponDef ? `Equipped: ${weaponDef.name}` : 'No weapon equipped')}">${renderIcon(weaponDef?.icon, weaponDef?.name ?? 'No weapon')}<b>${this.attr(weaponDef?.name ?? 'Unarmed')}</b></span>
+          <span data-tooltip-id="loadout:spell" data-tooltip-source="hud" data-tooltip="${this.attr(`Prepared spell: ${spell.displayName}`)}">${renderIcon(spell.iconDescriptor, spell.displayName)}<b>${this.attr(spell.displayName)}</b></span>
+          <span class="mode-chip" data-tooltip-id="loadout:approach" data-tooltip-source="hud" data-tooltip="${this.attr(`Auto-approach mode: ${approach}`)}"><i>${approach === 'manual' ? 'M' : approach === 'assist' ? 'A' : approach === 'aggressive' ? '!' : 'R'}</i><b>${this.attr(approach === 'melee_only' ? 'melee' : approach)}</b></span>
+        </div>
         ${state.player.downed.active ? `<button class="respawn-button" data-action="respawn">Respawn</button>` : ''}
       </div>
       <div class="quick-buttons">
@@ -347,9 +453,19 @@ export class UIManager {
     }
     state.floatingTexts.forEach((text) => {
       if (Math.hypot(text.position.x - state.player.position.x, text.position.z - state.player.position.z) > 11) return;
+      if (!state.ui.showDamageNumbers && this.isDamageFloatingText(text.text)) return;
+      if (!state.ui.showSkillGainToasts && this.isSkillGainFloatingText(text.text)) return;
       add(text.position, `<span style="color:${text.color}">${text.text}</span>`, 'floating-label');
     });
     return labels.join('');
+  }
+
+  private isDamageFloatingText(text: string): boolean {
+    return /^\d+!?($|\s)/.test(text) || /^Trap\s+\d+/.test(text);
+  }
+
+  private isSkillGainFloatingText(text: string): boolean {
+    return /^\+\d+(\.\d+)?\s+[A-Za-z/ ]+$/.test(text);
   }
 
   private renderWorldLabel(decision: NonNullable<ReturnType<typeof worldLabelForEntity>>): string {
@@ -434,9 +550,21 @@ export class UIManager {
     this.root.addEventListener(
       'wheel',
       (event) => {
-        if (!isScrollableTarget(event.target)) this.preventBrowserDefault(event, 'ui:wheel');
+        if (isScrollableTarget(event.target)) {
+          this.markScrollInteraction(event.target);
+          return;
+        }
+        this.preventBrowserDefault(event, 'ui:wheel');
       },
       { passive: false }
+    );
+
+    this.root.addEventListener(
+      'scroll',
+      (event) => {
+        this.markScrollInteraction(event.target);
+      },
+      true
     );
 
     this.root.addEventListener(
@@ -445,8 +573,9 @@ export class UIManager {
         const target = event.target as HTMLElement | null;
         if (!target) return;
         this.uiPointerDown = true;
+        this.markScrollInteraction(target);
         if (this.hotbarAssignMenu && !target.closest('.hotbar-assign-menu')) this.closeHotbarAssignMenu();
-        if (this.windowManager.handlePointerDown(event)) {
+        if (!this.currentState?.ui.lockUILayout && this.windowManager.handlePointerDown(event)) {
           this.updateInputDebug({
             mode: 'uiDragging',
             lastRawInput: 'ui:pointerdown',
@@ -463,7 +592,7 @@ export class UIManager {
     const releasePointer = () => {
       window.setTimeout(() => {
         this.uiPointerDown = false;
-        if (this.pendingHud != null) this.replaceHud(this.pendingHud);
+        this.flushPendingHud();
       }, 0);
     };
     window.addEventListener('pointermove', (event) => {
@@ -493,7 +622,10 @@ export class UIManager {
     window.addEventListener(
       'keydown',
       (event) => {
+        if (this.currentState?.ui.keybindingCapture) return;
+        if (this.handleContextMenuKey(event)) return;
         if (event.key !== 'Escape') return;
+        if (isEditableTarget(event.target) || isEditableTarget(document.activeElement)) return;
         const canceledDrag = this.cancelActiveDrag();
         const closedWindow = canceledDrag ? false : this.closeTopmostWindow();
         if (!canceledDrag && !closedWindow) return;
@@ -598,6 +730,11 @@ export class UIManager {
         this.dispatch({ type: 'SET_MARKET_FILTER', category: marketCategory as GameState['ui']['marketCategory'] });
         return;
       }
+      const marketView = button.dataset.marketView;
+      if (marketView === 'work' || marketView === 'trade' || marketView === 'all') {
+        this.dispatch({ type: 'SET_MARKET_VIEW', view: marketView });
+        return;
+      }
       const journalTab = button.dataset.journalTab;
       if (journalTab) {
         this.dispatch({ type: 'SET_JOURNAL_TAB', tab: journalTab as GameState['ui']['journalTab'] });
@@ -664,12 +801,42 @@ export class UIManager {
         this.dispatch({ type: 'SHOW_PROMPT', message: button.dataset.description ?? atlasAction });
         return;
       }
+      const waypointArea = button.dataset.mapWaypointArea;
+      if (waypointArea) {
+        this.dispatch({
+          type: 'SET_MAP_WAYPOINT',
+          areaId: waypointArea as GameState['player']['currentArea'],
+          position: {
+            x: Number(button.dataset.mapWaypointX ?? 0),
+            y: 0,
+            z: Number(button.dataset.mapWaypointZ ?? 0)
+          },
+          label: button.dataset.mapWaypointLabel,
+          source: (button.dataset.mapWaypointSource as MapWaypointSource | undefined) ?? 'manual'
+        });
+        return;
+      }
+      if (button.dataset.clearMapWaypoint !== undefined) {
+        this.dispatch({ type: 'CLEAR_MAP_WAYPOINT' });
+        return;
+      }
+      const audioVolume = button.dataset.audioVolume;
+      if (audioVolume) {
+        const category = audioVolume as AudioVolumeCategory;
+        const current = this.currentState?.ui.audio.volumes[category] ?? 0;
+        this.dispatch({ type: 'SET_AUDIO_VOLUME', category, volume: current + Number(button.dataset.audioDelta ?? 0) });
+        return;
+      }
       if (button.dataset.pinProfessionGoal) {
         this.dispatch({ type: 'PIN_PROFESSION_GOAL', goalId: button.dataset.pinProfessionGoal });
         return;
       }
       if (button.dataset.professionGoal) {
         this.dispatch({ type: 'PIN_PROFESSION_GOAL', goalId: button.dataset.professionGoal });
+        return;
+      }
+      if (button.dataset.pinRumor !== undefined) {
+        this.dispatch({ type: 'PIN_RUMOR', eventId: button.dataset.pinRumor || null });
         return;
       }
       const recipe = button.dataset.recipe;
@@ -710,6 +877,12 @@ export class UIManager {
       const spellbookView = button.dataset.spellbookView;
       if (spellbookView === 'grid' || spellbookView === 'list' || spellbookView === 'circle') {
         this.dispatch({ type: 'SET_SPELLBOOK_VIEW_MODE', mode: spellbookView });
+        return;
+      }
+      const layoutPreset = button.dataset.layoutPreset;
+      if (layoutPreset) {
+        this.dispatch({ type: 'APPLY_UI_LAYOUT_PRESET', preset: layoutPreset as GameState['ui']['windowLayoutPreset'] });
+        this.windowManager.resetLayout(this.hud);
         return;
       }
       const spell = button.dataset.spell;
@@ -1159,6 +1332,21 @@ export class UIManager {
     this.hud.appendChild(menu);
   }
 
+  private focusedContextCommand(): string | null {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return null;
+    const button = active.closest<HTMLButtonElement>('.context-menu button[data-context-command]');
+    return button?.dataset.contextCommand ?? null;
+  }
+
+  private syncContextMenuFocus(preferredCommand: string | null = null): void {
+    const menu = this.hud.querySelector<HTMLElement>('.context-menu');
+    if (!menu || menu.contains(document.activeElement)) return;
+    const preferred = preferredCommand ? menu.querySelector<HTMLButtonElement>(`button[data-context-command="${this.cssEscape(preferredCommand)}"]:not(:disabled)`) : null;
+    const first = preferred ?? menu.querySelector<HTMLButtonElement>('button:not(:disabled)');
+    window.setTimeout(() => first?.focus({ preventScroll: true }), 0);
+  }
+
   private selectedInventoryHotbarBinding(): HotbarBinding | null {
     const selectedSlot = this.currentState?.ui.selectedInventorySlot;
     const stack = selectedSlot == null ? null : this.currentState?.player.inventory.slots[selectedSlot];
@@ -1206,8 +1394,41 @@ export class UIManager {
     return false;
   }
 
+  private handleContextMenuKey(event: KeyboardEvent): boolean {
+    const menu = this.hud.querySelector<HTMLElement>('.context-menu');
+    if (!menu || isEditableTarget(event.target)) return false;
+    const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+    if (!buttons.length) return false;
+    const activeIndex = Math.max(0, buttons.indexOf(document.activeElement as HTMLButtonElement));
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const nextIndex = event.key === 'ArrowDown' ? (activeIndex + 1) % buttons.length : (activeIndex - 1 + buttons.length) % buttons.length;
+      buttons[nextIndex].focus({ preventScroll: true });
+      this.preventBrowserDefault(event, 'ui:context-menu-nav');
+      event.stopImmediatePropagation();
+      return true;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      buttons[event.key === 'Home' ? 0 : buttons.length - 1].focus({ preventScroll: true });
+      this.preventBrowserDefault(event, 'ui:context-menu-nav');
+      event.stopImmediatePropagation();
+      return true;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      const active = document.activeElement instanceof HTMLButtonElement && menu.contains(document.activeElement) ? document.activeElement : buttons[activeIndex];
+      active.click();
+      this.preventBrowserDefault(event, 'ui:context-menu-confirm');
+      event.stopImmediatePropagation();
+      return true;
+    }
+    return false;
+  }
+
   private attr(value: string): string {
     return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
+  }
+
+  private cssEscape(value: string): string {
+    return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, '\\$&');
   }
 
   private handleAction(action: string, element: HTMLElement): void {
@@ -1251,10 +1472,55 @@ export class UIManager {
         this.dispatch({ type: 'SET_UI_SCALE', scale: (this.currentState?.ui.uiScale ?? 1) - 0.05 });
         this.updateInputDebug({ lastIntent: 'UI_SETTING:scale-down', uiScale: Math.max(0.8, Number(((this.currentState?.ui.uiScale ?? 1) - 0.05).toFixed(2))) });
         break;
+      case 'font-scale-up':
+        this.dispatch({ type: 'SET_FONT_SCALE', scale: (this.currentState?.ui.fontScale ?? 1) + 0.05 });
+        break;
+      case 'font-scale-down':
+        this.dispatch({ type: 'SET_FONT_SCALE', scale: (this.currentState?.ui.fontScale ?? 1) - 0.05 });
+        break;
+      case 'tooltip-delay-up':
+        this.dispatch({ type: 'SET_TOOLTIP_DELAY', delayMs: (this.currentState?.ui.tooltipDelayMs ?? 240) + 80 });
+        break;
+      case 'tooltip-delay-down':
+        this.dispatch({ type: 'SET_TOOLTIP_DELAY', delayMs: (this.currentState?.ui.tooltipDelayMs ?? 240) - 80 });
+        break;
+      case 'toggle-tooltip-mode':
+        this.dispatch({ type: 'SET_TOOLTIP_MODE', mode: this.currentState?.ui.tooltipMode === 'advanced' ? 'compact' : 'advanced' });
+        break;
       case 'toggle-reduced-motion':
         this.dispatch({ type: 'TOGGLE_REDUCED_MOTION' });
         break;
+      case 'toggle-colorblind-status':
+        this.dispatch({ type: 'TOGGLE_COLORBLIND_STATUS' });
+        break;
+      case 'toggle-damage-numbers':
+        this.dispatch({ type: 'TOGGLE_DAMAGE_NUMBERS' });
+        break;
+      case 'toggle-skill-gain-toasts':
+        this.dispatch({ type: 'TOGGLE_SKILL_GAIN_TOASTS' });
+        break;
+      case 'toggle-chat-tabs':
+        this.dispatch({ type: 'TOGGLE_CHAT_TABS' });
+        break;
+      case 'toggle-mute-unfocused':
+        this.dispatch({ type: 'TOGGLE_MUTE_WHEN_UNFOCUSED' });
+        break;
+      case 'toggle-visual-audio-cues':
+        this.dispatch({ type: 'TOGGLE_VISUAL_AUDIO_CUES' });
+        break;
+      case 'toggle-lock-ui-layout':
+        this.dispatch({ type: 'TOGGLE_LOCK_UI_LAYOUT' });
+        break;
+      case 'capture-keybinding':
+        if (isInputActionId(element.dataset.keybindingAction) && isInputBindingContext(element.dataset.keybindingContext)) {
+          this.dispatch({ type: 'BEGIN_KEYBIND_CAPTURE', actionId: element.dataset.keybindingAction, context: element.dataset.keybindingContext });
+        }
+        break;
+      case 'reset-keybindings':
+        this.dispatch({ type: 'RESET_INPUT_BINDINGS' });
+        break;
       case 'reset-ui-layout':
+        this.dispatch({ type: 'RESET_UI_LAYOUT' });
         this.windowManager.resetLayout(this.hud);
         this.closeHotbarAssignMenu();
         this.updateInputDebug({ lastIntent: 'UI_RESET_LAYOUT' });
@@ -1369,4 +1635,12 @@ export class UIManager {
   private currentRecipe(): string {
     return this.currentState?.ui.selectedRecipeId ?? 'iron_armor';
   }
+}
+
+function isInputActionId(value: string | undefined): value is InputActionId {
+  return typeof value === 'string' && value in inputActionDefinitions;
+}
+
+function isInputBindingContext(value: string | undefined): value is InputBindingContext {
+  return value === 'gameplay' || value === 'ui' || value === 'debug';
 }

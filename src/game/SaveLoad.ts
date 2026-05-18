@@ -8,8 +8,10 @@ import { createInitialResourceTiles } from '../data/resourceMaps';
 import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
+import { sanitizeAudioSettings } from '../audio/AudioSettings';
 import { createInitialRenderStats } from '../render/RenderBudgets';
 import { ensureFacingState } from '../systems/FacingSystem';
+import { sanitizeInputBindings } from './InputActionMap';
 import type { BuildingEntity, EnemyEntity, GameState, HousingStorageState, ItemType, PortalEntity, ResourceNodeEntity } from './types';
 
 export const CURRENT_SAVE_VERSION = 3;
@@ -51,6 +53,7 @@ export function loadGame(): GameState {
     parsed.bandage ??= null;
     parsed.spellCasting ??= null;
     parsed.spellEffects ??= [];
+    parsed.visualEffects = [];
     parsed.gathering ??= null;
     parsed.realtime ??= {
       tickRate: 30,
@@ -73,7 +76,7 @@ export function loadGame(): GameState {
     parsed.realtime.pendingAction = null;
     parsed.realtime.statusEffects ??= {};
     parsed.player.skillCap ??= 700;
-    parsed.player.selectedSkillGroup ??= 'Combat';
+    parsed.player.selectedSkillGroup ??= 'Build-relevant';
     parsed.player.attributes.Dexterity ??= parsed.player.attributes.Agility ?? 10;
     parsed.player.attributes.Agility = parsed.player.attributes.Dexterity;
     parsed.player.statModes ??= {
@@ -160,6 +163,8 @@ export function loadGame(): GameState {
     parsed.ui.professionFilter ??= 'all';
     parsed.ui.professionAtlasZoom ??= 1;
     parsed.ui.pinnedProfessionGoalId ??= null;
+    parsed.ui.pinnedRumorId ??= null;
+    parsed.ui.mapWaypoint = sanitizeMapWaypoint(parsed.ui.mapWaypoint, parsed.clock ?? 0);
     parsed.ui.spellbookSearch ??= '';
     parsed.ui.spellbookKnowledgeFilter ??= 'known';
     parsed.ui.spellbookCircleFilter ??= 'all';
@@ -169,6 +174,7 @@ export function loadGame(): GameState {
     parsed.ui.selectedTreasureMapId ??= 'greymont_cache';
     parsed.ui.selectedHousingStorageId ??= null;
     parsed.ui.marketCategory ??= 'all';
+    parsed.ui.marketView ??= 'work';
     parsed.ui.marketSearch ??= '';
     parsed.ui.skillSearch ??= '';
     parsed.ui.skillsViewMode ??= 'ledger';
@@ -192,7 +198,20 @@ export function loadGame(): GameState {
     parsed.ui.hotbar ??= createDefaultHotbar();
     parsed.ui.hotbar = Array.from({ length: 10 }, (_, index) => parsed.ui.hotbar[index] ?? createDefaultHotbar()[index] ?? null);
     parsed.ui.uiScale ??= 1;
+    parsed.ui.fontScale ??= 1;
+    parsed.ui.tooltipDelayMs ??= 240;
+    parsed.ui.tooltipMode ??= 'compact';
+    parsed.ui.advancedTooltipModifier ??= 'shift';
     parsed.ui.reducedMotion ??= false;
+    parsed.ui.colorblindStatusColors ??= false;
+    parsed.ui.showDamageNumbers ??= true;
+    parsed.ui.showSkillGainToasts ??= true;
+    parsed.ui.showChatTabs ??= true;
+    parsed.ui.audio = sanitizeAudioSettings(parsed.ui.audio);
+    parsed.ui.lockUILayout ??= false;
+    parsed.ui.hudDensity ??= 'normal';
+    parsed.ui.inputBindings = sanitizeInputBindings(parsed.ui.inputBindings);
+    parsed.ui.keybindingCapture = null;
     parsed.ui.cameraSmoothing ??= 'medium';
     parsed.ui.windowLayouts ??= {};
     parsed.ui.windowLayoutPreset ??= 'default';
@@ -391,6 +410,12 @@ export function loadGame(): GameState {
     parsed.dev.telemetry ??= initialDev.telemetry;
     parsed.dev.telemetry.startedAt ??= parsed.clock ?? 0;
     parsed.dev.telemetry.firstHourPathCompletionTime ??= null;
+    parsed.dev.telemetry.playtest = {
+      ...initialDev.telemetry.playtest,
+      ...(parsed.dev.telemetry.playtest ?? {}),
+      windowsOpened: parsed.dev.telemetry.playtest?.windowsOpened ?? {},
+      objectiveCompletions: parsed.dev.telemetry.playtest?.objectiveCompletions ?? {}
+    };
     parsed.dev.telemetry.damageDealtBySource ??= {};
     parsed.dev.telemetry.damageTaken ??= 0;
     parsed.dev.telemetry.skillEvents ??= {};
@@ -426,6 +451,13 @@ export function loadGame(): GameState {
     };
     parsed.dev.input ??= initialDev.input;
     parsed.dev.input.mode ??= 'normal';
+    parsed.dev.renderStats.fps ??= 0;
+    parsed.dev.renderStats.frameTimeMs ??= 0;
+    parsed.dev.renderStats.domNodeCount ??= 0;
+    parsed.dev.renderStats.visibleWindowCount ??= 0;
+    parsed.dev.renderStats.iconRenderRequestCount ??= 0;
+    parsed.dev.renderStats.cachedIconCount ??= 0;
+    parsed.dev.renderStats.eventListenerCount ??= 0;
     parsed.dev.input.lastRawInput ??= 'none';
     parsed.dev.input.lastIntent ??= 'none';
     parsed.dev.input.focusedWindow ??= 'none';
@@ -471,6 +503,7 @@ export function loadGame(): GameState {
       ...parsed,
       floatingTexts: [],
       projectiles: [],
+      visualEffects: [],
       paused: false
     };
   } catch {
@@ -499,6 +532,7 @@ function sanitizeForSave(state: GameState): GameState {
     saveVersion: CURRENT_SAVE_VERSION,
     floatingTexts: [],
     projectiles: [],
+    visualEffects: [],
     gathering: null,
     bandage: null,
     spellCasting: null,
@@ -523,7 +557,10 @@ function sanitizeForSave(state: GameState): GameState {
       selectedTarget: null,
       targeting: null,
       contextMenu: null,
-      hotbarAssignSpellId: null
+      hotbarAssignSpellId: null,
+      keybindingCapture: null,
+      pinnedRumorId: state.world.activeEvents.some((event) => event.id === state.ui.pinnedRumorId) ? state.ui.pinnedRumorId : null,
+      mapWaypoint: sanitizeMapWaypoint(state.ui.mapWaypoint, state.clock)
     },
     realtime: {
       ...state.realtime,
@@ -549,6 +586,7 @@ function sanitizeForSave(state: GameState): GameState {
 function sanitizeLoadedTransientState(state: GameState): void {
   state.floatingTexts = [];
   state.projectiles = [];
+  state.visualEffects = [];
   state.gathering = null;
   state.bandage = null;
   state.spellCasting = null;
@@ -567,6 +605,9 @@ function sanitizeLoadedTransientState(state: GameState): void {
   state.ui.targeting = null;
   state.ui.contextMenu = null;
   state.ui.hotbarAssignSpellId = null;
+  state.ui.keybindingCapture = null;
+  if (!state.world.activeEvents.some((event) => event.id === state.ui.pinnedRumorId)) state.ui.pinnedRumorId = null;
+  state.ui.mapWaypoint = sanitizeMapWaypoint(state.ui.mapWaypoint, state.clock ?? 0);
   state.realtime.actionQueue = [];
   state.realtime.actionHistory = [];
   state.realtime.pendingAction = null;
@@ -579,6 +620,27 @@ function sanitizeLoadedTransientState(state: GameState): void {
   state.dev.input = { ...initialDev.input };
   state.dev.stability = { ...initialDev.stability };
   state.dev.facingDebug = { ...initialDev.facingDebug };
+}
+
+function sanitizeMapWaypoint(value: unknown, clock: number): GameState['ui']['mapWaypoint'] {
+  if (!isRecord(value)) return null;
+  if (typeof value.areaId !== 'string' || !areasHas(value.areaId)) return null;
+  if (!isRecord(value.position)) return null;
+  const x = Number(value.position.x);
+  const z = Number(value.position.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  const source = value.source === 'objective' || value.source === 'rumor' || value.source === 'treasure' || value.source === 'manual' ? value.source : 'manual';
+  return {
+    areaId: value.areaId,
+    position: { x: Math.round(x), y: 0, z: Math.round(z) },
+    label: typeof value.label === 'string' && value.label.trim() ? value.label.slice(0, 64) : 'Map waypoint',
+    source,
+    setAt: typeof value.setAt === 'number' && Number.isFinite(value.setAt) ? value.setAt : clock
+  };
+}
+
+function areasHas(areaId: string): areaId is GameState['player']['currentArea'] {
+  return areaId === 'town' || areaId === 'bank' || areaId === 'blacksmith' || areaId === 'forest' || areaId === 'crypt' || areaId === 'road' || areaId === 'housing';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

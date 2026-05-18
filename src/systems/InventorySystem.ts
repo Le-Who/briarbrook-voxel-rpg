@@ -1,4 +1,5 @@
 import { itemDefs } from '../data/items';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { createId, createStack } from '../game/GameState';
 import type { GameState, InventoryState, ItemStack } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
@@ -208,6 +209,8 @@ export function equipItem(state: GameState, slot: number): void {
   state.player.equipment[equipSlot] = stack;
   state.player.inventory.slots[slot] = previous ?? null;
   addSystemMessage(state, `Equipped ${def.name}.`);
+  emitAudioHook('equip', { id: stack.itemId, area: state.player.currentArea, position: state.player.position });
+  if (previous) emitAudioHook('unequip', { id: previous.itemId, area: state.player.currentArea, position: state.player.position });
 
   const stats = calculateDerivedStats(state);
   state.player.health = Math.min(state.player.health, stats.maxHealth);

@@ -6,6 +6,7 @@ import { skillDefinitionById, skillDefinitions, skillGroups, skillsForGroup, typ
 import { spellDefs } from '../data/spells';
 import { renderIcon } from '../render/IconRenderer';
 import { skillXpThreshold, usedSkillTotal } from '../systems/SkillSystem';
+import { buildSkillTooltip, skillIconCategory } from './IconVisualSystem';
 
 function attr(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
@@ -135,19 +136,17 @@ function renderSkillRow(state: GameState, definition: SkillDefinition, relevant:
   const professions = skillProfessionIds(definition.id)
     .map((id) => professionById(id)?.title ?? id)
     .join(', ');
-  const tooltip = [
-    definition.description,
-    `Trained by: ${definition.verbs.join(', ') || 'future interaction'}`,
+  const tooltip = buildSkillTooltip(definition, state, 'compact');
+  const advancedTooltip = [
+    buildSkillTooltip(definition, state, 'advanced'),
     `Used by: ${professions || definition.group}`,
     `Supports: ${supportSummary(definition)}`,
-    `Stats: ${definition.primaryStat} / ${definition.secondaryStat}`,
     `Thresholds: ${thresholds.length ? thresholds.join(', ') : 'No current milestone threshold'}`,
-    `Roles: ${definition.roles.join(', ')}`,
     trainable ? 'Trainability: implemented in this build.' : 'Trainability: future or support-only in this build.'
   ].join('\n');
   const status = recent ? 'Recent gain' : isRelevant ? 'Build-relevant' : trainable ? 'Trainable now' : definition.roles.includes('support') ? 'Support/future' : 'Future';
-  return `<div class="skill-row ledger-row ${isRelevant ? 'relevant' : ''} ${recent ? 'recent' : ''}" data-hotbar-source="skill:${attr(definition.id)}" data-drag-kind="skill" data-source-window-id="skills" data-skill-id="${attr(definition.id)}" data-display-name="${attr(definition.displayName)}" data-tooltip="${attr(tooltip)}" title="${attr(tooltip)}">
-    ${renderIcon(definition.icon, definition.displayName)}
+  return `<div class="skill-row ledger-row ${isRelevant ? 'relevant' : ''} ${recent ? 'recent' : ''}" data-hotbar-source="skill:${attr(definition.id)}" data-drag-kind="skill" data-source-window-id="skills" data-skill-id="${attr(definition.id)}" data-display-name="${attr(definition.displayName)}" data-tooltip="${attr(tooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}" title="${attr(tooltip)}">
+    ${renderIcon(definition.icon, definition.displayName, skillIconCategory(definition))}
     <span class="skill-name">${definition.displayName}<small>${definition.group} · ${definition.roles.join(', ')}</small></span>
     <b class="skill-value">${effective}</b>
     <button class="skill-mode ${skill.mode}" data-skill-mode="${definition.id}" data-mode="${nextMode[skill.mode]}" title="Cycle Raise, Lock, Lower">${modeLabel[skill.mode]}</button>

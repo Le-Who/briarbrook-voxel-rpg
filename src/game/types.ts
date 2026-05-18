@@ -177,6 +177,7 @@ export interface ItemDef {
   range?: number;
   buildPieceId?: string;
   weaponClass?: 'sword' | 'fencing' | 'mace' | 'axe' | 'bow' | 'crossbow' | 'unarmed' | 'staff';
+  visualPrefabId?: string;
   baseDamageMin?: number;
   baseDamageMax?: number;
   swingSpeed?: number;
@@ -651,6 +652,48 @@ export interface Projectile {
   color: string;
 }
 
+export type VisualEffectTier = 0 | 1 | 2 | 3;
+
+export type VisualEffectKind =
+  | 'slash_arc'
+  | 'pierce_thrust'
+  | 'mace_impact'
+  | 'shield_block'
+  | 'dodge_cue'
+  | 'miss_cue'
+  | 'crit_cue'
+  | 'armor_sparks'
+  | 'hit_impact'
+  | 'wood_chips'
+  | 'ore_sparks'
+  | 'water_ripple'
+  | 'herb_sparkle'
+  | 'depleted_cue'
+  | 'heal_particles'
+  | 'buff_ring'
+  | 'debuff_mark'
+  | 'utility_line'
+  | 'reveal_pulse'
+  | 'rune_circle'
+  | 'fizzle_smoke'
+  | 'pickup_gesture'
+  | 'interact_gesture'
+  | 'craft_loop';
+
+export interface VisualEffect {
+  id: string;
+  kind: VisualEffectKind;
+  tier: VisualEffectTier;
+  area: AreaId;
+  position: Vec3;
+  targetPosition?: Vec3;
+  yaw?: number;
+  color: string;
+  startedAt: number;
+  duration: number;
+  intensity?: number;
+}
+
 export interface TradeState {
   partnerId: string;
   playerSlots: Array<ItemStack | null>;
@@ -942,6 +985,7 @@ export interface ContentValidationState {
 export interface TelemetryState {
   startedAt: number;
   firstHourPathCompletionTime: number | null;
+  playtest: PlaytestTelemetryState;
   damageDealtBySource: Record<string, number>;
   damageTaken: number;
   skillEvents: Record<SkillId, number>;
@@ -968,6 +1012,17 @@ export interface TelemetryState {
   priceTrends: Record<string, number[]>;
 }
 
+export interface PlaytestTelemetryState {
+  timeToFirstMovement: number | null;
+  timeToFirstSuccessfulInteraction: number | null;
+  timeToIdentifyEquippedItem: number | null;
+  timeToAssignHotbar: number | null;
+  invalidActionCount: number;
+  tooltipRelianceCount: number;
+  windowsOpened: Record<string, number>;
+  objectiveCompletions: Record<string, number>;
+}
+
 export interface RenderBudgetState {
   roughDrawCalls: number;
   meshCount: number;
@@ -976,10 +1031,16 @@ export interface RenderBudgetState {
   triangles: number;
   estimatedFrameMs: number;
   memoryAfterTransitionMb: number;
+  domNodeCount: number;
+  visibleWindowCount: number;
+  cachedIconCount: number;
+  eventListenerCount: number;
 }
 
 export interface RenderStatsState {
   frame: number;
+  fps: number;
+  frameTimeMs: number;
   entityCount: number;
   visibleEntityCount: number;
   roughDrawCalls: number;
@@ -995,10 +1056,73 @@ export interface RenderStatsState {
   raycastCandidateCount: number;
   estimatedFrameMs: number;
   memoryAfterTransitionMb: number | null;
+  domNodeCount: number;
+  visibleWindowCount: number;
+  iconRenderRequestCount: number;
+  cachedIconCount: number;
+  eventListenerCount: number;
   budget: RenderBudgetState;
 }
 
 export type InputMode = 'normal' | 'uiDragging' | 'itemDragging' | 'spellDragging' | 'targeting' | 'building' | 'chatFocused' | 'modalOpen' | 'paused' | 'devOverlay';
+export type InputBindingContext = 'gameplay' | 'ui' | 'debug';
+export type InputActionId =
+  | 'moveUp'
+  | 'moveDown'
+  | 'moveLeft'
+  | 'moveRight'
+  | 'interact'
+  | 'cancel'
+  | 'primaryAction'
+  | 'secondaryAction'
+  | 'targetNext'
+  | 'openInventory'
+  | 'openSkills'
+  | 'openSpellbook'
+  | 'openJournal'
+  | 'openMarket'
+  | 'openBuild'
+  | 'openCharacter'
+  | 'openHelp'
+  | 'openCrafting'
+  | 'openContextMenu'
+  | 'confirm'
+  | 'back'
+  | 'toggleCursorCamera'
+  | 'hotbar1'
+  | 'hotbar2'
+  | 'hotbar3'
+  | 'hotbar4'
+  | 'hotbar5'
+  | 'hotbar6'
+  | 'hotbar7'
+  | 'hotbar8'
+  | 'hotbar9'
+  | 'hotbar10'
+  | 'hotbarPrevious'
+  | 'hotbarNext'
+  | 'defend'
+  | 'weaponAbility'
+  | 'cancelBuild'
+  | 'buildSnap'
+  | 'rotateBuildLeft'
+  | 'rotateBuildRight'
+  | 'openDevTravel'
+  | 'toggleDevOverlay';
+
+export interface InputBindingState {
+  actionId: InputActionId;
+  label: string;
+  context: InputBindingContext;
+  keys: string[];
+  custom?: boolean;
+  locked?: boolean;
+}
+
+export interface KeybindingCaptureState {
+  actionId: InputActionId;
+  context: InputBindingContext;
+}
 
 export interface InputDebugState {
   mode: InputMode;
@@ -1089,17 +1213,33 @@ export interface UIState {
   skillProfessionFilter: ProfessionLensFilter;
   professionAtlasZoom: number;
   pinnedProfessionGoalId: string | null;
+  pinnedRumorId: string | null;
+  mapWaypoint: MapWaypointState | null;
   devTravel: boolean;
   fadeUntil: number;
   craftQuantity: number;
   selectedBuildCategory: BuildPieceDef['category'];
   marketCategory: EconomyOrderCategory | 'all';
+  marketView: MarketViewMode;
   marketSearch: string;
   chatTab: ChatMessage['channel'];
   activeHotbarSlot: number;
   hotbar: Array<HotbarBinding | null>;
   uiScale: number;
+  fontScale: number;
+  tooltipDelayMs: number;
+  tooltipMode: TooltipDetailMode;
+  advancedTooltipModifier: AdvancedTooltipModifier;
   reducedMotion: boolean;
+  colorblindStatusColors: boolean;
+  showDamageNumbers: boolean;
+  showSkillGainToasts: boolean;
+  showChatTabs: boolean;
+  audio: AudioSettingsState;
+  lockUILayout: boolean;
+  hudDensity: HudDensityMode;
+  inputBindings: InputBindingState[];
+  keybindingCapture: KeybindingCaptureState | null;
   cameraSmoothing: CameraSmoothingMode;
   windowLayouts: Partial<Record<ManagedWindowId, UIWindowLayout>>;
   windowLayoutPreset: UILayoutPreset;
@@ -1109,10 +1249,28 @@ export interface UIState {
   merchant: MerchantState | null;
 }
 
+export type MapWaypointSource = 'manual' | 'objective' | 'rumor' | 'treasure';
+export interface MapWaypointState {
+  areaId: AreaId;
+  position: Vec3;
+  label: string;
+  source: MapWaypointSource;
+  setAt: number;
+}
 export type CameraSmoothingMode = 'low' | 'medium' | 'high';
+export type AudioVolumeCategory = 'master' | 'music' | 'sfx' | 'ui' | 'ambient' | 'combatAlert';
+export interface AudioSettingsState {
+  volumes: Record<AudioVolumeCategory, number>;
+  muteWhenUnfocused: boolean;
+  visualAudioCues: boolean;
+}
+export type TooltipDetailMode = 'compact' | 'advanced';
+export type AdvancedTooltipModifier = 'shift' | 'alt' | 'ctrl';
+export type HudDensityMode = 'normal' | 'compact' | 'minimal';
 export type SpellbookKnowledgeFilter = 'known' | 'all' | 'unknown';
 export type SpellbookViewMode = 'grid' | 'list' | 'circle';
 export type SpellbookRoleFilter = 'all' | 'Damage' | 'Healing' | 'Utility' | 'Control' | 'Travel' | 'Buff' | 'Debuff';
+export type MarketViewMode = 'work' | 'trade' | 'all';
 export type SkillsViewMode = 'ledger' | 'atlas' | 'milestones';
 export type SkillTrainableFilter = 'all' | 'trainable' | 'not_trainable';
 export type SkillRecentFilter = 'all' | 'recent';
@@ -1129,7 +1287,7 @@ export type ProfessionLensFilter =
   | 'provisioner'
   | 'battle_miner';
 export type ManagedWindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help';
-export type UILayoutPreset = 'default' | 'compact' | 'large' | 'combat';
+export type UILayoutPreset = 'default' | 'compact' | 'large' | 'combat' | 'crafting' | 'exploration' | 'stream';
 export interface UIWindowLayout {
   x: number;
   y: number;
@@ -1167,6 +1325,7 @@ export interface GameState {
   chat: ChatMessage[];
   floatingTexts: FloatingText[];
   projectiles: Projectile[];
+  visualEffects: VisualEffect[];
   realtime: RealtimeState;
   combat: CombatState;
   bandage: BandageState | null;

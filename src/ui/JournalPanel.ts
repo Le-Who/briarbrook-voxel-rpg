@@ -1,16 +1,21 @@
 import { areas } from '../data/areas';
 import { itemDefs } from '../data/items';
 import { recipes, stationLabels } from '../data/recipes';
+import { treasureMapDefinitions } from '../data/treasure';
 import { tutorialQuestIds } from '../data/quests';
 import { skillDefinitions } from '../data/skillDefinitions';
 import { spellDefs } from '../data/spells';
-import type { GameState, QuestState } from '../game/types';
+import type { AreaId, GameState, QuestState, Vec3 } from '../game/types';
 import { deriveFirstHourDirector } from '../systems/FirstHourDirector';
 import { getItemCount } from '../systems/InventorySystem';
 import { describeProfessionGoal } from '../systems/ProfessionSystem';
 
 function attr(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
+}
+
+function waypointButton(areaId: AreaId, position: Vec3, label: string, source: 'rumor' | 'treasure' | 'objective'): string {
+  return `<button data-map-waypoint-area="${areaId}" data-map-waypoint-x="${Math.round(position.x)}" data-map-waypoint-z="${Math.round(position.z)}" data-map-waypoint-label="${attr(label)}" data-map-waypoint-source="${source}">Waypoint</button>`;
 }
 
 const areaNotes: Record<string, string> = {
@@ -93,6 +98,22 @@ export function JournalPanel(state: GameState): string {
     state.world.economy.transactionLog.some((entry) => entry.kind === 'market' || entry.kind === 'work_order');
   const spells = state.player.spellbook.knownSpellIds.map((id) => spellDefs[id]).filter(Boolean);
   const rumors = state.world.activeEvents.filter((event) => event.discovered || state.world.discoveredRumorIds.includes(event.id));
+  const pinnedRumor = rumors.find((event) => event.id === state.ui.pinnedRumorId);
+  const hasMapFragments = getItemCount(state.player.inventory, 'map_fragment') > 0;
+  const hasRoughMap = getItemCount(state.player.inventory, 'rough_treasure_map') > 0;
+  const treasureClues = Object.entries(state.world.treasure.maps)
+    .filter(([, runtime]) => runtime.fragmentCount > 0 || runtime.decipheredPrecision > 0 || runtime.found || runtime.pinned || hasMapFragments || hasRoughMap)
+    .map(([id, runtime]) => ({ definition: treasureMapDefinitions[id], runtime }))
+    .filter((entry) => entry.definition);
+  const housingResourceSummary = [
+    { itemId: 'wood', need: 12 },
+    { itemId: 'stone_block', need: 12 },
+    { itemId: 'torch', need: 4 }
+  ];
+  const completedEvents = [
+    ...completedTutorials.map((quest) => `${quest.title}: ${quest.description}`),
+    ...state.world.activeEvents.filter((event) => event.endsAt <= state.clock).map((event) => `${event.title}: ${event.rumor}`)
+  ];
   const goals = [
     'Build a workshop: carry 12 wood and 12 stone to the river plot.',
     'Craft an exceptional item: raise a craft skill, then repeat higher-difficulty recipes.',
@@ -105,11 +126,16 @@ export function JournalPanel(state: GameState): string {
   return `<section class="panel journal-panel" data-window-id="journal">
     <header><span>Journal</span><button data-action="toggle-panel" data-panel="journal">x</button></header>
     <div class="journal-body">
-      <div class="journal-section route">
-        <h3>First Hour Route</h3>
+      <div class="journal-section route" data-journal-section="current-objective">
+        <h3>Current Objective</h3>
         ${
           pinnedProfessionGoal
             ? `<article><b>Pinned Profession Goal</b><span>${attr(pinnedProfessionGoal.label)} · ${attr(pinnedProfessionGoal.detail)}</span></article>`
+            : ''
+        }
+        ${
+          pinnedRumor
+            ? `<article><b>Pinned Rumor</b><span>${attr(pinnedRumor.title)} · ${attr(pinnedRumor.rumor)}</span>${pinnedRumor.position ? waypointButton(pinnedRumor.area, pinnedRumor.position, pinnedRumor.title, 'rumor') : ''}</article>`
             : ''
         }
         <article>
@@ -146,7 +172,7 @@ export function JournalPanel(state: GameState): string {
             : '<small>Discoveries, rumors, map clues, and hidden objects will appear here as you travel.</small>'
         }
       </div>
-      <div class="journal-section">
+      <div class="journal-section" data-journal-section="active-quests">
         <h3>Active Quests</h3>
         ${
           activeQuests.length
@@ -154,28 +180,31 @@ export function JournalPanel(state: GameState): string {
             : '<small>No active quests. Talk to townsfolk for leads.</small>'
         }
       </div>
-      <div class="journal-section">
+      <div class="journal-section" data-journal-section="discovered-mechanics">
         <h3>Discovered Mechanics</h3>
         ${mechanics.map((entry) => `<article><b>${entry.title}</b><span>${entry.text}</span></article>`).join('')}
       </div>
-      <div class="journal-section compact">
-        <h3>Skills</h3>
-        ${relevantSkills
-          .map((definition) => {
-            const skill = state.player.skills[definition!.id];
-            return `<article data-hotbar-source="skill:${attr(definition!.id)}" draggable="true"><b>${definition!.displayName}</b><span>${skill?.value.toFixed(1) ?? '0.0'} · ${definition!.verbs.slice(0, 2).join(', ')}</span></article>`;
-          })
-          .join('')}
+      <div class="journal-section compact" data-journal-section="profession-goals">
+        <h3>Profession Goals</h3>
+        ${goals.slice(0, 6).map((goal) => `<article><span>${goal}</span></article>`).join('')}
+        <details><summary>Related skills</summary>
+          ${relevantSkills
+            .map((definition) => {
+              const skill = state.player.skills[definition!.id];
+              return `<article data-hotbar-source="skill:${attr(definition!.id)}" draggable="true"><b>${definition!.displayName}</b><span>${skill?.value.toFixed(1) ?? '0.0'} · ${definition!.verbs.slice(0, 2).join(', ')}</span></article>`;
+            })
+            .join('')}
+        </details>
       </div>
-      <div class="journal-section compact">
+      <div class="journal-section compact" data-journal-section="known-locations">
         <h3>Known Locations</h3>
         ${state.world.discoveredAreas.map((areaId) => `<article><b>${areas[areaId].name}</b><span>${areaNotes[areaId] ?? areas[areaId].palette}</span></article>`).join('')}
       </div>
-      <div class="journal-section compact">
+      <div class="journal-section compact" data-journal-section="spells-learned">
         <h3>Spells Learned</h3>
         ${spells.map((spell) => `<article data-hotbar-source="spell:${attr(spell.id)}" draggable="true"><b>${spell.displayName}</b><span>Circle ${spell.circle} · Mana ${spell.manaCost}</span></article>`).join('')}
       </div>
-      <div class="journal-section compact">
+      <div class="journal-section compact" data-journal-section="recipes-learned">
         <h3>Recipes Learned</h3>
         ${
           recipeUnlocked
@@ -186,18 +215,47 @@ export function JournalPanel(state: GameState): string {
             : '<small>Use a station or complete Broms first forge task to start logging recipes.</small>'
         }
       </div>
-      <div class="journal-section compact">
+      <div class="journal-section compact" data-journal-section="rumors">
         <h3>Rumors</h3>
         ${
           rumors.length
-            ? rumors.map((event) => `<article><b>${event.title}</b><span>${event.rumor}</span></article>`).join('')
+            ? rumors
+                .map(
+                  (event) => `<article class="${state.ui.pinnedRumorId === event.id ? 'pinned' : ''}"><b>${event.title}</b><span>${event.rumor}</span><small>${areas[event.area].name}${event.position ? ` · map lead ${Math.round(event.position.x)}:${Math.round(event.position.z)}` : ''}</small><button data-pin-rumor="${attr(event.id)}">${state.ui.pinnedRumorId === event.id ? 'Unpin' : 'Pin'}</button>${event.position ? waypointButton(event.area, event.position, event.title, 'rumor') : ''}</article>`
+                )
+                .join('')
             : '<small>No fresh rumors yet. Taverns, market days, and roads will add leads here.</small>'
         }
       </div>
-      <div class="journal-section compact">
-        <h3>Market And Goals</h3>
+      <div class="journal-section compact" data-journal-section="treasure-clues">
+        <h3>Treasure Clues</h3>
+        ${
+          treasureClues.length
+            ? treasureClues
+                .map(
+                  ({ definition, runtime }) => `<article><b>${definition.regionHint} clue</b><span>${runtime.found ? 'Found.' : runtime.decipheredPrecision > 0 ? definition.clueText : 'Fragments hint at a buried cache.'}</span><small>Cartography ${definition.requiredCartography} · ${runtime.fragmentCount}/3 fragments · ${runtime.pinned ? 'Pinned' : 'Not pinned'}</small>${waypointButton(definition.regionHint, definition.approximateCoordinate, `${areas[definition.regionHint].name} treasure clue`, 'treasure')}</article>`
+                )
+                .join('')
+            : '<small>Map fragments, deciphered maps, and pinned treasure leads will appear here.</small>'
+        }
+      </div>
+      <div class="journal-section compact" data-journal-section="housing-plans">
+        <h3>Housing Plans</h3>
+        <article><b>Starter plot</b><span>${state.world.housing.ownedPlotId ? 'Claimed. Place useful stations, light, storage, and a bedroll before upgrading.' : 'Travel by ferry and claim the river plot when ready.'}</span></article>
+        <article><b>Build resources</b><span>${housingResourceSummary.map((req) => `${itemDefs[req.itemId]?.name ?? req.itemId} ${getItemCount(state.player.inventory, req.itemId)}/${req.need}`).join(' · ')}</span></article>
+        <article><b>Placed pieces</b><span>${state.world.placedBuildings.filter((piece) => piece.area === 'housing').length} on plot · ${Object.keys(state.world.housing.storages).length} storage units</span></article>
+      </div>
+      <div class="journal-section compact" data-journal-section="completed-events">
+        <h3>Completed Events</h3>
+        ${
+          completedEvents.length
+            ? completedEvents.map((event) => `<article><span>${attr(event)}</span></article>`).join('')
+            : '<small>Completed quests and resolved world events will be stored here.</small>'
+        }
+      </div>
+      <div class="journal-section compact" data-journal-section="market-state">
+        <h3>Market State</h3>
         <article><b>Market demand</b><span>${marketUnlocked ? 'Work orders show exact item counts and gold before delivery.' : 'The market board opens after your first gathered or crafted goods.'}</span></article>
-        ${goals.map((goal) => `<article><span>${goal}</span></article>`).join('')}
       </div>
     </div>
   </section>`;

@@ -1,9 +1,11 @@
 import { areas } from '../data/areas';
 import { emitAudioHook } from '../audio/AudioHooks';
+import { text } from '../content/Strings';
 import { itemDefs } from '../data/items';
 import { spellDefs, type SpellDefinition } from '../data/spells';
 import { createId } from '../game/GameState';
 import type { EnemyEntity, GameState, SpellEffectState, TargetRef, Vec3 } from '../game/types';
+import { actionSucceeded, invalidAction } from './ActionFeedbackSystem';
 import { refreshPlayerActionState, setPlayerActionState } from './ActionStateSystem';
 import { addSystemMessage } from './ChatSystem';
 import { revealMagicalContainers, unlockContainerWithSpell } from './ContainerSystem';
@@ -15,39 +17,37 @@ import { recordKill, recordQuestEvent } from './QuestSystem';
 import { attemptSkillUse, gainPlayerXp, getSkillValue } from './SkillSystem';
 import { recordDamageDealt } from './TelemetrySystem';
 import { triggerTrapWithTelekinesis } from './TreasureSystem';
+import { queueSpellRoleEffect } from './VfxSystem';
 
 export function castSpellIntent(state: GameState, spellId: string, target: TargetRef = null): void {
   const spell = spellDefs[spellId];
   if (!spell) {
-    state.ui.prompt = 'Unknown spell.';
+    invalidAction(state, text('error.unknownSpell'), undefined, { position: state.player.position });
     return;
   }
   if (state.spellCasting) {
-    state.ui.prompt = 'You are already casting.';
+    invalidAction(state, text('error.alreadyCasting'), undefined, { position: state.player.position });
     return;
   }
   state.ui.selectedSpellId = spellId;
   if (!state.player.spellbook.knownSpellIds.includes(spellId)) {
-    state.ui.prompt = `${spell.displayName} is not in your spellbook.`;
-    addSystemMessage(state, state.ui.prompt);
+    invalidAction(state, text('error.spellNotKnown', { spell: spell.displayName }), undefined, { position: state.player.position });
     return;
   }
   if (getSkillValue(state, 'Magery') < spell.minSkill) {
-    state.ui.prompt = `Your Magery is too low for ${spell.displayName}. Required: ${spell.minSkill.toFixed(1)}.`;
-    addSystemMessage(state, state.ui.prompt);
+    invalidAction(state, text('error.mageryTooLow', { spell: spell.displayName, required: spell.minSkill.toFixed(1) }), undefined, { position: state.player.position });
     return;
   }
   if (state.player.mana < spell.manaCost) {
-    state.ui.prompt = `${spell.displayName} needs ${spell.manaCost} mana. Drink a mana potion or meditate.`;
+    invalidAction(state, text('error.notEnoughMana', { spell: spell.displayName, mana: spell.manaCost }), undefined, { position: state.player.position });
     return;
   }
   if (!hasItems(state.player.inventory, spell.reagents)) {
-    const missing = spell.reagents
-      .filter((req) => !hasItems(state.player.inventory, [req]))
+    const missingReagents = spell.reagents.filter((req) => !hasItems(state.player.inventory, [req]));
+    const missing = missingReagents
       .map((req) => itemDefs[req.itemId]?.name ?? req.itemId)
       .join(', ');
-    state.ui.prompt = `Missing reagents: ${missing}.`;
-    addSystemMessage(state, state.ui.prompt);
+    invalidAction(state, text('error.missingReagents', { count: missingReagents.length, reagents: missing }), undefined, { position: state.player.position });
     return;
   }
   const resolved = resolveSpellTarget(state, spell, target);
@@ -55,7 +55,7 @@ export function castSpellIntent(state: GameState, spellId: string, target: Targe
     state.ui.targeting = {
       mode: 'spell',
       spellId,
-      prompt: spell.targetType === 'tile' ? `Select a tile for ${spell.displayName}.` : `Select a target for ${spell.displayName}.`
+      prompt: spell.targetType === 'tile' ? text('prompt.selectSpellTile', { spell: spell.displayName }) : text('prompt.selectSpellTarget', { spell: spell.displayName })
     };
     state.ui.prompt = state.ui.targeting.prompt;
     return;
@@ -100,8 +100,7 @@ export function meditate(state: GameState): void {
   const stats = calculateDerivedStats(state);
   state.player.mana = Math.min(stats.maxMana, state.player.mana + restored);
   attemptSkillUse(state, 'Meditation', { verb: 'meditate', difficulty: 20, success: true, relatedSkills: ['Focus'] });
-  addFloatingText(state, `+${restored} Mana`, state.player.position, '#58b7ff');
-  addSystemMessage(state, 'You steady your breathing and recover mana.');
+  actionSucceeded(state, `+${restored} Mana`, { position: state.player.position, floatText: `+${restored} Mana`, color: '#58b7ff' });
   state.spellEffects.push({ id: createId('effect'), type: 'meditation', remaining: 5, amount: restored });
   setPlayerActionState(state, 'interacting', 0.4, 'meditation');
   recordQuestEvent(state, { type: 'meditate' });
@@ -119,18 +118,21 @@ function completeSpell(state: GameState, spell: SpellDefinition, target: TargetR
     relatedSkills: offensive(spell) ? ['Evaluating Intelligence', 'Meditation', 'Resisting Spells'] : ['Meditation', 'Resisting Spells']
   });
   if (!success) {
-    state.ui.prompt = `${spell.displayName} fizzles.`;
-    addFloatingText(state, 'Fizzle', state.player.position, '#bce6ff');
-    addSystemMessage(state, `${spell.displayName} fizzles.`);
+    invalidAction(state, `${spell.displayName} fizzles.`, 'Try again with higher Magery or better focus.', { position: state.player.position, floatText: 'Fizzle', color: '#bce6ff' });
+    queueSpellRoleEffect(state, 'fizzle', state.player.position, undefined, '#bce6ff');
     emitAudioHook('spell_fizzle', { id: spell.id, area: state.player.currentArea, position: state.player.position, intensity: spell.circle });
     return;
   }
   recordQuestEvent(state, { type: 'cast', spellId: spell.id });
   applySpellEffect(state, spell, target);
+  emitAudioHook('spell_impact', { id: spell.id, area: state.player.currentArea, position: spellVisualTargetPosition(state, target, target?.kind === 'entity' ? state.entities[target.entityId] : null), intensity: spell.circle });
 }
 
 function applySpellEffect(state: GameState, spell: SpellDefinition, target: TargetRef): void {
   const targetEntity = target?.kind === 'entity' ? state.entities[target.entityId] : null;
+  const visualTarget = spellVisualTargetPosition(state, target, targetEntity);
+  const visualRole = spellVisualRole(spell);
+  queueSpellRoleEffect(state, visualRole, visualRole === 'utility' ? state.player.position : visualTarget, visualRole === 'utility' ? visualTarget : undefined, spell.projectileColor ?? spellVisualColor(visualRole));
   const evalInt = getSkillValue(state, 'Evaluating Intelligence');
   if (spell.effectType === 'damage' && targetEntity?.kind === 'enemy') {
     const resisted = Math.random() * 100 < targetEntity.armor * 0.4;
@@ -363,32 +365,32 @@ function resolveSpellTarget(state: GameState, spell: SpellDefinition, target: Ta
   if (!target && spell.targetType === 'entity' && state.player.activeTargetId) return { kind: 'entity', entityId: state.player.activeTargetId };
   if (!target) return 'needs-target';
   if (spell.targetType === 'entity' && target.kind !== 'entity') {
-    state.ui.prompt = 'That spell needs a living target.';
+    invalidAction(state, 'That spell needs a living target.', 'Select a creature or enemy.', { position: state.player.position });
     return null;
   }
   if (spell.targetType === 'tile' && target.kind !== 'tile') {
-    state.ui.prompt = 'That spell needs a ground tile.';
+    invalidAction(state, 'That spell needs a ground tile.', 'Select the ground.', { position: state.player.position });
     return null;
   }
   if (spell.targetType === 'area' && target.kind !== 'tile' && target.kind !== 'entity' && target.kind !== 'self') {
-    state.ui.prompt = 'That spell needs a nearby area.';
+    invalidAction(state, 'That spell needs a nearby area.', 'Select the ground or a nearby target.', { position: state.player.position });
     return null;
   }
   if ((spell.targetType === 'item' || spell.targetType === 'rune') && target.kind !== 'inventory' && target.kind !== 'ground-item') {
-    state.ui.prompt = 'That spell needs an item target.';
+    invalidAction(state, 'That spell needs an item target.', 'Select an item in your pack or on the ground.', { position: state.player.position });
     return null;
   }
   if ((spell.targetType === 'door' || spell.targetType === 'container') && target.kind !== 'tile' && target.kind !== 'entity' && target.kind !== 'ground-item') {
-    state.ui.prompt = 'That spell needs a fixture target.';
+    invalidAction(state, 'That spell needs a fixture target.', 'Select a door, lock, trap, or container.', { position: state.player.position });
     return null;
   }
   if (spell.targetType === 'corpse' && target.kind !== 'ground-item' && target.kind !== 'entity') {
-    state.ui.prompt = 'That spell needs a corpse target.';
+    invalidAction(state, 'That spell needs a corpse target.', 'Select a corpse or remains.', { position: state.player.position });
     return null;
   }
   const position = target.kind === 'entity' ? state.entities[target.entityId]?.position : target.kind === 'tile' ? target.position : state.player.position;
   if (position && distance(state.player.position, position) > spell.range) {
-    state.ui.prompt = 'You are too far away for that spell.';
+    invalidAction(state, 'You are too far away for that spell.', 'Move closer or choose a nearer target.', { position });
     return null;
   }
   return target;
@@ -423,6 +425,33 @@ function addEffect(state: GameState, effect: Omit<SpellEffectState, 'id'>): void
 
 function offensive(spell: SpellDefinition): boolean {
   return spell.effectType === 'damage' || spell.effectType === 'debuff' || spell.effectType === 'poison';
+}
+
+function spellVisualRole(spell: SpellDefinition): string {
+  if (spell.effectType === 'heal') return 'heal';
+  if (spell.effectType === 'protection' || spell.effectType === 'strength' || spell.effectType === 'night_sight' || spell.effectType === 'cure') return 'Buff';
+  if (spell.effectType === 'debuff' || spell.effectType === 'poison') return 'debuff';
+  if (spell.effectType === 'reveal') return 'reveal';
+  if (spell.effectType === 'recall' || spell.effectType === 'mark_rune') return 'recall';
+  if (spell.effectType === 'detect_magic' || spell.effectType === 'telekinesis' || spell.effectType === 'unlock' || spell.effectType === 'dispel_field' || spell.effectType === 'magic_trap' || spell.effectType === 'wall' || spell.effectType === 'water_walk' || spell.effectType === 'create_food') return 'utility';
+  return 'damage';
+}
+
+function spellVisualColor(role: string): string {
+  if (role === 'heal') return '#69e681';
+  if (role === 'Buff') return '#9bbdff';
+  if (role === 'debuff') return '#b66dff';
+  if (role === 'reveal') return '#ffe98d';
+  if (role === 'recall') return '#ffcf57';
+  if (role === 'utility') return '#6fd4ff';
+  return '#ff6262';
+}
+
+function spellVisualTargetPosition(state: GameState, target: TargetRef, targetEntity: GameState['entities'][string] | null): Vec3 {
+  if (targetEntity) return targetEntity.position;
+  if (target?.kind === 'tile') return target.position;
+  if (target?.kind === 'ground-item') return state.entities[target.entityId]?.position ?? state.player.position;
+  return state.player.position;
 }
 
 function distance(a: Vec3, b: Vec3): number {

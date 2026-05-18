@@ -6,6 +6,7 @@ import { calculateDerivedStats } from './EquipmentSystem';
 import { addFloatingText } from './LootSystem';
 import { recordKill } from './QuestSystem';
 import { attemptSkillUse, gainPlayerXp, getSkillValue } from './SkillSystem';
+import { queueBlockEffect, queueWeaponImpactEffect, queueWeaponSwingEffect } from './VfxSystem';
 
 interface WeaponAbilityDef {
   id: string;
@@ -116,6 +117,7 @@ export function useWeaponAbility(state: GameState, abilityId: string, entityId?:
   state.combat.abilityCooldowns[ability.id] = state.clock + ability.cooldown;
   state.combat.lastAttackAt = state.clock;
   setPlayerActionState(state, 'attacking', ability.cooldown < 1 ? 0.3 : 0.55, ability.id);
+  queueWeaponSwingEffect(state, equipped.def.weaponClass, target.position);
 
   const targets = ability.maxTargets > 1 ? nearbyEnemies(state, target, ability.range, ability.maxTargets) : [target];
   for (const enemy of targets) {
@@ -125,6 +127,7 @@ export function useWeaponAbility(state: GameState, abilityId: string, entityId?:
     enemy.health = Math.max(0, enemy.health - base);
     state.combat.hitFlashes[enemy.id] = state.clock + 0.22;
     addFloatingText(state, `${ability.label} ${base}`, enemy.position, '#ffd968');
+    queueWeaponImpactEffect(state, equipped.def.weaponClass, enemy.position, { crit: ability.effect === 'stagger', armor: enemy.armor });
     attemptSkillUse(state, ability.skill, { verb: 'weapon-ability', difficulty: 20 + enemy.level * 4, success: true, targetId: enemy.id, relatedSkills: ['Tactics'] });
     if (ability.effect === 'stagger') enemy.attackTimer += 0.8;
     if (ability.effect === 'pin') enemy.pacifiedUntil = Math.max(enemy.pacifiedUntil, state.clock + 0.55);
@@ -145,6 +148,7 @@ export function performDefensiveAction(state: GameState): void {
   state.combat.riposteUntil = state.clock + 1.15;
   setPlayerActionState(state, 'moving', 0.3, 'defense');
   addFloatingText(state, 'Guard', state.player.position, '#8bd9ff');
+  queueBlockEffect(state, state.player.position, state.player.facing.facingYaw);
   state.ui.prompt = 'Defensive stance.';
 }
 

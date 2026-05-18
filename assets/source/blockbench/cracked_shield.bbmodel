@@ -1,0 +1,11 @@
+{
+  "meta": { "format_version": "4.10", "model_format": "free" },
+  "name": "cracked_shield",
+  "resolution": { "width": 16, "height": 16 },
+  "elements": [
+    { "name": "face", "from": [4, 3, 7.25], "to": [12, 13, 8.75], "color": 0 },
+    { "name": "boss", "from": [6.5, 6.5, 6.75], "to": [9.5, 9.5, 9.25], "color": 1 },
+    { "name": "crack", "from": [7.75, 4, 6.6], "to": [8.25, 12, 6.9], "rotation": { "origin": [8, 8, 8], "axis": "z", "angle": -18 }, "color": 2 }
+  ],
+  "outliner": ["face", "boss", "crack"]
+}

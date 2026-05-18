@@ -4,6 +4,27 @@ function telemetry(state: GameState) {
   return state.dev.telemetry;
 }
 
+function elapsed(state: GameState): number {
+  return Math.max(0, Number((state.clock - telemetry(state).startedAt).toFixed(1)));
+}
+
+type TimedPlaytestMetric = 'timeToFirstMovement' | 'timeToFirstSuccessfulInteraction' | 'timeToIdentifyEquippedItem' | 'timeToAssignHotbar';
+
+export function recordPlaytestMilestone(state: GameState, metric: TimedPlaytestMetric): void {
+  const playtest = telemetry(state).playtest;
+  playtest[metric] ??= elapsed(state);
+}
+
+export function recordInvalidActionTelemetry(state: GameState): void {
+  telemetry(state).playtest.invalidActionCount += 1;
+}
+
+export function recordWindowOpened(state: GameState, panel: string): void {
+  const opened = telemetry(state).playtest.windowsOpened;
+  opened[panel] = (opened[panel] ?? 0) + 1;
+  if (panel === 'inventory' || panel === 'character') recordPlaytestMilestone(state, 'timeToIdentifyEquippedItem');
+}
+
 export function recordDamageDealt(state: GameState, source: string, amount: number): void {
   const value = Math.max(0, Math.round(amount));
   if (value <= 0) return;
@@ -109,6 +130,7 @@ export function recordTransitionFallback(state: GameState): void {
 export function recordTooltipRemounts(state: GameState, count: number): void {
   if (count <= 0) return;
   telemetry(state).tooltipRemounts = (telemetry(state).tooltipRemounts ?? 0) + count;
+  telemetry(state).playtest.tooltipRelianceCount += count;
 }
 
 export function recordUiReset(state: GameState): void {
@@ -127,6 +149,26 @@ export function recordFirstHourPathCompleted(state: GameState): void {
 
 export function recordQuestCompletionTelemetry(state: GameState, questId: string): void {
   telemetry(state).questCompletionTime[questId] = Math.max(0, Number((state.clock - telemetry(state).startedAt).toFixed(1)));
+  telemetry(state).playtest.objectiveCompletions[questId] = elapsed(state);
+}
+
+export function playtestTelemetrySummary(state: GameState): Record<string, unknown> {
+  const data = telemetry(state);
+  return {
+    timings: {
+      firstMovement: data.playtest.timeToFirstMovement,
+      firstSuccessfulInteraction: data.playtest.timeToFirstSuccessfulInteraction,
+      identifyEquippedItem: data.playtest.timeToIdentifyEquippedItem,
+      assignHotbar: data.playtest.timeToAssignHotbar
+    },
+    invalidActionCount: data.playtest.invalidActionCount,
+    tooltipRelianceCount: data.playtest.tooltipRelianceCount,
+    windowsOpened: data.playtest.windowsOpened,
+    uiResetUsage: data.uiResetUsage,
+    deaths: data.deathCount,
+    stuckRecovery: data.stuckRecoveryEvents,
+    objectiveCompletions: data.playtest.objectiveCompletions
+  };
 }
 
 export function skillGainsPerMinute(state: GameState): Record<SkillId, number> {
@@ -142,6 +184,7 @@ export function exportTelemetryJson(state: GameState): string {
       clock: Number(state.clock.toFixed(2)),
       area: state.player.currentArea,
       telemetry: telemetry(state),
+      playtestSummary: playtestTelemetrySummary(state),
       skillGainsPerMinute: skillGainsPerMinute(state)
     },
     null,

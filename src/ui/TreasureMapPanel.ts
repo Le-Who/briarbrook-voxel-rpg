@@ -3,6 +3,10 @@ import { treasureMapDefinitions } from '../data/treasure';
 import type { GameState } from '../game/types';
 import { getItemCount } from '../systems/InventorySystem';
 
+function attr(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
+}
+
 export function TreasureMapPanel(state: GameState): string {
   if (!state.ui.panels.treasureMap) return '';
   const mapId = state.ui.selectedTreasureMapId;
@@ -30,6 +34,7 @@ export function TreasureMapPanel(state: GameState): string {
         <div class="map-actions">
           <button data-action="decipher-map" class="primary">Decipher</button>
           <button data-action="pin-map">${runtime?.pinned ? 'Unpin' : 'Pin'}</button>
+          <button data-map-waypoint-area="${definition.regionHint}" data-map-waypoint-x="${Math.round(definition.approximateCoordinate.x)}" data-map-waypoint-z="${Math.round(definition.approximateCoordinate.z)}" data-map-waypoint-label="${attr(`${areas[definition.regionHint].name} treasure clue`)}" data-map-waypoint-source="treasure">Waypoint</button>
           <button data-action="toggle-panel" data-panel="journal">Journal</button>
         </div>
       </div>

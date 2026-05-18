@@ -12,6 +12,7 @@ export const itemDefs: Record<string, ItemDef> = {
     equipmentSlot: 'weapon',
     statModifiers: { minDamage: 5, maxDamage: 9 },
     weaponClass: 'sword',
+    visualPrefabId: 'weapon:sword',
     baseDamageMin: 8,
     baseDamageMax: 14,
     swingSpeed: 1.55,
@@ -35,6 +36,7 @@ export const itemDefs: Record<string, ItemDef> = {
     equipmentSlot: 'weapon',
     range: 8,
     weaponClass: 'bow',
+    visualPrefabId: 'weapon:bow',
     baseDamageMin: 6,
     baseDamageMax: 12,
     swingSpeed: 1.25,
@@ -58,6 +60,7 @@ export const itemDefs: Record<string, ItemDef> = {
     equipmentSlot: 'weapon',
     range: 8.5,
     weaponClass: 'bow',
+    visualPrefabId: 'weapon:bow',
     baseDamageMin: 7,
     baseDamageMax: 13,
     swingSpeed: 1.18,
@@ -81,6 +84,7 @@ export const itemDefs: Record<string, ItemDef> = {
     equipmentSlot: 'weapon',
     range: 9,
     weaponClass: 'crossbow',
+    visualPrefabId: 'weapon:bow',
     baseDamageMin: 9,
     baseDamageMax: 16,
     swingSpeed: 1.75,
@@ -103,6 +107,7 @@ export const itemDefs: Record<string, ItemDef> = {
     value: 28,
     equipmentSlot: 'weapon',
     weaponClass: 'fencing',
+    visualPrefabId: 'weapon:sword',
     baseDamageMin: 4,
     baseDamageMax: 9,
     swingSpeed: 1,
@@ -198,6 +203,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 50,
     weight: 0.04,
     value: 2,
+    visualPrefabId: 'tool:bandage-wrap',
     icon: { shape: 'scroll', primary: '#f1eee0', secondary: '#b8a88c' }
   },
   clean_cloth: {
@@ -273,6 +279,7 @@ export const itemDefs: Record<string, ItemDef> = {
     maxStack: 99,
     weight: 0.03,
     value: 1,
+    visualPrefabId: 'ammo:quiver',
     icon: { shape: 'bow', primary: '#d9bf77', secondary: '#7a4b25' }
   },
   bolt: {
@@ -355,6 +362,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 3,
     value: 28,
     durability: 75,
+    visualPrefabId: 'tool:pickaxe',
     icon: { shape: 'pickaxe', primary: '#bfc2c1', secondary: '#7a4b25' }
   },
   axe: {
@@ -366,6 +374,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 3,
     value: 30,
     durability: 70,
+    visualPrefabId: 'tool:axe',
     icon: { shape: 'axe', primary: '#c7c9c8', secondary: '#815027' }
   },
   fishing_pole: {
@@ -410,6 +419,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 0.15,
     value: 3,
     buildPieceId: 'torch',
+    visualPrefabId: 'tool:torch',
     icon: { shape: 'torch', primary: '#ffb13b', secondary: '#6b3b1d' }
   },
   backpack: {
@@ -421,6 +431,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 0.8,
     value: 20,
     equipmentSlot: 'backpack',
+    visualPrefabId: 'pack:backpack',
     statModifiers: { carryCapacity: 25 },
     icon: { shape: 'bag', primary: '#8c4d24', secondary: '#ca8a4a' }
   },
@@ -882,6 +893,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 3.5,
     value: 16,
     equipmentSlot: 'shield',
+    visualPrefabId: 'shield:round',
     statModifiers: { armor: 3 },
     durability: 28,
     icon: { shape: 'shield', primary: '#8a8b83', secondary: '#5c3922' }
@@ -905,6 +917,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 0.1,
     value: 45,
     equipmentSlot: 'accessory',
+    visualPrefabId: 'trinket:ring',
     statModifiers: { Luck: 2, critChance: 2 },
     icon: { shape: 'ring', primary: '#d8d2ba', secondary: '#ffcf57' }
   },
@@ -917,6 +930,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 5,
     value: 62,
     equipmentSlot: 'armor',
+    visualPrefabId: 'armor:leather',
     statModifiers: { armor: 8, dodgeChance: 2 },
     durability: 58,
     icon: { shape: 'armor', primary: '#8b4f2c', secondary: '#c18455' }
@@ -930,6 +944,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 1.5,
     value: 48,
     equipmentSlot: 'armor',
+    visualPrefabId: 'armor:robe',
     statModifiers: { maxMana: 8, magicResist: 4 },
     durability: 45,
     icon: { shape: 'armor', primary: '#345d7a', secondary: '#d8d5c9' }
@@ -943,6 +958,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 10,
     value: 110,
     equipmentSlot: 'armor',
+    visualPrefabId: 'armor:iron',
     statModifiers: { armor: 16, maxHealth: 10 },
     durability: 95,
     icon: { shape: 'armor', primary: '#b7b9b8', secondary: '#6d6f70' }
@@ -956,6 +972,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 3,
     value: 55,
     equipmentSlot: 'helmet',
+    visualPrefabId: 'armor:helmet',
     statModifiers: { armor: 5 },
     durability: 58,
     icon: { shape: 'armor', primary: '#b8bab9', secondary: '#777b80' }
@@ -969,6 +986,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 3,
     value: 45,
     equipmentSlot: 'boots',
+    visualPrefabId: 'armor:boots',
     statModifiers: { armor: 4 },
     durability: 52,
     icon: { shape: 'armor', primary: '#929697', secondary: '#51341f' }
@@ -982,6 +1000,7 @@ export const itemDefs: Record<string, ItemDef> = {
     weight: 5,
     value: 70,
     equipmentSlot: 'shield',
+    visualPrefabId: 'shield:round',
     statModifiers: { armor: 9, dodgeChance: 2 },
     durability: 85,
     icon: { shape: 'shield', primary: '#a4a8a8', secondary: '#875024' }

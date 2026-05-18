@@ -30,12 +30,12 @@ describe('onboarding UI', () => {
     const html = JournalPanel(state);
 
     expect(html).toContain('Active Quests');
-    expect(html).toContain('First Hour Route');
+    expect(html).toContain('Current Objective');
     expect(html).toContain('Next: Talk to Mira at the fountain');
     expect(html).toContain('Skills touched 0/12');
     expect(html).toContain('Discovered Mechanics');
     expect(html).toContain('Briarbrook Bank');
-    expect(html).toContain('Skills');
+    expect(html).toContain('Profession Goals');
   });
 
   it('points from the first tree gather toward the pickaxe loop', () => {

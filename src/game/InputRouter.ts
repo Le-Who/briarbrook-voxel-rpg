@@ -4,6 +4,16 @@ import type { VoxelRenderer } from '../render/VoxelRenderer';
 import type { AreaManager } from '../world/AreaManager';
 import { resourceTileAtPosition } from '../systems/ResourceSystem';
 import { cursorCssForKind, selectedToolItemId, toolTargetsResourceKind, worldCursorKindForHover } from './WorldFeedback';
+import {
+  hotbarSlotForAction,
+  inputContextsForMode,
+  isActionPressed,
+  keyTokenFromEvent,
+  LEGACY_KEYBINDINGS,
+  resolveInputAction,
+  sanitizeInputBindings
+} from './InputActionMap';
+import type { InputActionId } from './types';
 
 type Dispatch = (action: GameAction) => void;
 
@@ -13,31 +23,7 @@ export interface FocusDescriptor {
   isContentEditable?: boolean;
 }
 
-export const KEYBINDINGS = {
-  panels: {
-    inventory: { key: 'i', intent: 'TOGGLE_PANEL', panel: 'inventory' },
-    skills: { key: 'k', intent: 'TOGGLE_PANEL', panel: 'skills' },
-    spellbook: { key: 'm', intent: 'TOGGLE_PANEL', panel: 'spellbook' },
-    journal: { key: 'j', intent: 'TOGGLE_PANEL', panel: 'journal' },
-    character: { key: 'c', intent: 'TOGGLE_PANEL', panel: 'character' },
-    help: { key: '?', intent: 'TOGGLE_PANEL', panel: 'help' }
-  },
-  actions: {
-    interact: { key: 'e', intent: 'WORLD_INTERACT' },
-    build: { key: 'b', intent: 'TOGGLE_PANEL', panel: 'build' },
-    defend: { key: 'q', intent: 'CONFIRM' },
-    weaponAbility: { key: 'r', intent: 'CONFIRM' },
-    attack: { key: ' ', intent: 'WORLD_ATTACK' },
-    crafting: { key: 'f', intent: 'TOGGLE_PANEL', panel: 'crafting' },
-    cancelBuild: { key: 'x', intent: 'CANCEL' },
-    buildSnap: { key: 'v', intent: 'CONFIRM' },
-    rotateLeft: { key: 'z', intent: 'CONFIRM' }
-  }
-} as const;
-
-const panelByKey: Map<string, string> = new Map(
-  Object.values(KEYBINDINGS.panels).map((binding) => [binding.key, binding.panel])
-);
+export const KEYBINDINGS = LEGACY_KEYBINDINGS;
 
 export function focusDescriptorFromElement(element: Element | null): FocusDescriptor | null {
   if (!element) return null;
@@ -91,12 +77,13 @@ export class InputRouter {
   updateMovement(): void {
     const mode = this.currentMode();
     if (mode !== 'normal' && mode !== 'building') return;
+    const bindings = this.bindings();
     let dx = 0;
     let dz = 0;
-    if (this.keys.has('w') || this.keys.has('arrowup')) dz -= 1;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) dz += 1;
-    if (this.keys.has('a') || this.keys.has('arrowleft')) dx -= 1;
-    if (this.keys.has('d') || this.keys.has('arrowright')) dx += 1;
+    if (isActionPressed(bindings, this.keys, 'moveUp')) dz -= 1;
+    if (isActionPressed(bindings, this.keys, 'moveDown')) dz += 1;
+    if (isActionPressed(bindings, this.keys, 'moveLeft')) dx -= 1;
+    if (isActionPressed(bindings, this.keys, 'moveRight')) dx += 1;
     if (dx || dz) {
       const len = Math.hypot(dx, dz);
       const world = this.renderer.cameraController.screenMoveToWorldVector(dx / len, dz / len);
@@ -107,42 +94,40 @@ export class InputRouter {
 
   keyDown(event: KeyboardEvent): void {
     this.raw(`keydown:${event.key}`);
+    const capture = this.getState().ui.keybindingCapture;
+    if (capture) {
+      const key = keyTokenFromEvent(event);
+      if (key) {
+        this.preventBrowserDefault(event, 'keydown:keybind-capture');
+        this.intent(`UI_KEYBIND:${capture.actionId}`);
+        this.dispatch({ type: 'SET_INPUT_BINDING', actionId: capture.actionId, context: capture.context, key });
+      }
+      return;
+    }
     const mode = this.currentMode();
     const key = normalizedKey(event);
-    if (key === 'escape') {
+    const action = this.inputAction(event, mode);
+    if (key === 'escape' || action?.actionId === 'cancel' || action?.actionId === 'back') {
       this.preventBrowserDefault(event, 'keydown:escape');
       this.cancel(mode);
       return;
     }
-    if (mode === 'chatFocused' || mode === 'paused' || mode === 'modalOpen') return;
-    this.keys.add(key);
+    if (mode === 'chatFocused' || mode === 'uiDragging' || mode === 'itemDragging' || mode === 'spellDragging') return;
+    if (this.getState().ui.contextMenu && action?.actionId !== 'openContextMenu') return;
+    this.keys.add(keyTokenFromEvent(event) || key);
 
-    if (key === 'f10' && event.shiftKey) {
-      this.preventBrowserDefault(event, 'keydown:shift-f10');
-      this.openKeyboardContextMenu();
-      return;
-    }
-    if (key === 'f10') {
-      this.preventBrowserDefault(event, 'keydown:f10');
-      this.intent('OPEN_PANEL:dev-travel');
-      this.dispatch({ type: 'TOGGLE_DEV_TRAVEL' });
-      return;
-    }
-    if (key === '`' || key === 'f9') {
-      this.preventBrowserDefault(event, `keydown:${key}`);
-      this.intent('OPEN_PANEL:dev-overlay');
-      this.dispatch({ type: 'TOGGLE_DEV_OVERLAY' });
-      return;
-    }
-    if (mode === 'devOverlay' || mode === 'targeting') return;
-    if (key === 'tab') {
-      this.preventBrowserDefault(event, 'keydown:tab');
+    if (!action) return;
+    if (this.handleDebugAction(action.actionId, event)) return;
+    if (mode === 'devOverlay') return;
+    if (action.actionId === 'targetNext') {
+      this.preventBrowserDefault(event, 'keydown:target-next');
       this.intent('TARGET_SELECT');
       this.dispatch({ type: 'CYCLE_TARGET', direction: event.shiftKey ? -1 : 1 });
       return;
     }
+    if (mode === 'targeting' && action.actionId !== 'openContextMenu') return;
 
-    const hotbarSlot = hotbarSlotFromKeyboardCode(event.code);
+    const hotbarSlot = hotbarSlotForAction(action.actionId);
     const hotbarAssignSpellId = this.getState().ui.hotbarAssignSpellId;
     if (hotbarSlot != null && hotbarAssignSpellId) {
       this.preventBrowserDefault(event, `keydown:hotbar-assign-${hotbarSlot}`);
@@ -162,14 +147,24 @@ export class InputRouter {
       this.dispatch({ type: 'USE_HOTBAR', slot: hotbarSlot });
       return;
     }
+    if (action.actionId === 'hotbarPrevious' || action.actionId === 'hotbarNext') {
+      const current = this.getState().ui.activeHotbarSlot ?? 0;
+      const delta = action.actionId === 'hotbarNext' ? 1 : -1;
+      const slot = (current + delta + this.getState().ui.hotbar.length) % this.getState().ui.hotbar.length;
+      this.preventBrowserDefault(event, `keydown:${action.actionId}`);
+      this.intent(`HOTBAR_SELECT:${slot}`);
+      this.dispatch({ type: 'SET_ACTIVE_HOTBAR_SLOT', slot });
+      return;
+    }
 
-    if (this.handlePanelKey(key)) return;
-    this.handleActionKey(key);
+    if (this.handlePanelAction(action.actionId)) return;
+    this.handleGameplayAction(action.actionId, event);
   }
 
   keyUp(event: KeyboardEvent): void {
     this.raw(`keyup:${event.key}`);
-    this.keys.delete(event.key.toLowerCase());
+    this.keys.delete(keyTokenFromEvent(event));
+    this.keys.delete(normalizedKey(event));
   }
 
   blur(): void {
@@ -290,8 +285,47 @@ export class InputRouter {
     this.renderer.resize();
   }
 
-  private handlePanelKey(key: string): boolean {
-    const panel = panelByKey.get(key);
+  private bindings(): GameState['ui']['inputBindings'] {
+    return sanitizeInputBindings(this.getState().ui.inputBindings);
+  }
+
+  private inputAction(event: KeyboardEvent, mode: InputMode): GameState['ui']['inputBindings'][number] | null {
+    return resolveInputAction(this.bindings(), event, inputContextsForMode(mode));
+  }
+
+  private handleDebugAction(actionId: InputActionId, event: KeyboardEvent): boolean {
+    if (actionId === 'openDevTravel') {
+      this.preventBrowserDefault(event, 'keydown:dev-travel');
+      this.intent('OPEN_PANEL:dev-travel');
+      this.dispatch({ type: 'TOGGLE_DEV_TRAVEL' });
+      return true;
+    }
+    if (actionId === 'toggleDevOverlay') {
+      this.preventBrowserDefault(event, 'keydown:dev-overlay');
+      this.intent('OPEN_PANEL:dev-overlay');
+      this.dispatch({ type: 'TOGGLE_DEV_OVERLAY' });
+      return true;
+    }
+    return false;
+  }
+
+  private handlePanelAction(actionId: InputActionId): boolean {
+    const panels: Partial<Record<InputActionId, string>> = {
+      openInventory: 'inventory',
+      openSkills: 'skills',
+      openSpellbook: 'spellbook',
+      openJournal: 'journal',
+      openMarket: 'market',
+      openCharacter: 'character',
+      openHelp: 'help',
+      openCrafting: 'crafting'
+    };
+    if (actionId === 'openBuild') {
+      this.intent('TOGGLE_PANEL:build');
+      this.dispatch({ type: 'TOGGLE_BUILD_MODE' });
+      return true;
+    }
+    const panel = panels[actionId];
     if (!panel) return false;
     if (panel === 'character' && this.getState().buildMode.active) return false;
     this.intent(`TOGGLE_PANEL:${panel}`);
@@ -299,36 +333,36 @@ export class InputRouter {
     return true;
   }
 
-  private handleActionKey(key: string): void {
-    if (key === KEYBINDINGS.actions.interact.key) {
+  private handleGameplayAction(actionId: InputActionId, event: KeyboardEvent): void {
+    if (actionId === 'interact') {
       const nearby = this.areaManager.nearestInteractable(this.getState(), 2.2);
       this.intent('WORLD_INTERACT');
       if (nearby) this.dispatch({ type: 'INTERACT_ENTITY', entityId: nearby });
-    } else if (key === KEYBINDINGS.actions.defend.key) {
+    } else if (actionId === 'secondaryAction' || actionId === 'defend') {
       this.intent('CONFIRM:defend');
       this.dispatch({ type: 'DEFENSIVE_ACTION' });
-    } else if (key === KEYBINDINGS.actions.weaponAbility.key) {
+    } else if (actionId === 'weaponAbility') {
       this.intent('CONFIRM:weapon-ability');
       this.dispatch({ type: 'USE_WEAPON_ABILITY', abilityId: 'quick_slash' });
-    } else if (key === KEYBINDINGS.actions.build.key) {
-      this.intent('TOGGLE_PANEL:build');
-      this.dispatch({ type: 'TOGGLE_BUILD_MODE' });
-    } else if (key === KEYBINDINGS.actions.crafting.key) {
-      this.intent('TOGGLE_PANEL:crafting');
-      this.dispatch({ type: 'TOGGLE_PANEL', panel: 'crafting' });
-    } else if (key === KEYBINDINGS.actions.cancelBuild.key) {
+    } else if (actionId === 'cancelBuild') {
       this.intent('CANCEL:build');
       this.dispatch({ type: 'TOGGLE_BUILD_MODE', active: false });
-    } else if (key === KEYBINDINGS.actions.buildSnap.key) {
+    } else if (actionId === 'buildSnap' || actionId === 'toggleCursorCamera') {
       this.intent('CONFIRM:build-snap');
       this.dispatch({ type: 'TOGGLE_BUILD_SNAP' });
-    } else if (key === KEYBINDINGS.actions.rotateLeft.key) {
+    } else if (actionId === 'rotateBuildLeft') {
       this.intent('CONFIRM:rotate-left');
       this.dispatch({ type: 'ROTATE_BUILDING', delta: -90 });
-    } else if (key === 'c' && this.getState().buildMode.active) {
+    } else if (actionId === 'rotateBuildRight' && this.getState().buildMode.active) {
       this.intent('CONFIRM:rotate-right');
       this.dispatch({ type: 'ROTATE_BUILDING', delta: 90 });
-    } else if (key === KEYBINDINGS.actions.attack.key) {
+    } else if (actionId === 'openContextMenu') {
+      this.preventBrowserDefault(event, 'keydown:context-menu');
+      this.openKeyboardContextMenu();
+    } else if (actionId === 'confirm') {
+      this.preventBrowserDefault(event, 'keydown:confirm');
+      this.dispatch({ type: 'USE_HOTBAR', slot: this.getState().ui.activeHotbarSlot ?? 0 });
+    } else if (actionId === 'primaryAction') {
       this.intent('WORLD_ATTACK');
       this.dispatch({ type: 'ATTACK_ENTITY' });
     }

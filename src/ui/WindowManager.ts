@@ -63,6 +63,13 @@ export interface ManagedWindowQaObservation {
   hasInternalScrollRegion: boolean;
 }
 
+export interface ManagedScrollSnapshot {
+  windowKey: string;
+  path: number[];
+  scrollTop: number;
+  scrollLeft: number;
+}
+
 export interface WindowQaContext {
   viewport: ViewportSize;
   hotbarTop: number;
@@ -312,6 +319,35 @@ export function collectWindowQaWarnings(container: HTMLElement, viewport: Viewpo
   return windowQaWarningsForManagedWindows(observations, { viewport, hotbarTop });
 }
 
+export function captureManagedScrollPositions(container: HTMLElement): ManagedScrollSnapshot[] {
+  const snapshot: ManagedScrollSnapshot[] = [];
+  const panels = Array.from(container.querySelectorAll<HTMLElement>('.managed-window'));
+  panels.forEach((panel) => {
+    const windowKey = panel.dataset.windowKey ?? windowKeyForPanel(panel);
+    if (!windowKey) return;
+    const candidates = [panel, ...Array.from(panel.querySelectorAll<HTMLElement>('*'))];
+    candidates.forEach((element) => {
+      if (element.scrollTop <= 0 && element.scrollLeft <= 0) return;
+      if (!canElementScroll(element)) return;
+      const path = elementPathWithin(panel, element);
+      if (!path) return;
+      snapshot.push({ windowKey, path, scrollTop: element.scrollTop, scrollLeft: element.scrollLeft });
+    });
+  });
+  return snapshot;
+}
+
+export function restoreManagedScrollPositions(container: HTMLElement, snapshot: ManagedScrollSnapshot[]): void {
+  snapshot.forEach((entry) => {
+    const panel = container.querySelector<HTMLElement>(`.managed-window[data-window-key="${cssEscape(entry.windowKey)}"]`);
+    if (!panel) return;
+    const element = elementFromPath(panel, entry.path);
+    if (!element || !canElementScroll(element)) return;
+    element.scrollTop = Math.max(0, Math.min(entry.scrollTop, element.scrollHeight - element.clientHeight));
+    element.scrollLeft = Math.max(0, Math.min(entry.scrollLeft, element.scrollWidth - element.clientWidth));
+  });
+}
+
 interface ActiveWindowDrag {
   pointerId: number;
   panel: HTMLElement;
@@ -559,14 +595,42 @@ function rectFromDom(rect: DOMRect): WindowRect {
 
 function hasScrollableRegion(panel: HTMLElement): boolean {
   const candidates = [panel, ...Array.from(panel.querySelectorAll<HTMLElement>('*'))];
-  return candidates.some((element) => {
-    const style = window.getComputedStyle(element);
-    const overflowY = `${style.overflowY} ${style.overflow}`;
-    const overflowX = `${style.overflowX} ${style.overflow}`;
-    const canScrollY = /(auto|scroll)/.test(overflowY) && element.scrollHeight > element.clientHeight + 1;
-    const canScrollX = /(auto|scroll)/.test(overflowX) && element.scrollWidth > element.clientWidth + 1;
-    return canScrollY || canScrollX;
-  });
+  return candidates.some((element) => canElementScroll(element));
+}
+
+function canElementScroll(element: HTMLElement): boolean {
+  const style = window.getComputedStyle(element);
+  const overflowY = `${style.overflowY} ${style.overflow}`;
+  const overflowX = `${style.overflowX} ${style.overflow}`;
+  const canScrollY = /(auto|scroll)/.test(overflowY) && element.scrollHeight > element.clientHeight + 1;
+  const canScrollX = /(auto|scroll)/.test(overflowX) && element.scrollWidth > element.clientWidth + 1;
+  return canScrollY || canScrollX;
+}
+
+function elementPathWithin(root: HTMLElement, element: HTMLElement): number[] | null {
+  const path: number[] = [];
+  let current: HTMLElement | null = element;
+  while (current && current !== root) {
+    const parentElement: HTMLElement | null = current.parentElement;
+    if (!parentElement) return null;
+    path.unshift(Array.prototype.indexOf.call(parentElement.children, current));
+    current = parentElement;
+  }
+  return current === root ? path : null;
+}
+
+function elementFromPath(root: HTMLElement, path: number[]): HTMLElement | null {
+  let current: HTMLElement = root;
+  for (const index of path) {
+    const next = current.children.item(index);
+    if (!(next instanceof HTMLElement)) return null;
+    current = next;
+  }
+  return current;
+}
+
+function cssEscape(value: string): string {
+  return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, '\\$&');
 }
 
 function isDevRuntime(): boolean {
@@ -576,7 +640,7 @@ function isDevRuntime(): boolean {
 export type WindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help';
 export type WindowLayout = WindowRect;
 export type ResizeMode = 'none' | 'horizontal' | 'vertical' | 'both';
-export type WindowPreset = 'default' | 'compact' | 'large' | 'combat';
+export type WindowPreset = 'default' | 'compact' | 'large' | 'combat' | 'crafting' | 'exploration' | 'stream';
 
 export interface WindowDefinition {
   id: WindowId;
@@ -642,7 +706,7 @@ export function applyWindowPreset(preset: WindowPreset, viewport: ViewportSize):
 function presetLayout(id: WindowId, viewport: ViewportSize, preset: WindowPreset): WindowLayout {
   const usableWidth = Math.max(320, viewport.width - EDGE * 2);
   const usableHeight = Math.max(260, viewport.height - HOTBAR_SAFE - EDGE * 2);
-  const scale = preset === 'compact' ? 0.78 : preset === 'large' ? 1.12 : 1;
+  const scale = preset === 'compact' || preset === 'exploration' ? 0.78 : preset === 'large' ? 1.12 : preset === 'stream' ? 0.92 : 1;
   const size = (width: number, height: number) => ({
     width: Math.min(usableWidth, Math.round(width * scale)),
     height: Math.min(usableHeight, Math.round(height * scale))
@@ -663,6 +727,15 @@ function presetLayout(id: WindowId, viewport: ViewportSize, preset: WindowPreset
     if (id === 'inventory') return { x: viewport.width - 246, y: 300, width: 222, height: 330 };
     if (id === 'skills') return { x: 16, y: 170, width: 380, height: 440 };
     if (id === 'help') return { x: 344, y: 14, width: 420, height: 560 };
+  }
+  if (preset === 'crafting') {
+    if (id === 'inventory') return { x: viewport.width - 260, y: 222, width: 242, height: 440 };
+    if (id === 'market') return safeLarge(size(920, 560).width, size(920, 560).height, 76);
+    if (id === 'skills') return { x: EDGE, y: 126, width: 390, height: 430 };
+  }
+  if (preset === 'exploration' || preset === 'stream') {
+    if (id === 'inventory') return { x: viewport.width - 226, y: viewport.height - HOTBAR_SAFE - 268, width: 210, height: 260 };
+    if (id === 'help') return { x: EDGE, y: EDGE, width: 390, height: 430 };
   }
 
   if (id === 'inventory') return { x: viewport.width - 240, y: 372, width: 222, height: Math.min(360, usableHeight - 364) };

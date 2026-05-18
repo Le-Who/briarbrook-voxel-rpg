@@ -1,8 +1,10 @@
 import { itemDefs } from '../data/items';
 import { spellCircles, spellDefs, type SpellDefinition } from '../data/spells';
 import type { GameState, RecipeRequirement, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode } from '../game/types';
+import { getSpellCastability } from '../game/UIStateSelectors';
 import { renderIcon } from '../render/IconRenderer';
 import { getItemCount } from '../systems/InventorySystem';
+import { buildSpellTooltip, itemIconCategory, spellIconCategory } from './IconVisualSystem';
 
 function attr(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
@@ -17,7 +19,7 @@ function reagentText(state: GameState, reagents: RecipeRequirement[]): string {
     .map((req) => {
       const item = itemDefs[req.itemId];
       const have = getItemCount(state.player.inventory, req.itemId);
-      return `<span class="${have >= req.quantity ? 'ready' : 'missing'}">${renderIcon(item?.icon, item?.name ?? req.itemId)}${item?.name ?? req.itemId} ${have}/${req.quantity}</span>`;
+      return `<span class="${have >= req.quantity ? 'ready' : 'missing'}">${renderIcon(item?.icon, item?.name ?? req.itemId, item ? itemIconCategory(item) : 'reagent')}${item?.name ?? req.itemId} ${have}/${req.quantity}</span>`;
     })
     .join('');
 }
@@ -118,9 +120,10 @@ function renderSpellCard(state: GameState, spell: SpellDefinition, selectedId: s
   const role = roleForSpell(spell);
   const name = isKnown || knowledge !== 'unknown' ? spell.displayName : 'Unknown Spell';
   const hotbarSource = isKnown ? `data-hotbar-source="spell:${attr(spell.id)}" draggable="true"` : '';
-  const tooltip = isKnown ? `${spell.displayName}\nC${spell.circle} ${role}\nMana ${spell.manaCost}` : `${name}\nC${spell.circle} ${role}`;
-  return `<button class="spell-card ${selectedId === spell.id ? 'active' : ''} ${isKnown ? 'known' : 'unknown'} role-${role.toLowerCase()}" data-spell="${attr(spell.id)}" ${hotbarSource} data-tooltip-id="spell:${attr(spell.id)}" data-tooltip-source="spellbook" data-tooltip="${attr(tooltip)}">
-    ${isKnown ? renderIcon(spell.iconDescriptor, spell.displayName) : '<span class="locked-spell-icon">?</span>'}
+  const tooltip = buildSpellTooltip(spell, state, isKnown, 'compact');
+  const advancedTooltip = buildSpellTooltip(spell, state, isKnown, 'advanced');
+  return `<button class="spell-card ${selectedId === spell.id ? 'active' : ''} ${isKnown ? 'known' : 'unknown'} role-${role.toLowerCase()}" data-spell="${attr(spell.id)}" data-spell-role="${attr(role)}" ${hotbarSource} data-tooltip-id="spell:${attr(spell.id)}" data-tooltip-source="spellbook" data-tooltip="${attr(tooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}">
+    ${isKnown ? renderIcon(spell.iconDescriptor, spell.displayName, spellIconCategory(spell)) : '<span class="locked-spell-icon">?</span>'}
     <span class="spell-card-name">${name}</span>
     <span class="spell-card-meta"><b>C${spell.circle}</b><i>${role}</i><em>${isKnown ? 'Known' : 'Locked'}</em>${isKnown ? `<small>${spell.manaCost}m</small>` : ''}</span>
   </button>`;
@@ -155,8 +158,7 @@ function renderSpellDetail(state: GameState, spell: SpellDefinition, isKnown: bo
     </div>`;
   }
   const magery = state.player.skills.Magery?.value ?? 0;
-  const canCast = state.player.mana >= spell.manaCost && magery >= spell.minSkill && spell.reagents.every((req) => getItemCount(state.player.inventory, req.itemId) >= req.quantity);
-  const reason = state.player.mana < spell.manaCost ? 'Not enough mana' : magery < spell.minSkill ? 'Magery too low' : spell.reagents.some((req) => getItemCount(state.player.inventory, req.itemId) < req.quantity) ? 'Missing reagents' : '';
+  const castability = getSpellCastability(state, spell.id);
   return `<div class="spell-detail">
     <div class="spell-detail-scroll">
       <div class="spell-title" data-hotbar-source="spell:${attr(spell.id)}" draggable="true">
@@ -178,7 +180,7 @@ function renderSpellDetail(state: GameState, spell: SpellDefinition, isKnown: bo
     </div>
     <div class="spell-detail-actions">
       <button class="secondary-action" data-action="assign-selected-spell">Assign to Hotbar</button>
-      <button class="primary ${canCast ? '' : 'disabled'}" data-action="cast-selected-spell" ${canCast ? '' : 'disabled'}>${canCast ? (spell.targetType === 'entity' || spell.targetType === 'tile' ? 'Target Spell' : 'Cast Spell') : reason}</button>
+      <button class="primary ${castability.canCast ? '' : 'disabled'}" data-action="cast-selected-spell" ${castability.canCast ? '' : 'disabled'}>${castability.canCast ? (spell.targetType === 'entity' || spell.targetType === 'tile' ? 'Target Spell' : 'Cast Spell') : castability.reason}</button>
       <button class="secondary-action" data-action="meditate">Meditate</button>
       ${state.ui.hotbarAssignSpellId === spell.id ? '<p class="spell-assign-hint">Press 1-0 to choose a hotbar slot.</p>' : ''}
     </div>

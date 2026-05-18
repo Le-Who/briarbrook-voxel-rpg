@@ -1,5 +1,6 @@
 import { itemDefs } from '../data/items';
 import { recipes } from '../data/recipes';
+import { emitAudioHook } from '../audio/AudioHooks';
 import { createId, createStack } from '../game/GameState';
 import type { GameState, InventoryState, Recipe, RecipeOutput } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
@@ -10,6 +11,7 @@ import { attemptSkillUse, getSkillValue } from './SkillSystem';
 import { createExceptionalTrait } from './EconomySystem';
 import { hasHomeCraftStation } from './HousingSystem';
 import { recordItemConsumed, recordResourceOutflow } from './TelemetrySystem';
+import { pushVisualEffect } from './VfxSystem';
 
 export function startCraft(state: GameState, recipeId: string, quantity: number): void {
   const recipe = recipes.find((candidate) => candidate.id === recipeId);
@@ -50,6 +52,8 @@ export function startCraft(state: GameState, recipeId: string, quantity: number)
     remaining: recipe.duration * quantity,
     total: recipe.duration * quantity
   });
+  pushVisualEffect(state, { kind: 'craft_loop', tier: 1, position: state.player.position, color: '#f0c957', duration: Math.min(1.2, recipe.duration * quantity) });
+  emitAudioHook('craft_station', { id: recipe.stationType, area: state.player.currentArea, position: state.player.position });
   addSystemMessage(state, `Crafting started: ${recipe.name}.`);
 }
 
@@ -57,7 +61,12 @@ export function updateCrafting(state: GameState, dt: number): void {
   const job = state.craftQueue[0];
   if (!job) return;
   job.remaining -= dt;
-  if (job.remaining > 0) return;
+  if (job.remaining > 0) {
+    if (!state.visualEffects.some((effect) => effect.kind === 'craft_loop' && state.clock - effect.startedAt < effect.duration)) {
+      pushVisualEffect(state, { kind: 'craft_loop', tier: 1, position: state.player.position, color: '#f0c957', duration: 0.7 });
+    }
+    return;
+  }
   const recipe = recipes.find((candidate) => candidate.id === job.recipeId);
   if (!recipe) {
     state.craftQueue.shift();
@@ -86,6 +95,7 @@ export function updateCrafting(state: GameState, dt: number): void {
     addSystemMessage(state, 'Craft complete, but your pack is too full for every output.');
   }
   addFloatingText(state, `${quality === 'exceptional' ? 'Exceptional ' : ''}${recipe.name}`, state.player.position, '#f0c957');
+  emitAudioHook('craft_station', { id: recipe.id, area: state.player.currentArea, position: state.player.position, intensity: job.quantity });
   addSystemMessage(state, `${quality === 'exceptional' ? 'Exceptional ' : ''}Crafted ${recipe.name} x${job.quantity}.`);
   recordQuestEvent(state, { type: 'craft', recipeId: recipe.id, skillId: recipe.skill, itemId: recipe.outputItemId });
   if (itemDefs[recipe.outputItemId]) {

@@ -1,0 +1,11 @@
+{
+  "meta": { "format_version": "4.10", "model_format": "free" },
+  "name": "iron_sword",
+  "resolution": { "width": 16, "height": 16 },
+  "elements": [
+    { "name": "blade", "from": [7.25, 3, 7.5], "to": [8.75, 15, 8.5], "color": 0 },
+    { "name": "guard", "from": [5.5, 3, 7.25], "to": [10.5, 4, 8.75], "color": 1 },
+    { "name": "grip", "from": [7.35, 0, 7.35], "to": [8.65, 3, 8.65], "color": 2 }
+  ],
+  "outliner": ["blade", "guard", "grip"]
+}

@@ -5,7 +5,7 @@ const tabs: ChatMessage['channel'][] = ['Local', 'Global', 'Party', 'Guild'];
 export function ChatPanel(state: GameState): string {
   const visible = state.chat.filter((message) => message.channel === state.ui.chatTab || message.channel === 'System').slice(-5);
   return `<section class="panel chat-panel">
-    <div class="chat-tabs">
+    <div class="chat-tabs ${state.ui.showChatTabs ? '' : 'hidden'}">
       ${tabs.map((tab) => `<button class="${state.ui.chatTab === tab ? 'active' : ''}" data-chat-tab="${tab}">${tab}</button>`).join('')}
     </div>
     <div class="chat-log">

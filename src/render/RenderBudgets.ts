@@ -7,12 +7,27 @@ export const renderPerformanceBudget = {
   raycastCandidateCount: 900,
   triangles: 140000,
   estimatedFrameMs: 16.7,
-  memoryAfterTransitionMb: 180
+  memoryAfterTransitionMb: 180,
+  domNodeCount: 1800,
+  visibleWindowCount: 8,
+  cachedIconCount: 260,
+  eventListenerCount: 48
+};
+
+export const assetPerformanceBudget = {
+  uniqueEquipmentModelsInMemory: 24,
+  maxIconTextureSize: 64,
+  maxParticleCount: 90,
+  maxDynamicLights: 3,
+  normalPlayDrawCalls: renderPerformanceBudget.roughDrawCalls,
+  normalPlayFrameMs: renderPerformanceBudget.estimatedFrameMs
 };
 
 export function createInitialRenderStats(): RenderStatsState {
   return {
     frame: 0,
+    fps: 0,
+    frameTimeMs: 0,
     entityCount: 0,
     visibleEntityCount: 0,
     roughDrawCalls: 0,
@@ -28,6 +43,11 @@ export function createInitialRenderStats(): RenderStatsState {
     raycastCandidateCount: 0,
     estimatedFrameMs: 0,
     memoryAfterTransitionMb: null,
+    domNodeCount: 0,
+    visibleWindowCount: 0,
+    iconRenderRequestCount: 0,
+    cachedIconCount: 0,
+    eventListenerCount: 0,
     budget: { ...renderPerformanceBudget }
   };
 }
@@ -55,7 +75,11 @@ export function renderStatsWithinBudget(stats: RenderStatsState): { ok: boolean;
     ['visible entities', stats.visibleEntityCount, budget.visibleEntityCount],
     ['raycast candidates', stats.raycastCandidateCount, budget.raycastCandidateCount],
     ['triangles', stats.triangles, budget.triangles],
-    ['estimated frame ms', stats.estimatedFrameMs, budget.estimatedFrameMs]
+    ['estimated frame ms', stats.estimatedFrameMs, budget.estimatedFrameMs],
+    ['DOM nodes', stats.domNodeCount, budget.domNodeCount],
+    ['visible windows', stats.visibleWindowCount, budget.visibleWindowCount],
+    ['cached icons', stats.cachedIconCount, budget.cachedIconCount],
+    ['event listeners', stats.eventListenerCount, budget.eventListenerCount]
   ];
   if (stats.memoryAfterTransitionMb != null) checks.push(['memory MB', stats.memoryAfterTransitionMb, budget.memoryAfterTransitionMb]);
   const failures = checks.filter(([, actual, max]) => actual > max).map(([label, actual, max]) => `${label}: ${actual} > ${max}`);

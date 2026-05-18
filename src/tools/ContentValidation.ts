@@ -15,6 +15,7 @@ interface ValidationContext {
   buildPieceIds: Set<string>;
   resourceIds: Set<string>;
   entityIds: Set<string>;
+  visualPrefabIds: Set<string>;
 }
 
 export function validateContent(registry: ContentRegistry = createContentRegistry(), checkedAt = 0): ContentValidationState {
@@ -29,7 +30,8 @@ export function validateContent(registry: ContentRegistry = createContentRegistr
     areaIds: new Set(Object.keys(registry.areas)),
     buildPieceIds: new Set(registry.buildPieces.map((piece) => piece.id)),
     resourceIds: new Set(Object.keys(registry.resources)),
-    entityIds: new Set(Object.keys(registry.entities))
+    entityIds: new Set(Object.keys(registry.entities)),
+    visualPrefabIds: new Set(registry.visualPrefabs.map((prefab) => prefab.id))
   };
 
   checkDuplicateIds(context, 'areas', Object.values(registry.areas).map((area) => area.id));
@@ -49,8 +51,10 @@ export function validateContent(registry: ContentRegistry = createContentRegistr
   checkDuplicateIds(context, 'risk zone rules', Object.values(registry.riskZones.rules).map((rule) => rule.id));
   checkDuplicateIds(context, 'treasure maps', Object.values(registry.treasure.maps).map((map) => map.id));
   checkDuplicateIds(context, 'secrets', Object.values(registry.treasure.secrets).map((secret) => secret.id));
+  checkDuplicateIds(context, 'visual prefabs', registry.visualPrefabs.map((prefab) => prefab.id));
 
   validateItems(context);
+  validateVisualPrefabs(context);
   validateBuildPieces(context);
   validateRecipes(context);
   validateSpells(context);
@@ -96,6 +100,7 @@ function checkDuplicateIds(context: ValidationContext, label: string, ids: strin
 }
 
 function validateItems(context: ValidationContext): void {
+  const requiredVisualItems = new Set(['axe', 'pickaxe', 'torch', 'bandage', 'arrow']);
   Object.entries(context.registry.items).forEach(([key, item]) => {
     if (key !== item.id) context.errors.push(`item "${key}" has mismatched id "${item.id}"`);
     if (item.requiredAmmo) requireItem(context, item.requiredAmmo, `item ${item.id}.requiredAmmo`);
@@ -104,6 +109,45 @@ function validateItems(context: ValidationContext): void {
     }
     if (item.skillUsed) requireSkill(context, item.skillUsed, `item ${item.id}.skillUsed`);
     if (item.supportSkill) requireSkill(context, item.supportSkill, `item ${item.id}.supportSkill`);
+    if (item.visualPrefabId && !context.visualPrefabIds.has(item.visualPrefabId)) {
+      context.errors.push(`item ${item.id}.visualPrefabId references missing visual prefab "${item.visualPrefabId}"`);
+    }
+    if (!item.visualPrefabId && (item.equipmentSlot || requiredVisualItems.has(item.id))) {
+      context.warnings.push(`item ${item.id} has no visualPrefabId; renderer will use generic procedural mapping`);
+    }
+  });
+}
+
+function validateVisualPrefabs(context: ValidationContext): void {
+  const attachPoints = new Set(['head', 'torso', 'back', 'rightHand', 'leftHand', 'belt', 'feet', 'quiver', 'shieldArm']);
+  const sourceExtensions = new Set(['.bbmodel', '.vox']);
+  const runtimeExtensions = new Set(['.glb', '.gltf', '.obj']);
+
+  context.registry.visualPrefabs.forEach((prefab) => {
+    if (!prefab.fallbackProceduralFactory) context.errors.push(`visual prefab ${prefab.id} is missing fallbackProceduralFactory`);
+    if (!prefab.iconCameraPreset) context.errors.push(`visual prefab ${prefab.id} is missing icon render preset`);
+    if (!prefab.attachPointDefaults.length) context.errors.push(`visual prefab ${prefab.id} has no attach point default`);
+    prefab.attachPointDefaults.forEach((attachPoint) => {
+      if (!attachPoints.has(attachPoint)) context.errors.push(`visual prefab ${prefab.id} has invalid attachPoint "${attachPoint}"`);
+    });
+    if (prefab.sourcePath) {
+      const lower = prefab.sourcePath.toLowerCase();
+      const ext = lower.slice(lower.lastIndexOf('.'));
+      if (!prefab.sourcePath.startsWith('assets/source/')) context.errors.push(`visual prefab ${prefab.id} sourcePath must live under assets/source`);
+      if (!sourceExtensions.has(ext)) context.errors.push(`visual prefab ${prefab.id} sourcePath uses unsupported source extension "${ext}"`);
+      if (prefab.sourceTool === 'blockbench' && ext !== '.bbmodel') context.errors.push(`visual prefab ${prefab.id} blockbench source must be .bbmodel`);
+      if (prefab.sourceTool === 'magicavoxel' && ext !== '.vox') context.errors.push(`visual prefab ${prefab.id} magicavoxel source must be .vox`);
+    } else if (prefab.sourceTool !== 'procedural') {
+      context.warnings.push(`visual prefab ${prefab.id} declares ${prefab.sourceTool} but has no sourcePath yet`);
+    }
+    if (prefab.runtimePath) {
+      const lower = prefab.runtimePath.toLowerCase();
+      const ext = lower.slice(lower.lastIndexOf('.'));
+      if (!prefab.runtimePath.startsWith('assets/exported/')) context.errors.push(`visual prefab ${prefab.id} runtimePath must live under assets/exported`);
+      if (!runtimeExtensions.has(ext)) context.errors.push(`visual prefab ${prefab.id} runtimePath uses unsupported runtime extension "${ext}"`);
+    }
+    if (prefab.maxRuntimeBytes <= 0) context.errors.push(`visual prefab ${prefab.id} has invalid maxRuntimeBytes`);
+    if (prefab.maxRuntimeBytes > 250000) context.errors.push(`visual prefab ${prefab.id} runtime budget is too large (${prefab.maxRuntimeBytes} bytes)`);
   });
 }
 

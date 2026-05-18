@@ -1,23 +1,25 @@
 import { itemDefs } from '../data/items';
+import { text } from '../content/Strings';
 import { emitAudioHook } from '../audio/AudioHooks';
 import { resourceTileKey } from '../data/resourceMaps';
 import { createId } from '../game/GameState';
 import type { GameState, ResourceKind, ResourceTile, TargetRef, Vec3 } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
-import { addSystemMessage } from './ChatSystem';
+import { actionSucceeded, invalidAction, resourceGained } from './ActionFeedbackSystem';
 import { facePlayerTowardTarget } from './FacingSystem';
 import { addItem, removeItems } from './InventorySystem';
 import { addFloatingText } from './LootSystem';
 import { recordQuestEvent, refreshQuestProgress } from './QuestSystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
 import { recordResourceYield } from './TelemetrySystem';
+import { queueGatheringEffect } from './VfxSystem';
 
 const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: string; invalid: string; fail: string; depleted: string; range: number }> = {
   axe: {
     kind: 'tree',
     skill: 'Lumberjacking',
     verb: 'chop',
-    invalid: 'You need a tree to chop this.',
+    invalid: text('error.treeRequired'),
     fail: 'You fail to produce usable wood.',
     depleted: 'This tree has not recovered enough usable wood.',
     range: 5.2
@@ -26,7 +28,7 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
     kind: 'ore',
     skill: 'Mining',
     verb: 'mine',
-    invalid: 'That rock is too soft to hold ore.',
+    invalid: text('error.noOreHere'),
     fail: 'You loosen only useless stone dust.',
     depleted: 'The vein is depleted.',
     range: 5.2
@@ -35,7 +37,7 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
     kind: 'ore',
     skill: 'Mining',
     verb: 'dig',
-    invalid: 'That ground is too loose to hold ore.',
+    invalid: text('error.nothingBuriedHere'),
     fail: 'You find nothing useful.',
     depleted: 'The vein is depleted.',
     range: 5.2
@@ -44,7 +46,7 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
     kind: 'water',
     skill: 'Fishing',
     verb: 'fish',
-    invalid: 'You need to target water.',
+    invalid: text('error.waterRequired'),
     fail: 'The fish are not biting.',
     depleted: 'This spot needs time to settle.',
     range: 10
@@ -52,11 +54,11 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
 };
 
 export function targetingPromptForTool(toolItemId: string): string {
-  if (toolItemId === 'axe') return 'Select a tree.';
-  if (toolItemId === 'shovel') return 'Select suspicious ground or a map-marked tile.';
-  if (toolItemId === 'pickaxe') return 'Select a rock face, cave wall, or ore tile.';
-  if (toolItemId === 'fishing_pole') return 'Select water.';
-  return `Select a target for ${itemDefs[toolItemId]?.name ?? toolItemId}.`;
+  if (toolItemId === 'axe') return text('prompt.selectTree');
+  if (toolItemId === 'shovel') return text('prompt.selectSuspiciousGround');
+  if (toolItemId === 'pickaxe') return text('prompt.selectMineTarget');
+  if (toolItemId === 'fishing_pole') return text('prompt.selectWater');
+  return text('prompt.selectToolTarget', { tool: itemDefs[toolItemId]?.name ?? toolItemId });
 }
 
 export function isTargetingTool(itemId: string): boolean {
@@ -67,9 +69,11 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
   const config = toolConfig[toolItemId];
   if (!config || !target) return;
   if (!hasTool(state, toolItemId)) {
-    const message = toolItemId === 'axe' ? 'You need an axe to chop this.' : toolItemId === 'pickaxe' ? 'You need a pickaxe to mine this.' : `You need ${itemDefs[toolItemId]?.name ?? toolItemId}.`;
-    state.ui.prompt = message;
-    addSystemMessage(state, message);
+    const message = text('error.toolRequired', {
+      tool: withIndefiniteArticle(itemDefs[toolItemId]?.name ?? toolItemId),
+      verb: config.verb
+    });
+    invalidAction(state, message, 'Equip or keep one in your pack.', { position: state.player.position });
     return;
   }
 
@@ -78,33 +82,31 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
     if (stack?.itemId === 'logs' && removeItems(state.player.inventory, 'logs', 1)) {
       addItem(state.player.inventory, 'boards', 2);
       attemptSkillUse(state, 'Carpentry', { verb: 'craft', difficulty: 18, success: true, itemId: 'boards', relatedSkills: ['Lumberjacking'] });
-      addSystemMessage(state, 'You split logs into boards.');
-      addFloatingText(state, '+2 Boards', state.player.position, '#e8d79a');
+      actionSucceeded(state, '+2 Boards', { position: state.player.position, floatText: '+2 Boards' });
       return;
     }
   }
 
   const position = resolveTargetPosition(state, target);
   if (!position) {
-    addSystemMessage(state, config.invalid);
+    invalidAction(state, config.invalid, undefined, { position: state.player.position });
     return;
   }
   if (distance(state.player.position, position) > config.range) {
     state.player.targetPosition = approachPoint(state.player.position, position, Math.max(1.1, config.range - 0.6));
-    state.ui.prompt = `You are too far away. Moving closer to ${config.verb}.`;
+    state.ui.prompt = `${text('error.targetTooFar')} ${text('status.movingCloser', { action: config.verb })}`;
     return;
   }
   facePlayerTowardTarget(state, target, 'gathering', 0.45);
 
   const tile = resolveResourceTile(state, target, config.kind);
   if (!tile) {
-    addSystemMessage(state, config.invalid);
-    state.ui.prompt = config.invalid;
+    invalidAction(state, config.invalid, undefined, { position });
     return;
   }
   if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) {
-    addSystemMessage(state, config.depleted);
-    state.ui.prompt = config.depleted;
+    invalidAction(state, config.depleted, 'Try another node.', { position: { x: tile.x, y: 0, z: tile.z }, floatText: 'Depleted', color: '#d8d8d8' });
+    queueGatheringEffect(state, config.kind, { x: tile.x, y: 0, z: tile.z }, 'depleted');
     return;
   }
 
@@ -121,15 +123,14 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
 
   tile.lastHarvestedAt = state.clock;
   if (!success) {
-    addSystemMessage(state, config.fail);
-    state.ui.prompt = config.fail;
-    addFloatingText(state, 'Failed', { x: tile.x, y: 0, z: tile.z }, '#d8d8d8');
+    invalidAction(state, config.fail, undefined, { position: { x: tile.x, y: 0, z: tile.z }, floatText: 'Failed', color: '#d8d8d8' });
+    queueGatheringEffect(state, config.kind, { x: tile.x, y: 0, z: tile.z }, 'active');
     return;
   }
 
   const rewards = rollRewards(tile, skillValue);
   if (!rewards.length) {
-    addSystemMessage(state, config.fail);
+    invalidAction(state, config.fail, undefined, { position: { x: tile.x, y: 0, z: tile.z }, floatText: 'Failed', color: '#d8d8d8' });
     return;
   }
   for (const reward of rewards) addItem(state.player.inventory, reward.itemId, reward.quantity);
@@ -137,14 +138,13 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
   if (tile.harvestsRemaining <= 0 && config.kind !== 'water') tile.depletedUntil = state.clock + (config.kind === 'tree' ? 32 : 38);
   if (config.kind === 'water' && Math.random() < 0.18) tile.depletedUntil = state.clock + 12;
 
-  const text = rewards.map((reward) => `+${reward.quantity} ${itemDefs[reward.itemId]?.name ?? reward.itemId}`).join(', ');
+  const rewardText = rewards.map((reward) => `+${reward.quantity} ${itemDefs[reward.itemId]?.name ?? reward.itemId}`).join(', ');
   rewards.forEach((reward) => recordQuestEvent(state, { type: 'gather', skillId: config.skill, itemId: reward.itemId, quantity: reward.quantity }));
   rewards.forEach((reward) => recordResourceYield(state, reward.itemId, reward.quantity));
   refreshQuestProgress(state);
-  addSystemMessage(state, `You receive: ${text}.`);
-  state.ui.prompt = `You receive: ${text}.`;
-  addFloatingText(state, text, { x: tile.x, y: 0, z: tile.z }, config.kind === 'water' ? '#9ad8ff' : '#e8f5be');
-  emitAudioHook(config.kind === 'ore' ? 'mining_hit' : config.kind === 'tree' ? 'tree_chop' : config.kind === 'water' ? 'item_pickup' : 'item_pickup', {
+  resourceGained(state, rewardText, { x: tile.x, y: 0, z: tile.z }, config.kind === 'water' ? '#9ad8ff' : '#e8f5be');
+  queueGatheringEffect(state, config.kind, { x: tile.x, y: 0, z: tile.z }, 'success');
+  emitAudioHook(config.kind === 'ore' ? 'gather_mine' : config.kind === 'tree' ? 'gather_chop' : config.kind === 'water' ? 'gather_fish' : 'item_pickup', {
     area: state.player.currentArea,
     position: { x: tile.x, y: 0, z: tile.z },
     intensity: rewards.length
@@ -255,6 +255,12 @@ function rollRewards(tile: ResourceTile, skillValue: number): Array<{ itemId: st
     rewards.push({ itemId: fallback.itemId, quantity: randomInt(fallback.min, fallback.max) });
   }
   return rewards;
+}
+
+function withIndefiniteArticle(label: string): string {
+  const normalized = label.trim();
+  if (!normalized) return 'a tool';
+  return `${/^[aeiou]/i.test(normalized) ? 'an' : 'a'} ${normalized}`;
 }
 
 function hasTool(state: GameState, itemId: string): boolean {

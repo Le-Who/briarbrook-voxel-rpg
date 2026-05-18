@@ -1,4 +1,5 @@
 import { areas } from '../data/areas';
+import { clampAudioVolume } from '../audio/AudioSettings';
 import { buildPieces, itemDefs } from '../data/items';
 import { recipes } from '../data/recipes';
 import { spellDefs } from '../data/spells';
@@ -36,17 +37,20 @@ import { movePlayerBy, setMoveTarget, updatePlayerMovement } from '../systems/Mo
 import { completeQuest, recordQuestEvent, refreshQuestProgress } from '../systems/QuestSystem';
 import { isTargetingTool, targetingPromptForTool, updateResourceTiles, useToolOnTarget } from '../systems/ResourceSystem';
 import { castSpellIntent, meditate, updateSpellCasting } from '../systems/SpellSystem';
-import { recordUiReset } from '../systems/TelemetrySystem';
+import { recordPlaytestMilestone, recordUiReset, recordWindowOpened } from '../systems/TelemetrySystem';
 import { combineMapFragments, decipherTreasureMap, detectHiddenPulse, digWithShovel, openTreasureMap, pinTreasureMap, removeTrapFromTarget } from '../systems/TreasureSystem';
 import { cancelApproachIntent, clearInvalidAreaTargets, clearMovementState, transitionPlayerToArea } from '../systems/TransitionSystem';
 import { performDefensiveAction, useWeaponAbility } from '../systems/WeaponAbilitySystem';
 import { AreaManager } from '../world/AreaManager';
 import type { GameAction } from './Actions';
 import { createId, createInitialGameState } from './GameState';
+import { actionLabelForId, createDefaultInputBindings, findInputBindingConflicts, keyLabel, rebindInputAction } from './InputActionMap';
 import { clearSave, saveGame } from './SaveLoad';
 import type { GameState, TargetRef, Vec3 } from './types';
+import { sanitizeUiStateReferences } from './UIStateSelectors';
 import { setSkillMode } from '../systems/SkillSystem';
 import { updateWindowFocusOrder } from '../ui/WindowManager';
+import { applyUiLayoutPresetSettings } from '../ui/UILayoutPresets';
 
 export class Simulation {
   readonly areaManager = new AreaManager();
@@ -75,11 +79,13 @@ export class Simulation {
   private applyAction(action: GameAction, fromBuffer = false): void {
     switch (action.type) {
       case 'MOVE_BY':
+        recordPlaytestMilestone(this.state, 'timeToFirstMovement');
         this.recordMovementCommand('direct');
         cancelApproachIntent(this.state, 'Movement command cancelled approach.');
         movePlayerBy(this.state, this.areaManager, action.dx, action.dz);
         break;
       case 'MOVE_TO':
+        recordPlaytestMilestone(this.state, 'timeToFirstMovement');
         this.recordMovementCommand('click');
         cancelApproachIntent(this.state, 'Movement command cancelled approach.');
         setMoveTarget(this.state, this.areaManager, action.position);
@@ -108,6 +114,7 @@ export class Simulation {
         {
           const areaBefore = this.state.player.currentArea;
           interactEntity(this.state, this.areaManager, action.entityId);
+          recordPlaytestMilestone(this.state, 'timeToFirstSuccessfulInteraction');
           if (this.state.player.currentArea === areaBefore) setPlayerActionState(this.state, 'interacting', 0.35, action.entityId);
         }
         break;
@@ -271,9 +278,12 @@ export class Simulation {
       case 'OPEN_BANK':
         this.state.ui.panels.bank = true;
         this.state.ui.panels.inventory = true;
+        recordWindowOpened(this.state, 'bank');
+        recordWindowOpened(this.state, 'inventory');
         break;
       case 'OPEN_TRADE':
         openTrade(this.state, action.partnerId);
+        recordWindowOpened(this.state, 'trade');
         break;
       case 'BUY_MERCHANT_ITEM':
         buyMerchantItem(this.state, action.slot);
@@ -393,7 +403,10 @@ export class Simulation {
       case 'TOGGLE_PANEL':
         this.state.ui.panels[action.panel] = action.open ?? !this.state.ui.panels[action.panel];
         if (action.panel === 'skills' && this.state.ui.panels[action.panel]) this.state.ui.skillsViewMode = 'ledger';
-        if (this.state.ui.panels[action.panel]) recordQuestEvent(this.state, { type: 'open_panel', panel: action.panel });
+        if (this.state.ui.panels[action.panel]) {
+          recordQuestEvent(this.state, { type: 'open_panel', panel: action.panel });
+          recordWindowOpened(this.state, action.panel);
+        }
         break;
       case 'HOVER_TARGET':
         this.state.ui.hoverTarget = action.target;
@@ -421,6 +434,9 @@ export class Simulation {
       case 'SET_MARKET_FILTER':
         this.state.ui.marketCategory = action.category;
         break;
+      case 'SET_MARKET_VIEW':
+        this.state.ui.marketView = action.view;
+        break;
       case 'SET_MARKET_SEARCH':
         this.state.ui.marketSearch = action.search.slice(0, 40);
         break;
@@ -432,6 +448,26 @@ export class Simulation {
         break;
       case 'PIN_TREASURE_MAP':
         pinTreasureMap(this.state, action.mapId ?? this.state.ui.selectedTreasureMapId);
+        break;
+      case 'SET_MAP_WAYPOINT': {
+        const area = areas[action.areaId];
+        const label = (action.label?.trim() || area?.name || 'Map waypoint').slice(0, 64);
+        this.state.ui.mapWaypoint = {
+          areaId: action.areaId,
+          position: { x: Math.round(action.position.x), y: 0, z: Math.round(action.position.z) },
+          label,
+          source: action.source ?? 'manual',
+          setAt: this.state.clock
+        };
+        this.state.ui.prompt =
+          action.areaId === this.state.player.currentArea
+            ? `Waypoint set: ${label}.`
+            : `Waypoint set in ${area.name}. Follow discovered entrances to reach it.`;
+        break;
+      }
+      case 'CLEAR_MAP_WAYPOINT':
+        this.state.ui.mapWaypoint = null;
+        this.state.ui.prompt = 'Waypoint cleared.';
         break;
       case 'SELECT_SPELL':
         this.state.ui.selectedSpellId = action.spellId;
@@ -454,6 +490,17 @@ export class Simulation {
         break;
       case 'SET_JOURNAL_TAB':
         this.state.ui.journalTab = action.tab;
+        break;
+      case 'PIN_RUMOR':
+        if (action.eventId && this.state.world.activeEvents.some((event) => event.id === action.eventId)) {
+          this.state.ui.pinnedRumorId = this.state.ui.pinnedRumorId === action.eventId ? null : action.eventId;
+          this.state.world.discoveredRumorIds = Array.from(new Set([...this.state.world.discoveredRumorIds, action.eventId]));
+          this.state.ui.panels.journal = true;
+          this.state.ui.prompt = this.state.ui.pinnedRumorId ? 'Rumor pinned to Journal.' : 'Rumor unpinned.';
+        } else {
+          this.state.ui.pinnedRumorId = null;
+          this.state.ui.prompt = 'Rumor unpinned.';
+        }
         break;
       case 'SET_SPELLBOOK_SEARCH':
         this.state.ui.spellbookSearch = action.search.slice(0, 48);
@@ -588,11 +635,18 @@ export class Simulation {
       case 'USE_HOTBAR':
         this.useHotbar(action.slot);
         break;
+      case 'SET_ACTIVE_HOTBAR_SLOT':
+        if (action.slot >= 0 && action.slot < this.state.ui.hotbar.length) {
+          this.state.ui.activeHotbarSlot = action.slot;
+          this.state.ui.prompt = `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} selected.`;
+        }
+        break;
       case 'SET_HOTBAR_SLOT':
         if (action.slot >= 0 && action.slot < this.state.ui.hotbar.length) {
           this.state.ui.hotbar[action.slot] = action.binding;
           this.state.ui.hotbarAssignSpellId = null;
           this.state.ui.prompt = action.binding ? `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} updated.` : `Hotbar ${action.slot === 9 ? 0 : action.slot + 1} cleared.`;
+          if (action.binding) recordPlaytestMilestone(this.state, 'timeToAssignHotbar');
         }
         break;
       case 'CLEAR_HOTBAR_SLOT':
@@ -613,15 +667,90 @@ export class Simulation {
         this.state.ui.uiScale = Math.max(0.8, Math.min(1.25, Number(action.scale.toFixed(2))));
         this.state.ui.prompt = `UI scale ${Math.round(this.state.ui.uiScale * 100)}%.`;
         break;
+      case 'SET_FONT_SCALE':
+        this.state.ui.fontScale = Math.max(0.9, Math.min(1.25, Number(action.scale.toFixed(2))));
+        this.state.ui.prompt = `Font size ${Math.round(this.state.ui.fontScale * 100)}%.`;
+        break;
+      case 'SET_TOOLTIP_DELAY':
+        this.state.ui.tooltipDelayMs = Math.max(0, Math.min(800, Math.round(action.delayMs)));
+        this.state.ui.prompt = `Tooltip delay ${this.state.ui.tooltipDelayMs}ms.`;
+        break;
+      case 'SET_TOOLTIP_MODE':
+        this.state.ui.tooltipMode = action.mode;
+        this.state.ui.prompt = action.mode === 'advanced' ? 'Advanced tooltips enabled.' : 'Compact tooltips enabled.';
+        break;
+      case 'SET_ADVANCED_TOOLTIP_MODIFIER':
+        this.state.ui.advancedTooltipModifier = action.modifier;
+        this.state.ui.prompt = `Advanced tooltip modifier: ${action.modifier}.`;
+        break;
       case 'TOGGLE_REDUCED_MOTION':
         this.state.ui.reducedMotion = !this.state.ui.reducedMotion;
         this.state.ui.prompt = this.state.ui.reducedMotion ? 'Reduced motion enabled.' : 'Reduced motion disabled.';
+        break;
+      case 'TOGGLE_COLORBLIND_STATUS':
+        this.state.ui.colorblindStatusColors = !this.state.ui.colorblindStatusColors;
+        this.state.ui.prompt = this.state.ui.colorblindStatusColors ? 'Colorblind-friendly status colors enabled.' : 'Default status colors enabled.';
+        break;
+      case 'TOGGLE_DAMAGE_NUMBERS':
+        this.state.ui.showDamageNumbers = !this.state.ui.showDamageNumbers;
+        this.state.ui.prompt = this.state.ui.showDamageNumbers ? 'Damage numbers shown.' : 'Damage numbers hidden.';
+        break;
+      case 'TOGGLE_SKILL_GAIN_TOASTS':
+        this.state.ui.showSkillGainToasts = !this.state.ui.showSkillGainToasts;
+        this.state.ui.prompt = this.state.ui.showSkillGainToasts ? 'Skill gain toasts shown.' : 'Skill gain toasts hidden.';
+        break;
+      case 'TOGGLE_CHAT_TABS':
+        this.state.ui.showChatTabs = !this.state.ui.showChatTabs;
+        this.state.ui.prompt = this.state.ui.showChatTabs ? 'Chat tabs shown.' : 'Chat tabs hidden.';
+        break;
+      case 'SET_AUDIO_VOLUME':
+        this.state.ui.audio.volumes[action.category] = clampAudioVolume(action.volume);
+        this.state.ui.prompt = `${action.category} volume ${Math.round(this.state.ui.audio.volumes[action.category] * 100)}%.`;
+        break;
+      case 'TOGGLE_MUTE_WHEN_UNFOCUSED':
+        this.state.ui.audio.muteWhenUnfocused = !this.state.ui.audio.muteWhenUnfocused;
+        this.state.ui.prompt = this.state.ui.audio.muteWhenUnfocused ? 'Audio mutes when unfocused.' : 'Audio keeps playing when unfocused.';
+        break;
+      case 'TOGGLE_VISUAL_AUDIO_CUES':
+        this.state.ui.audio.visualAudioCues = !this.state.ui.audio.visualAudioCues;
+        this.state.ui.prompt = this.state.ui.audio.visualAudioCues ? 'Visual audio substitutes enabled.' : 'Visual audio substitutes hidden.';
+        break;
+      case 'TOGGLE_LOCK_UI_LAYOUT':
+        this.state.ui.lockUILayout = !this.state.ui.lockUILayout;
+        this.state.ui.prompt = this.state.ui.lockUILayout ? 'UI layout locked.' : 'UI layout unlocked.';
+        break;
+      case 'SET_HUD_DENSITY':
+        this.state.ui.hudDensity = action.density;
+        break;
+      case 'BEGIN_KEYBIND_CAPTURE':
+        this.state.ui.keybindingCapture = { actionId: action.actionId, context: action.context };
+        this.state.ui.prompt = `Press a key for ${actionLabelForId(action.actionId)}.`;
+        break;
+      case 'SET_INPUT_BINDING':
+        this.state.ui.inputBindings = rebindInputAction(this.state.ui.inputBindings, action.actionId, action.context, action.key);
+        this.state.ui.keybindingCapture = null;
+        {
+          const conflicts = findInputBindingConflicts(this.state.ui.inputBindings);
+          const conflict = conflicts.find((candidate) => candidate.context === action.context && candidate.key === action.key);
+          this.state.ui.prompt = conflict
+            ? `Binding conflict: ${conflict.labels.join(' / ')} share ${keyLabel(action.key)}.`
+            : `${actionLabelForId(action.actionId)} set to ${keyLabel(action.key)}.`;
+        }
+        break;
+      case 'RESET_INPUT_BINDINGS':
+        this.state.ui.inputBindings = createDefaultInputBindings();
+        this.state.ui.keybindingCapture = null;
+        this.state.ui.prompt = 'Keybindings reset to defaults.';
         break;
       case 'SET_CAMERA_SMOOTHING':
         this.state.ui.cameraSmoothing = action.mode;
         this.state.ui.prompt = `Camera smoothing: ${action.mode}.`;
         break;
       case 'SET_WINDOW_LAYOUT':
+        if (this.state.ui.lockUILayout) {
+          this.state.ui.prompt = 'UI layout is locked.';
+          break;
+        }
         this.state.ui.windowLayouts[action.windowId] = action.layout;
         this.state.ui.windowLayoutPreset = 'default';
         break;
@@ -635,9 +764,9 @@ export class Simulation {
         recordUiReset(this.state);
         break;
       case 'APPLY_UI_LAYOUT_PRESET':
-        this.state.ui.windowLayouts = {};
-        this.state.ui.windowLayoutPreset = action.preset;
+        applyUiLayoutPresetSettings(this.state, action.preset);
         this.state.ui.prompt = `${action.preset} UI layout.`;
+        recordUiReset(this.state);
         break;
       case 'SET_COMBAT_APPROACH_MODE':
         this.state.player.combatPreferences.approachMode = action.mode;
@@ -670,6 +799,7 @@ export class Simulation {
       default:
         action satisfies never;
     }
+    sanitizeUiStateReferences(this.state);
     refreshQuestProgress(this.state);
   }
 
@@ -726,6 +856,7 @@ export class Simulation {
     this.updateTargetLock();
     updateAllFacing(this.state, dt);
     clearInvalidAreaTargets(this.state);
+    sanitizeUiStateReferences(this.state);
     refreshPlayerActionState(this.state);
     refreshQuestProgress(this.state);
   }

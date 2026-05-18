@@ -72,6 +72,8 @@ export function DevOverlay(state: GameState): string {
         <p><span>Crime events</span><b>${state.world.crimeEvents.length}</b></p>
         <p><span>Target</span><b>${selectedEntity}</b></p>
         <p><span>Tick</span><b>${state.realtime.tick} @ ${state.realtime.tickRate}hz</b></p>
+        <p><span>FPS</span><b>${state.dev.renderStats.fps}</b></p>
+        <p><span>Frame time</span><b>${state.dev.renderStats.frameTimeMs}/${state.dev.renderStats.budget.estimatedFrameMs}ms</b></p>
         <p><span>Entities</span><b>${state.dev.renderStats.visibleEntityCount}/${state.dev.renderStats.entityCount}</b></p>
         <p><span>Draw</span><b>${state.dev.renderStats.roughDrawCalls} calls, ${state.dev.renderStats.triangles} tris</b></p>
         <p><span>Meshes</span><b>${state.dev.renderStats.meshCount} (${state.dev.renderStats.staticMeshCount}/${state.dev.renderStats.entityMeshCount}/${state.dev.renderStats.effectMeshCount})</b></p>
@@ -80,6 +82,10 @@ export function DevOverlay(state: GameState): string {
         <p><span>Raycast</span><b>${state.dev.renderStats.raycastCandidateCount}/${state.dev.renderStats.budget.raycastCandidateCount} candidates</b></p>
         <p><span>Frame est.</span><b>${state.dev.renderStats.estimatedFrameMs}/${state.dev.renderStats.budget.estimatedFrameMs}ms</b></p>
         <p><span>Heap</span><b>${state.dev.renderStats.memoryAfterTransitionMb == null ? 'n/a' : `${state.dev.renderStats.memoryAfterTransitionMb}/${state.dev.renderStats.budget.memoryAfterTransitionMb} MB`}</b></p>
+        <p><span>UI DOM</span><b>${state.dev.renderStats.domNodeCount}/${state.dev.renderStats.budget.domNodeCount} nodes</b></p>
+        <p><span>Windows</span><b>${state.dev.renderStats.visibleWindowCount}/${state.dev.renderStats.budget.visibleWindowCount}</b></p>
+        <p><span>Icons</span><b>${state.dev.renderStats.cachedIconCount}/${state.dev.renderStats.budget.cachedIconCount} cached · ${state.dev.renderStats.iconRenderRequestCount} renders</b></p>
+        <p><span>Listeners</span><b>${state.dev.renderStats.eventListenerCount}/${state.dev.renderStats.budget.eventListenerCount}</b></p>
         <p><span>Input mode</span><b>${state.dev.input.mode}</b></p>
         <p><span>Last raw</span><b>${state.dev.input.lastRawInput}</b></p>
         <p><span>Last intent</span><b>${state.dev.input.lastIntent}</b></p>
@@ -125,6 +131,13 @@ export function DevOverlay(state: GameState): string {
         <p><span>Transition fallbacks</span><b>${telemetry.transitionFallbacks ?? 0}</b></p>
         <p><span>Stuck recoveries</span><b>${telemetry.stuckRecoveryEvents ?? 0}</b></p>
         <p><span>Tooltip remounts</span><b>${telemetry.tooltipRemounts ?? 0}</b></p>
+        <p><span>Playtest first move</span><b>${telemetry.playtest.timeToFirstMovement ?? 'open'}</b></p>
+        <p><span>First interaction</span><b>${telemetry.playtest.timeToFirstSuccessfulInteraction ?? 'open'}</b></p>
+        <p><span>Equip ID surface</span><b>${telemetry.playtest.timeToIdentifyEquippedItem ?? 'open'}</b></p>
+        <p><span>Hotbar assign</span><b>${telemetry.playtest.timeToAssignHotbar ?? 'open'}</b></p>
+        <p><span>Invalid actions</span><b>${telemetry.playtest.invalidActionCount}</b></p>
+        <p><span>Tooltip reliance</span><b>${telemetry.playtest.tooltipRelianceCount}</b></p>
+        <p><span>Windows opened</span><b>${sumRecord(telemetry.playtest.windowsOpened)}</b></p>
         <p><span>UI resets</span><b>${telemetry.uiResetUsage ?? 0}</b></p>
         ${topCancellations.map(([reason, count]) => `<p><span>${reason}</span><b>${count}</b></p>`).join('')}
         ${topSkillEvents.map(([skill, count]) => `<p><span>${skill} events</span><b>${count}</b></p>`).join('')}
