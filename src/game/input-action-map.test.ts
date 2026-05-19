@@ -40,6 +40,13 @@ describe('input action map', () => {
     expect(action).toBeNull();
   });
 
+  it('keeps debug overlay bindings available while paused', () => {
+    const bindings = createDefaultInputBindings();
+
+    expect(inputContextsForMode('paused')).toEqual(['debug', 'ui']);
+    expect(resolveInputAction(bindings, keyboard('F9'), inputContextsForMode('paused'))?.actionId).toBe('toggleDevOverlay');
+  });
+
   it('resolves default panel and gameplay bindings through the action map', () => {
     const bindings = createDefaultInputBindings();
 

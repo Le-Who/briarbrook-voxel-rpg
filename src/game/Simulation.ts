@@ -46,7 +46,7 @@ import type { GameAction } from './Actions';
 import { createId, createInitialGameState } from './GameState';
 import { actionLabelForId, createDefaultInputBindings, findInputBindingConflicts, keyLabel, rebindInputAction } from './InputActionMap';
 import { clearSave, saveGame } from './SaveLoad';
-import type { GameState, TargetRef, Vec3 } from './types';
+import type { GameState, MovementMode, TargetRef, Vec3 } from './types';
 import { sanitizeUiStateReferences } from './UIStateSelectors';
 import { setSkillMode } from '../systems/SkillSystem';
 import { updateWindowFocusOrder } from '../ui/WindowManager';
@@ -79,12 +79,21 @@ export class Simulation {
   private applyAction(action: GameAction, fromBuffer = false): void {
     switch (action.type) {
       case 'MOVE_BY':
+        if (this.state.ui.movementMode === 'mouse') {
+          this.state.ui.prompt = 'Keyboard movement disabled in Mouse Only mode.';
+          break;
+        }
         recordPlaytestMilestone(this.state, 'timeToFirstMovement');
         this.recordMovementCommand('direct');
         cancelApproachIntent(this.state, 'Movement command cancelled approach.');
         movePlayerBy(this.state, this.areaManager, action.dx, action.dz);
         break;
       case 'MOVE_TO':
+        if (this.state.ui.movementMode === 'keyboard') {
+          clearClickPathUnlessApproaching(this.state);
+          this.state.ui.prompt = 'Mouse movement disabled in Keyboard Only mode.';
+          break;
+        }
         recordPlaytestMilestone(this.state, 'timeToFirstMovement');
         this.recordMovementCommand('click');
         cancelApproachIntent(this.state, 'Movement command cancelled approach.');
@@ -469,6 +478,18 @@ export class Simulation {
         this.state.ui.mapWaypoint = null;
         this.state.ui.prompt = 'Waypoint cleared.';
         break;
+      case 'SET_MINIMAP_MODE':
+        this.state.ui.minimapMode = action.mode;
+        this.state.ui.panels.map = action.mode === 'expanded';
+        this.state.ui.prompt = `Map mode: ${action.mode}.`;
+        break;
+      case 'TOGGLE_MAP_LAYER': {
+        const hidden = new Set(this.state.ui.mapHiddenLayers);
+        if (hidden.has(action.layerId)) hidden.delete(action.layerId);
+        else hidden.add(action.layerId);
+        this.state.ui.mapHiddenLayers = Array.from(hidden);
+        break;
+      }
       case 'SELECT_SPELL':
         this.state.ui.selectedSpellId = action.spellId;
         break;
@@ -551,6 +572,7 @@ export class Simulation {
       case 'SET_PROFESSION_FILTER':
         this.state.ui.professionFilter = action.professionId;
         this.state.ui.skillProfessionFilter = action.professionId as typeof this.state.ui.skillProfessionFilter;
+        this.state.ui.selectedProfessionNodeId = null;
         break;
       case 'SET_SKILLS_VIEW_MODE':
         this.state.ui.skillsViewMode = action.mode;
@@ -565,9 +587,16 @@ export class Simulation {
       case 'SET_SKILL_PROFESSION_FILTER':
         this.state.ui.skillProfessionFilter = action.filter;
         this.state.ui.professionFilter = action.filter;
+        this.state.ui.selectedProfessionNodeId = null;
         break;
       case 'SET_PROFESSION_ATLAS_ZOOM':
         this.state.ui.professionAtlasZoom = Math.max(0.75, Math.min(1.35, Number(action.zoom.toFixed(2))));
+        break;
+      case 'SET_PROFESSION_ATLAS_SEARCH':
+        this.state.ui.professionAtlasSearch = action.search;
+        break;
+      case 'SET_PROFESSION_ATLAS_NODE':
+        this.state.ui.selectedProfessionNodeId = action.nodeId;
         break;
       case 'PIN_PROFESSION_GOAL':
         this.state.ui.pinnedProfessionGoalId = this.state.ui.pinnedProfessionGoalId === action.goalId ? null : action.goalId;
@@ -625,9 +654,34 @@ export class Simulation {
         break;
       case 'SET_CHAT_TAB':
         this.state.ui.chatTab = action.channel;
+        this.state.ui.chatHiddenChannels = this.state.ui.chatHiddenChannels.filter((channel) => channel !== action.channel);
+        if (this.state.ui.chatMode === 'collapsed') this.state.ui.chatMode = 'compact';
+        break;
+      case 'SET_CHAT_MODE':
+        this.state.ui.chatMode = action.mode;
+        break;
+      case 'TOGGLE_CHAT_CHANNEL': {
+        const hidden = new Set(this.state.ui.chatHiddenChannels);
+        if (hidden.has(action.channel)) hidden.delete(action.channel);
+        else hidden.add(action.channel);
+        this.state.ui.chatHiddenChannels = Array.from(hidden);
+        if (hidden.has(this.state.ui.chatTab)) {
+          this.state.ui.chatTab = (['Local', 'Party', 'Guild', 'Global', 'System', 'Rumors'] as const).find((channel) => !hidden.has(channel)) ?? 'Local';
+        }
+        break;
+      }
+      case 'SET_CHAT_OPACITY':
+        this.state.ui.chatOpacity = Math.max(0.45, Math.min(1, action.opacity));
+        break;
+      case 'SET_CHAT_RETENTION':
+        this.state.ui.chatMessageRetention = Math.round(Math.max(40, Math.min(240, action.limit)));
+        if (this.state.chat.length > this.state.ui.chatMessageRetention) this.state.chat.splice(0, this.state.chat.length - this.state.ui.chatMessageRetention);
         break;
       case 'SEND_CHAT':
-        if (action.text.trim()) addChat(this.state, action.text.trim(), { speaker: 'Valen' });
+        if (action.text.trim()) {
+          addChat(this.state, action.text.trim(), { speaker: 'Valen', channel: this.state.ui.chatTab === 'System' || this.state.ui.chatTab === 'Rumors' ? 'Local' : this.state.ui.chatTab });
+          if (this.state.ui.chatMode === 'collapsed') this.state.ui.chatMode = 'compact';
+        }
         break;
       case 'SHOW_PROMPT':
         this.state.ui.prompt = action.message;
@@ -742,9 +796,18 @@ export class Simulation {
         this.state.ui.keybindingCapture = null;
         this.state.ui.prompt = 'Keybindings reset to defaults.';
         break;
+      case 'SET_MOVEMENT_MODE':
+        this.state.ui.movementMode = action.mode;
+        applyMovementModeTransition(this.state, action.mode);
+        this.state.ui.prompt = `Movement mode: ${movementModeLabel(action.mode)}.`;
+        break;
       case 'SET_CAMERA_SMOOTHING':
         this.state.ui.cameraSmoothing = action.mode;
         this.state.ui.prompt = `Camera smoothing: ${action.mode}.`;
+        break;
+      case 'TOGGLE_CAMERA_RELATIVE_MOVEMENT':
+        this.state.ui.cameraRelativeMovement = !this.state.ui.cameraRelativeMovement;
+        this.state.ui.prompt = this.state.ui.cameraRelativeMovement ? 'Camera-relative movement enabled.' : 'World-axis movement enabled.';
         break;
       case 'SET_WINDOW_LAYOUT':
         if (this.state.ui.lockUILayout) {
@@ -1426,4 +1489,29 @@ export class Simulation {
   private emit(): void {
     this.listeners.forEach((listener) => listener());
   }
+}
+
+function applyMovementModeTransition(state: GameState, mode: MovementMode): void {
+  if (mode === 'mouse') {
+    state.player.movement.intent = null;
+    state.player.movement.intentUntil = 0;
+    state.player.movement.velocity = { x: 0, z: 0 };
+    return;
+  }
+  if (mode === 'keyboard') {
+    clearClickPathUnlessApproaching(state);
+  }
+}
+
+function clearClickPathUnlessApproaching(state: GameState): void {
+  if (state.realtime.pendingAction) return;
+  state.player.targetPosition = null;
+  state.player.movement.path = [];
+  state.player.movement.waypoint = null;
+}
+
+function movementModeLabel(mode: MovementMode): string {
+  if (mode === 'keyboard') return 'Keyboard Only';
+  if (mode === 'mouse') return 'Mouse Only';
+  return 'Keyboard + Mouse';
 }

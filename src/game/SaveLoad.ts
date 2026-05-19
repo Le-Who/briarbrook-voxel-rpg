@@ -4,7 +4,7 @@ import { createInitialHousingState, getHousingPieceDefinition, starterPlotId } f
 import { itemDefs } from '../data/items';
 import { tutorialQuestIds } from '../data/quests';
 import { resolveResourceDefinition } from '../data/resources';
-import { createInitialResourceTiles } from '../data/resourceMaps';
+import { createInitialResourceTiles, mergeResourceTilesWithDefaults } from '../data/resourceMaps';
 import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
@@ -12,7 +12,9 @@ import { sanitizeAudioSettings } from '../audio/AudioSettings';
 import { createInitialRenderStats } from '../render/RenderBudgets';
 import { ensureFacingState } from '../systems/FacingSystem';
 import { sanitizeInputBindings } from './InputActionMap';
-import type { BuildingEntity, EnemyEntity, GameState, HousingStorageState, ItemType, PortalEntity, ResourceNodeEntity } from './types';
+import { mergeLoopGovernorSnapshot } from './LoopGovernor';
+import { mergePerfSnapshot } from './PerfMonitor';
+import type { BuildingEntity, EnemyEntity, GameState, HousingStorageState, ItemType, MovementMode, PortalEntity, ResourceNodeEntity } from './types';
 
 export const CURRENT_SAVE_VERSION = 3;
 const SAVE_KEY = 'briarbrook.voxel-rpg.save.v1';
@@ -165,6 +167,8 @@ export function loadGame(): GameState {
     parsed.ui.pinnedProfessionGoalId ??= null;
     parsed.ui.pinnedRumorId ??= null;
     parsed.ui.mapWaypoint = sanitizeMapWaypoint(parsed.ui.mapWaypoint, parsed.clock ?? 0);
+    parsed.ui.minimapMode = sanitizeMinimapMode(parsed.ui.minimapMode);
+    parsed.ui.mapHiddenLayers = Array.isArray(parsed.ui.mapHiddenLayers) ? parsed.ui.mapHiddenLayers.map(sanitizeMapLayer).filter((layer, index, layers): layer is NonNullable<typeof layer> => Boolean(layer) && layers.indexOf(layer) === index) : [];
     parsed.ui.spellbookSearch ??= '';
     parsed.ui.spellbookKnowledgeFilter ??= 'known';
     parsed.ui.spellbookCircleFilter ??= 'all';
@@ -182,6 +186,8 @@ export function loadGame(): GameState {
     parsed.ui.skillRecentFilter ??= 'all';
     parsed.ui.skillProfessionFilter ??= 'all';
     parsed.ui.professionAtlasZoom ??= 1;
+    parsed.ui.professionAtlasSearch ??= '';
+    parsed.ui.selectedProfessionNodeId ??= null;
     parsed.ui.pinnedProfessionGoalId ??= null;
     parsed.ui.devTravel ??= false;
     parsed.ui.fadeUntil ??= 0;
@@ -194,6 +200,7 @@ export function loadGame(): GameState {
     parsed.ui.panels.journal ??= false;
     parsed.ui.panels.market ??= false;
     parsed.ui.panels.treasureMap ??= false;
+    parsed.ui.panels.map ??= parsed.ui.minimapMode === 'expanded';
     parsed.ui.panels.status ??= false;
     parsed.ui.hotbar ??= createDefaultHotbar();
     parsed.ui.hotbar = Array.from({ length: 10 }, (_, index) => parsed.ui.hotbar[index] ?? createDefaultHotbar()[index] ?? null);
@@ -207,12 +214,19 @@ export function loadGame(): GameState {
     parsed.ui.showDamageNumbers ??= true;
     parsed.ui.showSkillGainToasts ??= true;
     parsed.ui.showChatTabs ??= true;
+    parsed.ui.chatTab = sanitizeChatChannel(parsed.ui.chatTab);
+    parsed.ui.chatMode = sanitizeChatMode(parsed.ui.chatMode);
+    parsed.ui.chatHiddenChannels = Array.isArray(parsed.ui.chatHiddenChannels) ? parsed.ui.chatHiddenChannels.map(sanitizeChatChannel).filter((channel, index, channels) => channels.indexOf(channel) === index) : [];
+    parsed.ui.chatOpacity = clampNumber(parsed.ui.chatOpacity, 0.45, 1, 0.96);
+    parsed.ui.chatMessageRetention = Math.round(clampNumber(parsed.ui.chatMessageRetention, 40, 240, 120));
     parsed.ui.audio = sanitizeAudioSettings(parsed.ui.audio);
     parsed.ui.lockUILayout ??= false;
     parsed.ui.hudDensity ??= 'normal';
+    parsed.ui.movementMode = sanitizeMovementMode(parsed.ui.movementMode);
     parsed.ui.inputBindings = sanitizeInputBindings(parsed.ui.inputBindings);
     parsed.ui.keybindingCapture = null;
     parsed.ui.cameraSmoothing ??= 'medium';
+    parsed.ui.cameraRelativeMovement ??= true;
     parsed.ui.windowLayouts ??= {};
     parsed.ui.windowLayoutPreset ??= 'default';
     parsed.ui.windowFocusOrder ??= [];
@@ -313,9 +327,15 @@ export function loadGame(): GameState {
       if (entity.kind === 'resource') {
         const resource = entity as ResourceNodeEntity;
         const definition = resolveResourceDefinition(resource);
+        const freshResource = fresh.entities[resource.id];
         resource.resourceId = definition.id;
-        resource.name = resource.name || definition.name;
+        resource.name = resource.name || (freshResource?.kind === 'resource' ? freshResource.name : definition.name);
         resource.resourceType = definition.resourceType;
+        if (freshResource?.kind === 'resource') {
+          resource.classification ??= freshResource.classification;
+          resource.protected ??= freshResource.protected;
+          resource.visualVariant ??= freshResource.visualVariant;
+        }
         resource.toolItemId = definition.toolItemId;
         resource.skill = definition.skill;
         resource.yieldItemId = definition.yieldItemId;
@@ -367,7 +387,7 @@ export function loadGame(): GameState {
         if (empty >= 0) parsed.player.inventory.slots[empty] = createStack(itemId, quantity);
       }
     }
-    parsed.world.resourceTiles ??= createInitialResourceTiles();
+    parsed.world.resourceTiles = mergeResourceTilesWithDefaults(parsed.world.resourceTiles);
     parsed.world.magicFields ??= [];
     parsed.world.recallMark ??= null;
     parsed.world.time ??= {
@@ -444,6 +464,8 @@ export function loadGame(): GameState {
     parsed.dev.renderStats = {
       ...initialDev.renderStats,
       ...(parsed.dev.renderStats ?? {}),
+      perf: mergePerfSnapshot((parsed.dev.renderStats as ReturnType<typeof createInitialRenderStats> | undefined)?.perf),
+      loop: mergeLoopGovernorSnapshot((parsed.dev.renderStats as ReturnType<typeof createInitialRenderStats> | undefined)?.loop),
       budget: {
         ...('budget' in initialDev.renderStats ? initialDev.renderStats.budget : createInitialRenderStats().budget),
         ...((parsed.dev.renderStats as ReturnType<typeof createInitialRenderStats> | undefined)?.budget ?? {})
@@ -622,6 +644,10 @@ function sanitizeLoadedTransientState(state: GameState): void {
   state.dev.facingDebug = { ...initialDev.facingDebug };
 }
 
+function sanitizeMovementMode(value: unknown): MovementMode {
+  return value === 'mouse' || value === 'keyboardMouse' || value === 'keyboard' ? value : 'keyboard';
+}
+
 function sanitizeMapWaypoint(value: unknown, clock: number): GameState['ui']['mapWaypoint'] {
   if (!isRecord(value)) return null;
   if (typeof value.areaId !== 'string' || !areasHas(value.areaId)) return null;
@@ -641,6 +667,31 @@ function sanitizeMapWaypoint(value: unknown, clock: number): GameState['ui']['ma
 
 function areasHas(areaId: string): areaId is GameState['player']['currentArea'] {
   return areaId === 'town' || areaId === 'bank' || areaId === 'blacksmith' || areaId === 'forest' || areaId === 'crypt' || areaId === 'road' || areaId === 'housing';
+}
+
+const chatChannels: Array<GameState['ui']['chatTab']> = ['Local', 'Party', 'Guild', 'Global', 'System', 'Rumors'];
+const mapLayers: GameState['ui']['mapHiddenLayers'] = ['terrain', 'player', 'companions', 'services', 'objective', 'pinned', 'danger', 'entrances', 'housing'];
+
+function sanitizeChatChannel(value: unknown): GameState['ui']['chatTab'] {
+  return chatChannels.includes(value as GameState['ui']['chatTab']) ? (value as GameState['ui']['chatTab']) : 'Local';
+}
+
+function sanitizeChatMode(value: unknown): GameState['ui']['chatMode'] {
+  return value === 'expanded' || value === 'compact' || value === 'collapsed' || value === 'combatHidden' ? value : 'expanded';
+}
+
+function sanitizeMinimapMode(value: unknown): GameState['ui']['minimapMode'] {
+  return value === 'compact' || value === 'standard' || value === 'expanded' || value === 'hidden' ? value : 'standard';
+}
+
+function sanitizeMapLayer(value: unknown): GameState['ui']['mapHiddenLayers'][number] | null {
+  return mapLayers.includes(value as GameState['ui']['mapHiddenLayers'][number]) ? (value as GameState['ui']['mapHiddenLayers'][number]) : null;
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

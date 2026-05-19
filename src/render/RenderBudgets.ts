@@ -1,4 +1,6 @@
 import type { RenderStatsState } from '../game/types';
+import { createInitialPerfSnapshot } from '../game/PerfMonitor';
+import { createInitialLoopGovernorSnapshot } from '../game/LoopGovernor';
 
 export const renderPerformanceBudget = {
   roughDrawCalls: 450,
@@ -48,7 +50,9 @@ export function createInitialRenderStats(): RenderStatsState {
     iconRenderRequestCount: 0,
     cachedIconCount: 0,
     eventListenerCount: 0,
-    budget: { ...renderPerformanceBudget }
+    budget: { ...renderPerformanceBudget },
+    perf: createInitialPerfSnapshot(),
+    loop: createInitialLoopGovernorSnapshot()
   };
 }
 

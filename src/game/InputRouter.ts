@@ -77,6 +77,7 @@ export class InputRouter {
   updateMovement(): void {
     const mode = this.currentMode();
     if (mode !== 'normal' && mode !== 'building') return;
+    if (this.getState().ui.movementMode === 'mouse') return;
     const bindings = this.bindings();
     let dx = 0;
     let dz = 0;
@@ -86,7 +87,9 @@ export class InputRouter {
     if (isActionPressed(bindings, this.keys, 'moveRight')) dx += 1;
     if (dx || dz) {
       const len = Math.hypot(dx, dz);
-      const world = this.renderer.cameraController.screenMoveToWorldVector(dx / len, dz / len);
+      const world = this.getState().ui.cameraRelativeMovement === false
+        ? { x: dx / len, z: dz / len }
+        : this.renderer.cameraController.screenMoveToWorldVector(dx / len, dz / len);
       this.intent('WORLD_MOVE_TO');
       this.dispatch({ type: 'MOVE_BY', dx: world.x, dz: world.z });
     }
@@ -248,8 +251,13 @@ export class InputRouter {
       }
       return;
     }
-    this.intent('WORLD_MOVE_TO');
     this.dispatch({ type: 'SELECT_TARGET', target: { kind: 'tile', areaId: state.player.currentArea, position: world } });
+    if (state.ui.movementMode === 'keyboard') {
+      this.intent('WORLD_SELECT_TILE');
+      this.dispatch({ type: 'SHOW_PROMPT', message: 'Mouse movement disabled in Keyboard Only mode.' });
+      return;
+    }
+    this.intent('WORLD_MOVE_TO');
     this.dispatch({ type: 'MOVE_TO', position: world });
   }
 

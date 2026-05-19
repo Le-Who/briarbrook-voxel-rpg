@@ -46,6 +46,17 @@ export function DevOverlay(state: GameState): string {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
   const validation = state.dev.contentValidation;
+  const perf = state.dev.renderStats.perf;
+  const loop = state.dev.renderStats.loop;
+  const topWindowRenders = Object.entries(perf.windowRenderPerSecond)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const dirtyFlags = Object.entries(perf.dirty)
+    .filter(([, active]) => active)
+    .map(([key]) => key.replace(/[A-Z]/g, (char) => ` ${char.toLowerCase()}`));
+  const loopDirtyFlags = Object.entries(loop.dirtyFlags)
+    .filter(([, active]) => active)
+    .map(([key]) => key.replace(/[A-Z]/g, (char) => ` ${char.toLowerCase()}`));
 
   return `<section class="dev-overlay">
     <header>
@@ -86,6 +97,28 @@ export function DevOverlay(state: GameState): string {
         <p><span>Windows</span><b>${state.dev.renderStats.visibleWindowCount}/${state.dev.renderStats.budget.visibleWindowCount}</b></p>
         <p><span>Icons</span><b>${state.dev.renderStats.cachedIconCount}/${state.dev.renderStats.budget.cachedIconCount} cached · ${state.dev.renderStats.iconRenderRequestCount} renders</b></p>
         <p><span>Listeners</span><b>${state.dev.renderStats.eventListenerCount}/${state.dev.renderStats.budget.eventListenerCount}</b></p>
+        <h3>Perf Counters</h3>
+        <p><span>Sample</span><b>${perf.sampleWindowMs}ms · ${perf.avgFrameMs}/${perf.worstFrameMs}ms avg/worst</b></p>
+        <p><span>Long frames</span><b>${perf.longFramesPerSecond}/s</b></p>
+        <p><span>Subsystem avg</span><b>sim ${perf.subsystem.simulation.avgMs}ms · render ${perf.subsystem.renderer.avgMs}ms · UI ${perf.subsystem.ui.avgMs}ms</b></p>
+        <p><span>Subsystem calls</span><b>sim ${perf.subsystem.simulation.callsPerSecond}/s · UI ${perf.subsystem.ui.callsPerSecond}/s</b></p>
+        <p><span>UI renders</span><b>${perf.counters.uiRenderPerSecond}/s · HUD ${perf.counters.hudReplacementPerSecond}/s · queued ${perf.counters.hudQueuedPerSecond}/s</b></p>
+        <p><span>Labels / minimap</span><b>${perf.counters.labelWritePerSecond}/s · ${perf.counters.minimapUpdatePerSecond}/s</b></p>
+        <p><span>Tooltips</span><b>${perf.counters.tooltipSyncPerSecond}/s synced</b></p>
+        <p><span>Tooltip mount</span><b>${perf.tooltip.mountCount} mounted · ${perf.tooltip.unmountCount} unmounted</b></p>
+        <p><span>Tooltip updates</span><b>${perf.tooltip.contentUpdateCount} content · ${perf.tooltip.positionUpdateCount} position</b></p>
+        <p><span>Tooltip anchor</span><b>${escapeHtml(perf.tooltip.currentAnchorId ?? 'none')}</b></p>
+        <p><span>Tooltip reasons</span><b>${escapeHtml(perf.tooltip.lastShowReason)} / ${escapeHtml(perf.tooltip.lastHideReason)}</b></p>
+        <p><span>Ray/path</span><b>${perf.counters.raycastPerSecond}/s · ${perf.counters.pathfindingPerSecond}/s</b></p>
+        <p><span>Timers</span><b>${perf.counters.activeTimers} active · ${perf.counters.activeIntervals} intervals</b></p>
+        <p><span>Dirty</span><b>${dirtyFlags.length ? dirtyFlags.join(', ') : 'none'}</b></p>
+        ${topWindowRenders.length ? topWindowRenders.map(([id, count]) => `<p><span>${escapeHtml(id)}</span><b>${count}/s renders</b></p>`).join('') : '<p><span>Window renders</span><b>none sampled</b></p>'}
+        <h3>Loop Governor</h3>
+        <p><span>Activity mode</span><b>${loop.activityMode}</b></p>
+        <p><span>Cadence</span><b>sim ${loop.cadence.simulationHz}hz · render ${loop.cadence.renderHz}hz · UI ${loop.cadence.uiHz}hz · map ${loop.cadence.minimapHz}hz</b></p>
+        <p><span>Raycast / anim</span><b>${loop.cadence.raycastHz}hz · ${loop.cadence.animationPolicy}</b></p>
+        <p><span>Loop reason</span><b>${escapeHtml(loop.lastReason)}</b></p>
+        <p><span>Loop dirty</span><b>${loopDirtyFlags.length ? loopDirtyFlags.join(', ') : 'none'}</b></p>
         <p><span>Input mode</span><b>${state.dev.input.mode}</b></p>
         <p><span>Last raw</span><b>${state.dev.input.lastRawInput}</b></p>
         <p><span>Last intent</span><b>${state.dev.input.lastIntent}</b></p>

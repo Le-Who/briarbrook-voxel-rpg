@@ -1,4 +1,5 @@
 import type { AreaId, ResourceKind, ResourceTile, ResourceYieldEntry } from '../game/types';
+import { resourceNodeDefs, resourcePlacements } from './resources';
 
 const key = (areaId: AreaId, x: number, z: number, kind: ResourceKind) => `${areaId}:${Math.round(x)},${Math.round(z)}:${kind}`;
 
@@ -11,7 +12,8 @@ function tile(
   difficulty: number,
   yields: ResourceYieldEntry[],
   visualVariant = 0,
-  maxHarvests = 3
+  maxHarvests = 3,
+  metadata: Partial<Pick<ResourceTile, 'classification' | 'protected' | 'tileId' | 'entityId' | 'visualState'>> = {}
 ): ResourceTile {
   return {
     areaId,
@@ -19,6 +21,7 @@ function tile(
     z: Math.round(z),
     resourceKind,
     name,
+    ...metadata,
     depletedUntil: 0,
     currentYieldTable: yields,
     hiddenQuality: 0.75 + ((Math.abs(x * 17 + z * 31) % 30) / 100),
@@ -37,6 +40,18 @@ const commonTreeYields: ResourceYieldEntry[] = [
   { itemId: 'oak_logs', min: 1, max: 3, chance: 0.2, minSkill: 35 },
   { itemId: 'ash_logs', min: 1, max: 2, chance: 0.13, minSkill: 55 },
   { itemId: 'yew_logs', min: 1, max: 1, chance: 0.08, minSkill: 75 }
+];
+
+const lightTreeYields: ResourceYieldEntry[] = [
+  { itemId: 'logs', min: 2, max: 5, chance: 1 },
+  { itemId: 'kindling', min: 1, max: 2, chance: 0.22 },
+  { itemId: 'bark_fragment', min: 1, max: 1, chance: 0.16 }
+];
+
+const rareYewYields: ResourceYieldEntry[] = [
+  { itemId: 'logs', min: 3, max: 6, chance: 1 },
+  { itemId: 'yew_logs', min: 1, max: 2, chance: 0.45, minSkill: 55 },
+  { itemId: 'bark_fragment', min: 1, max: 2, chance: 0.28 }
 ];
 
 const oreYields: ResourceYieldEntry[] = [
@@ -64,21 +79,32 @@ export function createInitialResourceTiles(): Record<string, ResourceTile> {
     tiles[key(resource.areaId, resource.x, resource.z, resource.resourceKind)] = resource;
   };
 
-  for (let i = 0; i < 28; i += 1) {
-    const x = -12 + ((i * 5) % 24);
-    const z = -10 + ((i * 7) % 20);
-    if (Math.abs(x) < 3 && z > 3) continue;
-    add(tile('forest', x, z, 'tree', 'Tree', 22 + (i % 4) * 3, commonTreeYields, i % 5, 3 + (i % 2)));
-  }
-
-  [
-    [-11, -9],
-    [-6, -1],
-    [-1, 7],
-    [4, -9],
-    [9, -1],
-    [12, 7]
-  ].forEach(([x, z], index) => add(tile('town', x, z, 'tree', 'Tree', 25, commonTreeYields, index, 3)));
+  resourcePlacements
+    .filter((placement) => resourceNodeDefs[placement.resourceId]?.resourceType === 'tree')
+    .forEach((placement, index) => {
+      const definition = resourceNodeDefs[placement.resourceId];
+      const yields = placement.resourceId === 'ancient_yew' ? rareYewYields : placement.area === 'forest' ? commonTreeYields : lightTreeYields;
+      add(
+        tile(
+          placement.area,
+          placement.x,
+          placement.z,
+          'tree',
+          placement.name ?? definition.name,
+          placement.difficulty ?? 22 + (index % 4) * 3,
+          yields,
+          placement.visualVariant ?? index % 5,
+          placement.maxHarvests ?? (placement.area === 'forest' ? 3 + (index % 2) : 2),
+          {
+            classification: placement.classification ?? 'harvestableTree',
+            protected: placement.protected ?? false,
+            entityId: placement.id,
+            tileId: `${placement.area}:tree:${placement.x},${placement.z}`,
+            visualState: 'standing'
+          }
+        )
+      );
+    });
 
   [
     [5, -2],
@@ -110,4 +136,56 @@ export function createInitialResourceTiles(): Record<string, ResourceTile> {
 
 export function resourceTileKey(areaId: AreaId, x: number, z: number, kind: ResourceKind): string {
   return key(areaId, x, z, kind);
+}
+
+export function mergeResourceTilesWithDefaults(saved: unknown): Record<string, ResourceTile> {
+  const defaults = createInitialResourceTiles();
+  if (!saved || typeof saved !== 'object') return defaults;
+  const result: Record<string, ResourceTile> = { ...defaults };
+  Object.entries(saved as Record<string, Partial<ResourceTile>>).forEach(([tileKey, value]) => {
+    if (!value || typeof value !== 'object') return;
+    const fallback = defaults[tileKey];
+    const areaId = value.areaId ?? fallback?.areaId;
+    const x = typeof value.x === 'number' ? Math.round(value.x) : fallback?.x;
+    const z = typeof value.z === 'number' ? Math.round(value.z) : fallback?.z;
+    const resourceKind = value.resourceKind ?? fallback?.resourceKind;
+    if (!areaId || typeof x !== 'number' || typeof z !== 'number' || !resourceKind) return;
+    result[tileKey] = {
+      ...(fallback ?? {
+        areaId,
+        x,
+        z,
+        resourceKind,
+        name: value.name ?? 'Resource',
+        depletedUntil: 0,
+        currentYieldTable: [],
+        hiddenQuality: 1,
+        lastHarvestedAt: 0,
+        visualVariant: 0,
+        difficulty: 22,
+        harvestsRemaining: 1,
+        maxHarvests: 1
+      }),
+      ...value,
+      areaId,
+      x,
+      z,
+      resourceKind,
+      name: value.name ?? fallback?.name ?? 'Resource',
+      depletedUntil: Number(value.depletedUntil ?? fallback?.depletedUntil ?? 0),
+      currentYieldTable: Array.isArray(value.currentYieldTable) && value.currentYieldTable.length ? value.currentYieldTable : (fallback?.currentYieldTable ?? []),
+      hiddenQuality: Number(value.hiddenQuality ?? fallback?.hiddenQuality ?? 1),
+      lastHarvestedAt: Number(value.lastHarvestedAt ?? fallback?.lastHarvestedAt ?? 0),
+      visualVariant: Number(value.visualVariant ?? fallback?.visualVariant ?? 0),
+      difficulty: Number(value.difficulty ?? fallback?.difficulty ?? 22),
+      harvestsRemaining: Number(value.harvestsRemaining ?? fallback?.harvestsRemaining ?? fallback?.maxHarvests ?? 1),
+      maxHarvests: Number(value.maxHarvests ?? fallback?.maxHarvests ?? 1),
+      classification: value.classification ?? fallback?.classification,
+      protected: value.protected ?? fallback?.protected ?? false,
+      tileId: value.tileId ?? fallback?.tileId,
+      entityId: value.entityId ?? fallback?.entityId,
+      visualState: value.visualState ?? fallback?.visualState ?? 'standing'
+    };
+  });
+  return result;
 }

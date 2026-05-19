@@ -5,6 +5,7 @@ import {
   isEditableTargetDescriptor,
   parseHotbarSourceText,
   sanitizeStoredLayout,
+  windowDefinitions,
   windowLayerFor,
   windowQaWarningsForManagedWindows,
   type ManagedWindowQaObservation
@@ -28,6 +29,26 @@ describe('window layout helpers', () => {
 
     expect(rect.x).toBe(Math.round((1366 - 620) / 2));
     expect(rect.y + rect.height).toBeLessThanOrEqual(768 - 96);
+  });
+
+  it('docks chat bottom-left by default and keeps it above the hotbar safe area', () => {
+    const rect = defaultWindowRect('chat', { width: 380, height: 260 }, { width: 1366, height: 768 });
+
+    expect(rect.x).toBe(12);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(768 - 96);
+  });
+
+  it('opens the expanded map as a large managed planning window', () => {
+    const rect = defaultWindowRect('map', { width: 760, height: 560 }, { width: 1366, height: 768 });
+
+    expect(rect.x).toBe(Math.round((1366 - 760) / 2));
+    expect(rect.y + rect.height).toBeLessThanOrEqual(768 - 96);
+  });
+
+  it('marks inventory as a horizontally and vertically resizable managed window', () => {
+    expect(windowDefinitions.inventory.resizable).toBe('both');
+    expect(windowDefinitions.inventory.minWidth).toBeGreaterThanOrEqual(232);
+    expect(windowDefinitions.inventory.maxWidth).toBeGreaterThan(windowDefinitions.inventory.minWidth);
   });
 
   it('uses a full-width large-window fallback on small viewports while keeping the hotbar safe area', () => {

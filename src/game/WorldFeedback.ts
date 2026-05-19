@@ -159,8 +159,10 @@ export function hoverRingStyleForEntity(state: GameState, entity: Entity): Hover
 export function resourceActionLabel(state: GameState, entity: ResourceNodeEntity): { title: string; detail: string } | null {
   const tool = selectedToolItemId(state);
   if (!toolTargetsResourceKind(tool, resourceKindForNode(entity.resourceType))) return null;
+  if (entity.protected) return { title: 'Protected Tree', detail: 'Town tree is protected.' };
+  if (entity.depleted && entity.resourceType === 'tree') return { title: 'Tree recovering', detail: 'Try another tree.' };
   const toolName = itemDefs[tool as string]?.name ?? tool;
-  if (entity.resourceType === 'tree') return { title: 'Chop tree', detail: `${toolName} ready` };
+  if (entity.resourceType === 'tree') return { title: 'Tree - Chop', detail: `${toolName} ready` };
   if (entity.resourceType === 'ore') return { title: 'Mine rock face', detail: `${toolName} ready` };
   if (entity.resourceType === 'herb') return { title: 'Forage herbs', detail: `${toolName} ready` };
   return { title: 'Use tool', detail: `${toolName} ready` };

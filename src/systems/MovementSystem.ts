@@ -1,5 +1,6 @@
 import type { GameState, Vec3 } from '../game/types';
 import type { AreaManager } from '../world/AreaManager';
+import { recordPathfindingCall } from '../game/PerfMonitor';
 import { interruptPlayerAction, isPlayerStunned, refreshPlayerActionState, setPlayerActionState } from './ActionStateSystem';
 import { addSystemMessage } from './ChatSystem';
 import { faceActorTowardPosition, facePlayerFromVelocity, releaseFacingLock } from './FacingSystem';
@@ -115,6 +116,7 @@ export function updatePlayerMovement(state: GameState, areaManager: AreaManager,
 }
 
 function buildPath(state: GameState, areaManager: AreaManager, target: Vec3): Vec3[] {
+  recordPathfindingCall();
   const start = { x: Math.round(state.player.position.x), z: Math.round(state.player.position.z) };
   const goal = nearestWalkable(state, areaManager, Math.round(target.x), Math.round(target.z));
   if (!goal) return [];

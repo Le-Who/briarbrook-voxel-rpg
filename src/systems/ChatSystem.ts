@@ -32,8 +32,9 @@ export function addChat(
     tone: options.tone ?? 'normal',
     createdAt: state.clock
   });
-  if (state.chat.length > 80) {
-    state.chat.splice(0, state.chat.length - 80);
+  const retention = Math.round(Math.max(40, Math.min(240, Number(state.ui.chatMessageRetention) || 120)));
+  if (state.chat.length > retention) {
+    state.chat.splice(0, state.chat.length - retention);
   }
 }
 
@@ -49,7 +50,7 @@ export function updateAmbientChat(state: GameState, dt: number): void {
   if (!state.ui.panels.trade && Math.floor((state.clock - dt) / AMBIENT_CHAT_INTERVAL_SECONDS) !== Math.floor(state.clock / AMBIENT_CHAT_INTERVAL_SECONDS)) {
     const activeEvent = state.world.activeEvents?.find((event) => event.discovered) ?? null;
     if (activeEvent) {
-      addChat(state, activeEvent.rumor, { speaker: activeEvent.type === 'market_day' ? 'Town Crier' : 'Rumor', tone: activeEvent.type === 'bandit_ambush' || activeEvent.type === 'crypt_spill' ? 'danger' : 'normal' });
+      addChat(state, activeEvent.rumor, { channel: 'Rumors', speaker: activeEvent.type === 'market_day' ? 'Town Crier' : 'Rumor', tone: activeEvent.type === 'bandit_ambush' || activeEvent.type === 'crypt_spill' ? 'danger' : 'normal' });
       return;
     }
     const line = socialLines[socialCursor % socialLines.length];

@@ -8,7 +8,9 @@ function makeSimulation(): Simulation {
 
 describe('modern real-time simulation core', () => {
   it('queues dispatched gameplay actions and processes them on fixed ticks', () => {
-    const simulation = makeSimulation();
+    const state = createInitialGameState();
+    state.ui.movementMode = 'mouse';
+    const simulation = new Simulation(state);
     const startClock = simulation.state.clock;
 
     simulation.dispatch({ type: 'MOVE_TO', position: { x: 3.2, y: 0, z: 4.8 } });

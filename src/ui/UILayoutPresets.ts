@@ -1,4 +1,4 @@
-import type { GameState, HudDensityMode, MarketViewMode, SpellbookViewMode, TooltipDetailMode, UILayoutPreset } from '../game/types';
+import type { ChatPanelMode, GameState, HudDensityMode, MarketViewMode, MinimapMode, SpellbookViewMode, TooltipDetailMode, UILayoutPreset } from '../game/types';
 
 export interface UILayoutPresetDefinition {
   id: UILayoutPreset;
@@ -12,6 +12,8 @@ export interface UILayoutPresetDefinition {
   spellbookViewMode: SpellbookViewMode;
   marketView: MarketViewMode;
   showChatTabs: boolean;
+  chatMode: ChatPanelMode;
+  minimapMode: MinimapMode;
 }
 
 export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> = {
@@ -26,7 +28,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: true, inventory: false, spellbook: false, skills: false, market: false, crafting: false, combatActions: false },
     spellbookViewMode: 'grid',
     marketView: 'work',
-    showChatTabs: true
+    showChatTabs: true,
+    chatMode: 'expanded',
+    minimapMode: 'standard'
   },
   compact: {
     id: 'compact',
@@ -39,7 +43,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: false, inventory: true, spellbook: false, skills: false, market: false, crafting: false, combatActions: false },
     spellbookViewMode: 'grid',
     marketView: 'work',
-    showChatTabs: false
+    showChatTabs: false,
+    chatMode: 'compact',
+    minimapMode: 'compact'
   },
   large: {
     id: 'large',
@@ -52,7 +58,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: true, inventory: true, spellbook: false, skills: false, market: false, crafting: false, combatActions: false },
     spellbookViewMode: 'list',
     marketView: 'work',
-    showChatTabs: true
+    showChatTabs: true,
+    chatMode: 'expanded',
+    minimapMode: 'standard'
   },
   combat: {
     id: 'combat',
@@ -65,7 +73,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: false, inventory: true, spellbook: false, skills: false, market: false, crafting: false, combatActions: true },
     spellbookViewMode: 'grid',
     marketView: 'work',
-    showChatTabs: false
+    showChatTabs: false,
+    chatMode: 'combatHidden',
+    minimapMode: 'compact'
   },
   crafting: {
     id: 'crafting',
@@ -78,7 +88,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: false, inventory: true, spellbook: false, skills: true, market: true, crafting: true, combatActions: false },
     spellbookViewMode: 'list',
     marketView: 'work',
-    showChatTabs: true
+    showChatTabs: true,
+    chatMode: 'compact',
+    minimapMode: 'standard'
   },
   exploration: {
     id: 'exploration',
@@ -91,7 +103,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: true, inventory: false, spellbook: false, skills: false, market: false, crafting: false, combatActions: false },
     spellbookViewMode: 'grid',
     marketView: 'work',
-    showChatTabs: false
+    showChatTabs: false,
+    chatMode: 'collapsed',
+    minimapMode: 'compact'
   },
   stream: {
     id: 'stream',
@@ -104,7 +118,9 @@ export const uiLayoutPresets: Record<UILayoutPreset, UILayoutPresetDefinition> =
     visiblePanels: { guide: false, inventory: false, spellbook: false, skills: false, market: false, crafting: false, combatActions: false },
     spellbookViewMode: 'grid',
     marketView: 'work',
-    showChatTabs: false
+    showChatTabs: false,
+    chatMode: 'collapsed',
+    minimapMode: 'compact'
   }
 };
 
@@ -120,6 +136,9 @@ export function applyUiLayoutPresetSettings(state: GameState, presetId: UILayout
   state.ui.spellbookViewMode = preset.spellbookViewMode;
   state.ui.marketView = preset.marketView;
   state.ui.showChatTabs = preset.showChatTabs;
+  state.ui.chatMode = preset.chatMode;
+  state.ui.minimapMode = preset.minimapMode;
+  state.ui.panels.map = preset.minimapMode === 'expanded';
   Object.entries(preset.visiblePanels).forEach(([panel, open]) => {
     state.ui.panels[panel] = Boolean(open);
   });

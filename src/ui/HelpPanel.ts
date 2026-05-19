@@ -12,6 +12,11 @@ export function HelpPanel(state: GameState): string {
   const approachMode = state.player.combatPreferences.approachMode;
   const approachLabel = approachMode === 'melee_only' ? 'Melee Only' : approachMode[0].toUpperCase() + approachMode.slice(1);
   const approachHint = 'Manual never moves for combat actions. Assist moves only for action range. Aggressive allows attack approach. Melee Only limits approach to melee swings.';
+  const movementMode = state.ui.movementMode ?? 'keyboard';
+  const movementLabel = movementModeLabel(movementMode);
+  const movementRows = movementHelpRows(movementMode)
+    .map((row) => `<div><span>${row.label}</span><b>${row.value}</b></div>`)
+    .join('');
   const cameraSmoothing = state.ui.cameraSmoothing ?? 'medium';
   const cameraLabel = cameraSmoothing[0].toUpperCase() + cameraSmoothing.slice(1);
   const layoutButtons = Object.values(uiLayoutPresets)
@@ -23,8 +28,7 @@ export function HelpPanel(state: GameState): string {
     <div class="help-body">
       <b>First Ten Minutes</b>
       <p>Talk to Mira, open Skills, use one tool, check your pack, then bank or buy before taking the road.</p>
-      <div><span>Move</span><b>WASD / Click</b></div>
-      <div><span>Interact</span><b>E / Click</b></div>
+      ${movementRows}
       <div><span>Hotbar</span><b>1-0</b></div>
       <div><span>Inventory</span><b>I</b></div>
       <div><span>Skills</span><b>K</b></div>
@@ -39,6 +43,9 @@ export function HelpPanel(state: GameState): string {
       <div class="help-setting"><span>Damage Numbers</span><b>${state.ui.showDamageNumbers ? 'On' : 'Off'}</b><button data-action="toggle-damage-numbers">${state.ui.showDamageNumbers ? 'Hide' : 'Show'}</button></div>
       <div class="help-setting"><span>Skill Toasts</span><b>${state.ui.showSkillGainToasts ? 'On' : 'Off'}</b><button data-action="toggle-skill-gain-toasts">${state.ui.showSkillGainToasts ? 'Hide' : 'Show'}</button></div>
       <div class="help-setting"><span>Chat Tabs</span><b>${state.ui.showChatTabs ? 'On' : 'Off'}</b><button data-action="toggle-chat-tabs">${state.ui.showChatTabs ? 'Hide' : 'Show'}</button></div>
+      <div class="help-setting"><span>Minimap</span><b>${state.ui.minimapMode}</b>
+        ${(['compact', 'standard', 'expanded', 'hidden'] as const).map((mode) => `<button class="${state.ui.minimapMode === mode ? 'active' : ''}" data-minimap-mode="${mode}">${mode === 'expanded' ? 'Map' : mode[0].toUpperCase()}</button>`).join('')}
+      </div>
       ${audioSettingsEditor(state)}
       <div class="help-setting"><span>Lock Layout</span><b>${state.ui.lockUILayout ? 'On' : 'Off'}</b><button data-action="toggle-lock-ui-layout">${state.ui.lockUILayout ? 'Unlock' : 'Lock'}</button></div>
       <div class="help-actions"><button data-action="save-game">Save</button><button data-action="reset-ui-layout">Reset Layout</button><button data-action="toggle-pause" class="primary">${state.paused ? 'Resume' : 'Pause'}</button><button data-action="toggle-panel" data-panel="journal">Journal</button></div>
@@ -46,6 +53,9 @@ export function HelpPanel(state: GameState): string {
         ${(['low', 'medium', 'high'] as const).map((mode) => `<button class="${cameraSmoothing === mode ? 'active' : ''}" data-camera-smoothing="${mode}">${mode[0].toUpperCase()}</button>`).join('')}
       </div>
       <div class="help-setting layout-setting"><span>UI Layout</span><b>${state.ui.windowLayoutPreset}</b><button data-action="reset-ui-layout">Reset</button>${layoutButtons}</div>
+      <div class="help-setting movement-setting"><span>Movement Mode</span><b>${movementLabel}</b>
+        ${(['keyboard', 'mouse', 'keyboardMouse'] as const).map((mode) => `<button class="${movementMode === mode ? 'active' : ''}" data-movement-mode="${mode}">${movementModeButtonLabel(mode)}</button>`).join('')}
+      </div>
       <div class="help-setting combat-setting" data-tooltip-id="settings:combat-approach" data-tooltip-source="settings" data-tooltip="${attr(approachHint)}">
         <span>Auto-approach</span><b>${approachLabel}</b>
         ${(['manual', 'assist', 'aggressive', 'melee_only'] as const).map((mode) => `<button class="${approachMode === mode ? 'active' : ''}" data-combat-approach-mode="${mode}">${mode === 'melee_only' ? 'Melee' : mode[0].toUpperCase() + mode.slice(1)}</button>`).join('')}
@@ -53,6 +63,7 @@ export function HelpPanel(state: GameState): string {
       ${keybindings}
       <div class="help-setting"><span>Auto-attack on select</span><b>${state.player.combatPreferences.autoAttackOnTargetSelect ? 'On' : 'Off'}</b><button data-action="toggle-auto-attack-on-select">${state.player.combatPreferences.autoAttackOnTargetSelect ? 'Disable' : 'Enable'}</button></div>
       <div class="help-setting"><span>Stop movement when casting</span><b>${state.player.combatPreferences.stopMovementWhenCasting ? 'On' : 'Off'}</b><button data-action="toggle-stop-movement-when-casting">${state.player.combatPreferences.stopMovementWhenCasting ? 'Disable' : 'Enable'}</button></div>
+      <div class="help-setting"><span>Camera-relative movement</span><b>${state.ui.cameraRelativeMovement ? 'On' : 'Off'}</b><button data-action="toggle-camera-relative-movement">${state.ui.cameraRelativeMovement ? 'Disable' : 'Enable'}</button></div>
       <b>Systems</b>
       <div><span>Skills</span><b>Rise by use; future skills are labeled in Skills.</b></div>
       <div><span>Gathering</span><b>Axe trees, pickaxe rock faces, scissors herbs.</b></div>
@@ -63,6 +74,40 @@ export function HelpPanel(state: GameState): string {
       <div><span>Housing</span><b>Travel to your plot, then build inside the fenced area.</b></div>
     </div>
   </section>`;
+}
+
+function movementModeLabel(mode: GameState['ui']['movementMode']): string {
+  if (mode === 'keyboard') return 'Keyboard Only';
+  if (mode === 'mouse') return 'Mouse Only';
+  return 'Keyboard + Mouse';
+}
+
+function movementModeButtonLabel(mode: GameState['ui']['movementMode']): string {
+  if (mode === 'keyboard') return 'Keyboard';
+  if (mode === 'mouse') return 'Mouse';
+  return 'Both';
+}
+
+function movementHelpRows(mode: GameState['ui']['movementMode']): Array<{ label: string; value: string }> {
+  if (mode === 'mouse') {
+    return [
+      { label: 'Move', value: 'Click ground' },
+      { label: 'Interact', value: 'Click target' },
+      { label: 'Keyboard movement', value: 'Disabled' }
+    ];
+  }
+  if (mode === 'keyboardMouse') {
+    return [
+      { label: 'Move', value: 'WASD / Arrows / Click ground' },
+      { label: 'Interact', value: 'E / Click target' },
+      { label: 'Move by mouse', value: 'Enabled' }
+    ];
+  }
+  return [
+    { label: 'Move', value: 'WASD / Arrows' },
+    { label: 'Interact', value: 'E / Click target' },
+    { label: 'Move by mouse', value: 'Disabled' }
+  ];
 }
 
 function audioSettingsEditor(state: GameState): string {

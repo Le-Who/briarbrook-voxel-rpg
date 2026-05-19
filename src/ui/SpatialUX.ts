@@ -1,11 +1,9 @@
 import { areas } from '../data/areas';
 import { zoneForArea } from '../data/riskZones';
 import { treasureMapDefinitions } from '../data/treasure';
-import type { AreaId, Entity, GameState, MapWaypointSource, Vec3 } from '../game/types';
+import type { AreaId, Entity, GameState, MapLayerId, MapWaypointSource, Vec3 } from '../game/types';
 import { deriveFirstHourDirector } from '../systems/FirstHourDirector';
 import { getItemCount } from '../systems/InventorySystem';
-
-export type MapLayerId = 'terrain' | 'player' | 'companions' | 'services' | 'objective' | 'pinned' | 'danger' | 'entrances' | 'housing';
 
 export interface SpatialMarker {
   id: string;

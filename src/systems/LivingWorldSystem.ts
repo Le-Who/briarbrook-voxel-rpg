@@ -147,7 +147,7 @@ export function triggerWorldEvent(state: GameState, type: WorldEventType): World
   applyEventStart(state, event);
   state.world.activeEvents.push(event);
   state.world.discoveredRumorIds = Array.from(new Set([...state.world.discoveredRumorIds, event.id]));
-  addChat(state, `${event.title}: ${event.rumor}`, { speaker: 'Rumor', tone: type === 'bandit_ambush' || type === 'crypt_spill' ? 'danger' : 'normal' });
+  addChat(state, `${event.title}: ${event.rumor}`, { channel: 'Rumors', speaker: 'Rumor', tone: type === 'bandit_ambush' || type === 'crypt_spill' ? 'danger' : 'normal' });
   return event;
 }
 
@@ -355,7 +355,7 @@ function maybeAddWorldRumor(state: GameState, dt: number): void {
   if (!state.world.activeEvents.length) return;
   if (Math.floor((state.clock - dt) / 19) === Math.floor(state.clock / 19)) return;
   const event = state.world.activeEvents[Math.floor(state.clock / 19) % state.world.activeEvents.length];
-  addChat(state, event.rumor, { speaker: event.type === 'market_day' ? 'Town Crier' : 'Rumor', tone: event.type === 'bandit_ambush' || event.type === 'crypt_spill' ? 'danger' : 'normal' });
+  addChat(state, event.rumor, { channel: 'Rumors', speaker: event.type === 'market_day' ? 'Town Crier' : 'Rumor', tone: event.type === 'bandit_ambush' || event.type === 'crypt_spill' ? 'danger' : 'normal' });
 }
 
 function decayResourcePressure(state: GameState): void {

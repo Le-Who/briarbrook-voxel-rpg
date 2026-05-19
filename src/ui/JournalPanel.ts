@@ -123,7 +123,7 @@ export function JournalPanel(state: GameState): string {
     'Defeat the crypt miniboss: prepare Night Sight, bandages, potions, and a trap check.'
   ];
 
-  return `<section class="panel journal-panel" data-window-id="journal">
+  return `<section class="panel journal-panel ui-contained-window" data-window-id="journal">
     <header><span>Journal</span><button data-action="toggle-panel" data-panel="journal">x</button></header>
     <div class="journal-body">
       <div class="journal-section route" data-journal-section="current-objective">

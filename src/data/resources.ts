@@ -1,4 +1,5 @@
-import type { AreaId, ResourceNodeEntity, SkillName } from '../game/types';
+import { systemicTreeResourcePlacements } from './treeResources';
+import type { AreaId, ResourceNodeEntity, SkillName, TreeResourceClassification } from '../game/types';
 
 export interface ResourceNodeDefinition {
   id: string;
@@ -21,6 +22,11 @@ export interface ResourcePlacement {
   x: number;
   z: number;
   name?: string;
+  classification?: TreeResourceClassification;
+  protected?: boolean;
+  difficulty?: number;
+  maxHarvests?: number;
+  visualVariant?: number;
 }
 
 export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
@@ -117,7 +123,7 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
   }
 };
 
-export const resourcePlacements: ResourcePlacement[] = [
+const baseResourcePlacements: ResourcePlacement[] = [
   { id: 'res_tree_1', area: 'forest', resourceId: 'oak_tree', x: -3, z: 0 },
   { id: 'res_tree_2', area: 'forest', resourceId: 'pine_tree', x: -5, z: -2 },
   { id: 'res_tree_3', area: 'forest', resourceId: 'birch_tree', x: 2, z: 2 },
@@ -136,6 +142,8 @@ export const resourcePlacements: ResourcePlacement[] = [
   { id: 'res_crypt_iron_1', area: 'crypt', resourceId: 'iron_vein', x: -6, z: -6, name: 'Crypt Iron Seam' },
   { id: 'res_crypt_copper_1', area: 'crypt', resourceId: 'copper_vein', x: 10, z: -4, name: 'Old Mine Copper' }
 ];
+
+export const resourcePlacements: ResourcePlacement[] = [...baseResourcePlacements, ...systemicTreeResourcePlacements];
 
 export function resolveResourceDefinition(entity: Partial<ResourceNodeEntity>): ResourceNodeDefinition {
   if (entity.resourceId && resourceNodeDefs[entity.resourceId]) return resourceNodeDefs[entity.resourceId];

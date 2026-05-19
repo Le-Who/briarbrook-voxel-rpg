@@ -31,8 +31,36 @@ describe('profession UI', () => {
     expect(html).toContain('Cartography');
     expect(html).toContain('Treasure Map');
     expect(html).toContain('Not a passive tree');
+    expect(html).toContain('profession-atlas-redesign');
+    expect(html).toContain('data-action="atlas-search"');
+    expect(html).toContain('data-atlas-zoom="fit"');
+    expect(html).toContain('data-node-type="resource"');
+    expect(html).toContain('data-node-type="output"');
+    expect(html).toContain('data-node-type="service"');
+    expect(html).toContain('data-node-type="future"');
+    expect(html).toContain('atlas-node-detail');
     expect(html).toContain('not-trainable');
     expect(html).toContain('pinned');
+  });
+
+  it('shows selected atlas node details and pins them into the journal', () => {
+    const state = createInitialGameState();
+    state.ui.panels.skills = true;
+    state.ui.panels.journal = true;
+    state.ui.skillView = 'atlas';
+    state.ui.professionFilter = 'treasure_hunter';
+    state.ui.selectedProfessionNodeId = 'skill_lockpicking';
+    state.ui.pinnedProfessionGoalId = 'skill_lockpicking';
+
+    const skillsHtml = SkillsPanel(state);
+    const journalHtml = JournalPanel(state);
+
+    expect(skillsHtml).toContain('atlas-detail-card');
+    expect(skillsHtml).toContain('Lockpicking');
+    expect(skillsHtml).toContain('Trained by');
+    expect(skillsHtml).toContain('data-pin-profession-goal="skill_lockpicking"');
+    expect(journalHtml).toContain('Pinned Profession Goal');
+    expect(journalHtml).toContain('Lockpicking');
   });
 
   it('renders mastery milestones and journal pinned profession goals', () => {

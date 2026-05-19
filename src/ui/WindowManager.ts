@@ -101,6 +101,8 @@ const panelKeyByClass: Array<[string, string]> = [
   ['skills-panel', 'skills'],
   ['journal-panel', 'journal'],
   ['market-panel', 'market'],
+  ['chat-panel', 'chat'],
+  ['map-panel', 'map'],
   ['bank-panel', 'bank'],
   ['crafting-panel', 'crafting'],
   ['character-panel', 'character'],
@@ -112,11 +114,13 @@ const panelKeyByClass: Array<[string, string]> = [
 ];
 
 const windowRegistry: Record<string, WindowRegistration> = {
-  inventory: windowRegistration('inventory', 'Inventory', 'right-side', { minWidth: 222 }),
+  inventory: windowRegistration('inventory', 'Inventory', 'right-side', { minWidth: 232, minHeight: 280, maxWidth: 520, canResize: true }),
   spellbook: windowRegistration('spellbook', 'Spellbook', 'center', { minWidth: 360, minHeight: 360 }),
   skills: windowRegistration('skills', 'Skills', 'center-left', { minWidth: 320, minHeight: 360 }),
   journal: windowRegistration('journal', 'Journal', 'center', { minWidth: 420, minHeight: 360 }),
   market: windowRegistration('market', 'Market', 'center-right', { minWidth: 520, minHeight: 340 }),
+  chat: windowRegistration('chat', 'Chat', 'bottom-left', { minWidth: 280, minHeight: 150, canResize: true }),
+  map: windowRegistration('map', 'Map', 'center', { minWidth: 520, minHeight: 360, canResize: true }),
   bank: windowRegistration('bank', 'Bank', 'center', { minWidth: 250 }),
   crafting: windowRegistration('crafting', 'Crafting', 'center', { minWidth: 520, minHeight: 420 }),
   character: windowRegistration('character', 'Character', 'center-left', { minWidth: 360 }),
@@ -127,7 +131,7 @@ const windowRegistry: Record<string, WindowRegistration> = {
   merchant: windowRegistration('merchant', 'Merchant', 'center', { minWidth: 420, isModal: true })
 };
 
-const largeWindowKeys = new Set(['spellbook', 'journal', 'market', 'crafting', 'treasureMap', 'trade', 'merchant', 'help']);
+const largeWindowKeys = new Set(['spellbook', 'journal', 'market', 'map', 'crafting', 'treasureMap', 'trade', 'merchant', 'help']);
 
 function windowRegistration(
   id: string,
@@ -236,8 +240,8 @@ export function clampWindowRect(rect: WindowRect, viewport: ViewportSize, option
 }
 
 export function defaultWindowRect(key: string, size: Pick<WindowRect, 'width' | 'height'>, viewport: ViewportSize): WindowRect {
-  const width = Math.max(260, size.width);
-  const height = Math.max(DEFAULT_TITLEBAR_HEIGHT, size.height);
+  const width = key === 'chat' ? 380 : Math.max(260, size.width);
+  const height = key === 'chat' ? 260 : Math.max(DEFAULT_TITLEBAR_HEIGHT, size.height);
   const centerX = Math.round((viewport.width - width) / 2);
   const bottomY = viewport.height - DEFAULT_SAFE_BOTTOM - DEFAULT_MARGIN - height;
   const rightX = viewport.width - DEFAULT_MARGIN - width;
@@ -252,6 +256,8 @@ export function defaultWindowRect(key: string, size: Pick<WindowRect, 'width' | 
     character: { x: 46, y: Math.min(166, bottomY) },
     help: { x: 344, y: 14 },
     build: { x: 12, y: Math.min(184, bottomY) },
+    chat: { x: 12, y: Math.max(DEFAULT_MARGIN, bottomY) },
+    map: { x: centerX, y: Math.min(74, bottomY) },
     treasureMap: { x: centerX, y: Math.min(104, bottomY) },
     trade: { x: centerX, y: Math.min(Math.round(viewport.height * 0.22), bottomY) },
     merchant: { x: centerX, y: Math.min(Math.round(viewport.height * 0.22), bottomY) }
@@ -364,6 +370,7 @@ export class WindowManager {
   private activeDrag: ActiveWindowDrag | null = null;
   private focusCounter = 0;
   private reportedQaWarnings = new Set<string>();
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(private root: HTMLElement) {
     this.savedLayout = this.loadSavedLayout();
@@ -371,6 +378,8 @@ export class WindowManager {
 
   decorate(container: HTMLElement = this.root): void {
     const viewport = viewportFromWindow();
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver((entries) => this.handleResizeEntries(entries)) : null;
     const panels = Array.from(container.querySelectorAll<HTMLElement>('.panel'));
     panels.forEach((panel) => {
       const key = windowKeyForPanel(panel);
@@ -386,8 +395,9 @@ export class WindowManager {
       };
       const current = this.windows.get(key);
       const persisted = this.savedLayout[key];
-      const seed = current ?? (persisted ? { ...persisted, width: size.width, height: size.height } : null);
-      const rect = seed ? clampWindowRect({ ...seed, width: size.width, height: size.height }, viewport) : defaultWindowRect(key, size, viewport);
+      const seed = current ? { x: current.x, y: current.y, width: current.width, height: current.height } : persisted ?? null;
+      const seedSize = seed ? { width: Math.max(registration.minWidth, seed.width), height: Math.max(registration.minHeight, seed.height) } : size;
+      const rect = seed ? clampWindowRect({ ...seed, ...seedSize }, viewport) : defaultWindowRect(key, size, viewport);
       const state: ManagedWindowState = {
         id: key,
         title: registration.title,
@@ -415,6 +425,7 @@ export class WindowManager {
       panel.dataset.windowModal = String(registration.isModal);
       panel.classList.add('managed-window');
       panel.classList.toggle('window-modal', registration.isModal);
+      panel.classList.toggle('window-resizable', registration.canResize);
       panel.classList.toggle('window-fullscreen-fallback', viewport.width < SMALL_VIEWPORT_WIDTH && largeWindowKeys.has(key));
       if (registration.canDrag) {
         header.dataset.windowDragHandle = 'true';
@@ -424,6 +435,7 @@ export class WindowManager {
         header.removeAttribute('title');
       }
       this.applyPanelRect(panel, state);
+      if (registration.canResize) this.resizeObserver?.observe(panel);
     });
     this.assertWindowHealth(container, viewport);
   }
@@ -573,9 +585,34 @@ export class WindowManager {
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
     panel.style.transform = 'none';
-    panel.style.maxWidth = `${rect.width}px`;
-    panel.style.maxHeight = `${rect.height}px`;
+    panel.style.minWidth = `${rect.minWidth}px`;
+    panel.style.minHeight = `${rect.minHeight}px`;
+    panel.style.width = `${rect.width}px`;
+    panel.style.height = `${rect.height}px`;
+    panel.style.maxWidth = `${rect.canResize ? rect.maxWidth : rect.width}px`;
+    panel.style.maxHeight = `${rect.canResize ? rect.maxHeight : rect.height}px`;
     panel.style.zIndex = String(rect.zIndex);
+    if (rect.canResize) panel.dataset.windowResize = 'true';
+    else delete panel.dataset.windowResize;
+  }
+
+  private handleResizeEntries(entries: ResizeObserverEntry[]): void {
+    const viewport = viewportFromWindow();
+    for (const entry of entries) {
+      const panel = entry.target instanceof HTMLElement ? entry.target : null;
+      const key = panel?.dataset.windowKey;
+      const current = key ? this.windows.get(key) : null;
+      if (!panel || !key || !current?.canResize) continue;
+      const domRect = panel.getBoundingClientRect();
+      const measuredWidth = Math.round(domRect.width || entry.contentRect.width || panel.offsetWidth || current.width);
+      const measuredHeight = Math.round(domRect.height || entry.contentRect.height || panel.offsetHeight || current.height);
+      const rect = clampWindowRect({ ...current, width: Math.max(current.minWidth, measuredWidth), height: Math.max(current.minHeight, measuredHeight) }, viewport);
+      if (Math.abs(rect.width - current.width) < 2 && Math.abs(rect.height - current.height) < 2) continue;
+      const next = { ...current, ...rect };
+      this.windows.set(key, next);
+      this.applyPanelRect(panel, next);
+      this.persistLayout();
+    }
   }
 
   private assertWindowHealth(container: HTMLElement, viewport: ViewportSize): void {
@@ -637,7 +674,7 @@ function isDevRuntime(): boolean {
   return Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 }
 
-export type WindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help';
+export type WindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help' | 'chat' | 'map';
 export type WindowLayout = WindowRect;
 export type ResizeMode = 'none' | 'horizontal' | 'vertical' | 'both';
 export type WindowPreset = 'default' | 'compact' | 'large' | 'combat' | 'crafting' | 'exploration' | 'stream';
@@ -664,12 +701,14 @@ const EDGE = 8;
 const HOTBAR_SAFE = 96;
 
 export const windowDefinitions: Record<WindowId, WindowDefinition> = {
-  inventory: { id: 'inventory', title: 'Inventory', minWidth: 222, minHeight: 260, maxWidth: 380, maxHeight: 560, resizable: 'vertical', zIndex: 32, safeAreaBehavior: 'avoid-hotbar' },
+  inventory: { id: 'inventory', title: 'Inventory', minWidth: 232, minHeight: 280, maxWidth: 520, maxHeight: 620, resizable: 'both', zIndex: 32, safeAreaBehavior: 'avoid-hotbar' },
   spellbook: { id: 'spellbook', title: 'Spellbook', minWidth: 620, minHeight: 400, maxWidth: 980, maxHeight: 720, resizable: 'both', zIndex: 48, safeAreaBehavior: 'avoid-hotbar' },
   skills: { id: 'skills', title: 'Skills', minWidth: 360, minHeight: 360, maxWidth: 900, maxHeight: 720, resizable: 'both', zIndex: 44, safeAreaBehavior: 'avoid-hotbar' },
   journal: { id: 'journal', title: 'Journal', minWidth: 560, minHeight: 360, maxWidth: 940, maxHeight: 720, resizable: 'both', zIndex: 45, safeAreaBehavior: 'avoid-hotbar' },
   market: { id: 'market', title: 'Market', minWidth: 620, minHeight: 360, maxWidth: 1080, maxHeight: 720, resizable: 'both', zIndex: 46, safeAreaBehavior: 'avoid-hotbar' },
-  help: { id: 'help', title: 'Help', minWidth: 380, minHeight: 300, maxWidth: 620, maxHeight: 620, resizable: 'both', zIndex: 42, safeAreaBehavior: 'avoid-hotbar' }
+  help: { id: 'help', title: 'Help', minWidth: 380, minHeight: 300, maxWidth: 620, maxHeight: 620, resizable: 'both', zIndex: 42, safeAreaBehavior: 'avoid-hotbar' },
+  chat: { id: 'chat', title: 'Chat', minWidth: 280, minHeight: 150, maxWidth: 640, maxHeight: 480, resizable: 'both', zIndex: 38, safeAreaBehavior: 'avoid-hotbar' },
+  map: { id: 'map', title: 'Map', minWidth: 520, minHeight: 360, maxWidth: 1040, maxHeight: 760, resizable: 'both', zIndex: 47, safeAreaBehavior: 'avoid-hotbar' }
 };
 
 export const managedWindowIds = Object.keys(windowDefinitions) as WindowId[];
@@ -724,22 +763,30 @@ function presetLayout(id: WindowId, viewport: ViewportSize, preset: WindowPreset
   };
 
   if (preset === 'combat') {
-    if (id === 'inventory') return { x: viewport.width - 246, y: 300, width: 222, height: 330 };
+    if (id === 'inventory') return { x: viewport.width - 286, y: 300, width: 270, height: 360 };
     if (id === 'skills') return { x: 16, y: 170, width: 380, height: 440 };
     if (id === 'help') return { x: 344, y: 14, width: 420, height: 560 };
+    if (id === 'chat') return { x: EDGE, y: viewport.height - HOTBAR_SAFE - 178, width: 300, height: 170 };
+    if (id === 'map') return safeLarge(size(820, 540).width, size(820, 540).height, 66);
   }
   if (preset === 'crafting') {
-    if (id === 'inventory') return { x: viewport.width - 260, y: 222, width: 242, height: 440 };
+    if (id === 'inventory') return { x: viewport.width - 304, y: 222, width: 286, height: 440 };
     if (id === 'market') return safeLarge(size(920, 560).width, size(920, 560).height, 76);
     if (id === 'skills') return { x: EDGE, y: 126, width: 390, height: 430 };
+    if (id === 'chat') return { x: EDGE, y: viewport.height - HOTBAR_SAFE - 208, width: 340, height: 200 };
+    if (id === 'map') return safeLarge(size(860, 540).width, size(860, 540).height, 70);
   }
   if (preset === 'exploration' || preset === 'stream') {
-    if (id === 'inventory') return { x: viewport.width - 226, y: viewport.height - HOTBAR_SAFE - 268, width: 210, height: 260 };
+    if (id === 'inventory') return { x: viewport.width - 248, y: viewport.height - HOTBAR_SAFE - 288, width: 232, height: 280 };
     if (id === 'help') return { x: EDGE, y: EDGE, width: 390, height: 430 };
+    if (id === 'chat') return { x: EDGE, y: viewport.height - HOTBAR_SAFE - 158, width: 292, height: 150 };
+    if (id === 'map') return safeLarge(size(760, 500).width, size(760, 500).height, 56);
   }
 
-  if (id === 'inventory') return { x: viewport.width - 240, y: 372, width: 222, height: Math.min(360, usableHeight - 364) };
+  if (id === 'inventory') return { x: viewport.width - 288, y: 372, width: 270, height: Math.min(380, usableHeight - 364) };
+  if (id === 'chat') return { x: EDGE, y: viewport.height - HOTBAR_SAFE - 268, width: 380, height: 260 };
   if (id === 'help') return { x: 344, y: 14, ...size(420, 616) };
+  if (id === 'map') return safeLarge(size(860, 560).width, size(860, 560).height, 74);
   if (id === 'skills') {
     const width = viewport.width >= 980 ? Math.min(760, viewport.width - 600) : Math.min(usableWidth, Math.round(420 * scale));
     return { x: viewport.width >= 980 ? Math.max(344, Math.round((viewport.width - width) / 2)) : EDGE, y: 88, width, height: Math.min(usableHeight, Math.round(560 * scale)) };

@@ -29,7 +29,7 @@ export interface UiConsistencyIssue {
   message: string;
 }
 
-const managedWindowIds: ManagedWindowId[] = ['inventory', 'spellbook', 'skills', 'journal', 'market', 'help'];
+const managedWindowIds: ManagedWindowId[] = ['inventory', 'spellbook', 'skills', 'journal', 'market', 'help', 'chat', 'map'];
 const actionBindingIds = new Set(['attack', 'ranged', 'utility', 'hide', 'defend', 'interact', 'build']);
 
 const defaultWindowLayouts: Record<ManagedWindowId, UIWindowLayout> = {
@@ -38,7 +38,9 @@ const defaultWindowLayouts: Record<ManagedWindowId, UIWindowLayout> = {
   skills: { x: 84, y: 90, width: 470, height: 520 },
   journal: { x: 330, y: 96, width: 620, height: 500 },
   market: { x: 300, y: 110, width: 720, height: 480 },
-  help: { x: 420, y: 120, width: 440, height: 420 }
+  help: { x: 420, y: 120, width: 440, height: 420 },
+  chat: { x: 12, y: 372, width: 380, height: 260 },
+  map: { x: 260, y: 82, width: 760, height: 560 }
 };
 
 export function getEquippedItems(player: PlayerState): Array<{ slot: EquipmentSlot; stack: ItemStack }> {

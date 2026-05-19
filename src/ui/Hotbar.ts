@@ -110,6 +110,19 @@ function hotbarBadges(state: GameState, binding: HotbarBinding | null, index: nu
   return `<span class="hotbar-badges">${visible.map((badge) => `<i class="hotbar-badge ${badge.cls}" title="${attr(badge.title)}">${badge.label}</i>`).join('')}</span>`;
 }
 
+function hotbarTooltipVersion(state: GameState, binding: HotbarBinding | null, index: number, view: ReturnType<typeof bindingView>): string {
+  return [
+    state.ui.tooltipMode,
+    index,
+    binding ? `${binding.kind}:${binding.id}` : 'empty',
+    view.qty ?? '',
+    view.cost ?? '',
+    view.invalid ?? '',
+    state.ui.activeHotbarSlot,
+    state.player.mana.toFixed(0)
+  ].join(':');
+}
+
 export function Hotbar(state: GameState): string {
   const bindings = state.ui.hotbar;
   const activeHotbar = getActiveHotbarSlot(state.player, state.ui);
@@ -124,7 +137,7 @@ export function Hotbar(state: GameState): string {
         const invalid = view.invalid ? ' invalid' : '';
         const source = binding ? ` data-hotbar-source="hotbarSlot:${index}" data-drag-kind="hotbarSlot" data-source-window-id="hotbar" data-source-slot-id="${index}"` : '';
         const tooltipId = binding ? `hotbar:${index}:${binding.kind}:${attr(binding.id)}` : `hotbar:${index}:empty`;
-        return `<button class="hotbar-slot${active}${invalid}${binding ? '' : ' empty'}" data-hotbar="${index}" data-hotbar-drop="${index}"${source} data-tooltip-id="${tooltipId}" data-tooltip-source="hotbar" data-tooltip="${attr(view.tooltip)}" data-tooltip-advanced="${attr(view.tooltipAdvanced ?? view.tooltip)}" title="${attr(view.tooltip)}">
+        return `<button class="hotbar-slot${active}${invalid}${binding ? '' : ' empty'}" data-hotbar="${index}" data-hotbar-drop="${index}"${source} data-tooltip-id="${tooltipId}" data-tooltip-source="hotbar" data-tooltip-version="${attr(hotbarTooltipVersion(state, binding, index, view))}" data-tooltip="${attr(view.tooltip)}" data-tooltip-advanced="${attr(view.tooltipAdvanced ?? view.tooltip)}" title="${attr(view.tooltip)}">
           <span>${key}</span>
           ${renderIcon(view.icon, view.label, view.category)}
           ${view.qty ? `<b>${view.qty}</b>` : ''}

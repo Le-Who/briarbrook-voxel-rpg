@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { areas } from '../data/areas';
 import { buildPieces, itemDefs } from '../data/items';
 import { CameraController } from '../game/CameraController';
+import { recordRaycastCall } from '../game/PerfMonitor';
 import { hoverRingStyleForEntity } from '../game/WorldFeedback';
 import type { AreaId, BuildPieceDef, Entity, GameState, IconDescriptor, Projectile, Vec3, VisualEffect } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
@@ -88,6 +89,7 @@ export class VoxelRenderer {
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
+    recordRaycastCall();
     const hit = new THREE.Vector3();
     this.raycaster.ray.intersectPlane(this.groundPlane, hit);
     return { x: hit.x, y: 0, z: hit.z };
@@ -98,6 +100,7 @@ export class VoxelRenderer {
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
+    recordRaycastCall();
     const meshes: THREE.Object3D[] = [];
     this.records.forEach((record) => meshes.push(...record.group.children));
     this.lastRaycastCandidateCount = this.countPickableMeshes();
@@ -126,7 +129,7 @@ export class VoxelRenderer {
       Object.values(state.entities).filter((entity) => {
         if (entity.area !== state.player.currentArea) return false;
         if (entity.kind === 'enemy' && entity.state === 'dead') return false;
-        if (entity.kind === 'resource' && entity.depleted) return false;
+        if (entity.kind === 'resource' && entity.depleted && entity.resourceType !== 'tree') return false;
         if (entity.kind === 'container' && (entity.hidden || entity.opened)) return false;
         return entity.kind !== 'building';
       }).length +
@@ -161,7 +164,9 @@ export class VoxelRenderer {
     return {
       ...baseStats,
       estimatedFrameMs: estimateRenderFrameMs(baseStats),
-      budget: { ...renderPerformanceBudget }
+      budget: { ...renderPerformanceBudget },
+      perf: state.dev.renderStats.perf,
+      loop: state.dev.renderStats.loop
     };
   }
 
@@ -288,10 +293,14 @@ export class VoxelRenderer {
     for (const entity of Object.values(state.entities)) {
       if (entity.area !== state.player.currentArea) continue;
       if (entity.kind === 'enemy' && entity.state === 'dead') continue;
-      if (entity.kind === 'resource' && entity.depleted) continue;
+      if (entity.kind === 'resource' && entity.depleted && entity.resourceType !== 'tree') continue;
       if (entity.kind === 'container' && (entity.hidden || entity.opened)) continue;
       if (entity.kind === 'building') continue;
-      const record = this.ensureEntity(entity.id, entity.kind, () => this.makeEntity(entity));
+      const visualKind =
+        entity.kind === 'resource'
+          ? `${entity.kind}:${entity.resourceType}:${entity.depleted ? 'depleted' : 'active'}:${entity.protected ? 'protected' : 'normal'}:${entity.visualVariant ?? 0}`
+          : entity.kind;
+      const record = this.ensureEntity(entity.id, visualKind, () => this.makeEntity(entity));
       const actorMoving = entity.kind === 'enemy' ? entity.state === 'chase' || entity.state === 'attack' : entity.kind === 'npc' || entity.kind === 'social';
       const visual = this.motion.sample(entity.id, { position: entity.position, facing: this.facingForEntity(entity, state), snapKey: entity.area }, state.realtime.tick, state.realtime.renderAlpha ?? 1);
       const actorBob = actorMoving || entity.kind === 'enemy' || entity.kind === 'npc' || entity.kind === 'social'
@@ -682,12 +691,6 @@ export class VoxelRenderer {
     this.dock(-11, 9);
     this.dock(-17, 15);
     this.boat(-18, 16);
-    for (let i = 0; i < 26; i += 1) {
-      const x = -20 + (i % 7) * 6;
-      const z = -15 + Math.floor(i / 7) * 9;
-      if (Math.abs(x) < 8 && Math.abs(z) < 8) continue;
-      this.tree(x, z, 0.72 + (i % 3) * 0.08);
-    }
     this.sign(2, 8, 'Briarbrook');
     this.sign(-8, -2, 'Bank');
     this.sign(6, -3, 'Smithy');
@@ -772,13 +775,6 @@ export class VoxelRenderer {
   }
 
   private buildForest(): void {
-    for (let i = 0; i < 48; i += 1) {
-      const x = -17 + ((i * 7) % 35);
-      const z = -15 + ((i * 11) % 31);
-      if (Math.abs(x) < 3 && z > 3) continue;
-      if (x > 4 && z < -5) continue;
-      this.tree(x, z, 0.95 + (i % 3) * 0.1);
-    }
     this.mineEntrance(7, -8);
     this.oreCluster(5, -2, '#9ba5a3');
     this.oreCluster(-7, 3, '#b77745');
@@ -872,15 +868,6 @@ export class VoxelRenderer {
     this.house(-11, -5, 4, 3, true);
     this.wallLine(-12, 6, 12, 6);
     this.wallLine(-12, 9, 12, 9);
-    for (const [x, z] of [
-      [-8, 3],
-      [8, -3],
-      [-13, 2],
-      [10, 4],
-      [2, -7]
-    ]) {
-      this.tree(x, z, 0.78);
-    }
     this.torchPost(1, 2);
     this.torchPost(-5, -1);
     this.torchPost(7, 4);
@@ -909,7 +896,6 @@ export class VoxelRenderer {
     this.dock(-9, 8);
     this.boat(-5, 9);
     this.house(10, -6, 4, 3, false);
-    this.tree(8, 0, 0.8);
     this.bench(-5, -5);
     this.gardenPatch(-2, 3);
     this.worktable(4, -4, '#d9bd89');
@@ -943,7 +929,7 @@ export class VoxelRenderer {
       return this.makeCharacter('#3b2119', '#4a2d24', '#b76535');
     }
     if (entity.kind === 'resource') {
-      if (entity.resourceType === 'tree') return this.makeTreeEntity();
+      if (entity.resourceType === 'tree') return this.makeTreeEntity(entity);
       if (entity.resourceType === 'herb') return this.makeHerbEntity();
       return this.makeOreEntity(entity.yieldItemId === 'copper_ore' ? '#b77745' : '#9ba5a3');
     }
@@ -1168,8 +1154,24 @@ export class VoxelRenderer {
     return g;
   }
 
-  private makeTreeEntity(): THREE.Group {
-    return this.kit.treeBuilder({ props: true, colorVariation: 0.08 });
+  private makeTreeEntity(entity: Extract<Entity, { kind: 'resource' }>): THREE.Group {
+    if (entity.depleted) {
+      const g = new THREE.Group();
+      const stump = this.mats.get('tree-stump', '#674222');
+      const top = this.mats.get('tree-stump-top', '#9a7040');
+      const cut = this.mats.get('tree-cut-mark', '#d0a46a');
+      this.box(g, 0, 0.28, 0, 0.58, 0.56, 0.58, stump);
+      this.box(g, 0, 0.59, 0, 0.5, 0.06, 0.5, top);
+      this.box(g, -0.12, 0.64, 0.05, 0.3, 0.025, 0.06, cut, { ry: 0.35 });
+      this.box(g, 0.62, 0.15, 0.2, 0.7, 0.18, 0.18, stump, { ry: 0.45 });
+      return g;
+    }
+    const size = entity.area === 'town' ? 0.74 + ((entity.visualVariant ?? 0) % 3) * 0.08 : entity.area === 'road' ? 0.8 : 1;
+    const group = this.kit.treeBuilder({ size, seed: (entity.visualVariant ?? 0) + entity.id.length, props: true, colorVariation: 0.08 });
+    if (entity.protected) {
+      this.box(group, 0, 0.72, 0.24, 0.52, 0.08, 0.08, this.mats.get('protected-tree-ribbon', '#f0c957'));
+    }
+    return group;
   }
 
   private makeOreEntity(color: string): THREE.Group {

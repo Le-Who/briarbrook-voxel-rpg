@@ -122,6 +122,10 @@ function describeEntity(state: GameState, entity: Entity): InteractionDescriptor
     return descriptor(entity.id, entity.name, `${entity.name} - Talk (E)`, primary, actions);
   }
   if (entity.kind === 'resource') {
+    if (entity.protected) {
+      const primary = action('Inspect', 'inspect', 'Protected Tree', 'Town tree is protected.');
+      return descriptor(entity.id, entity.name, `${entity.name} - Protected Tree`, primary, [primary, action('Mark', 'mark', 'Mark on Map')], false, 'Town tree is protected.');
+    }
     const primary = resourceAction(entity);
     return descriptor(entity.id, entity.name, `${entity.name} - ${defaultResourcePrompt(entity)}`, primary, [primary, action('Inspect', 'inspect', 'Inspect'), action('Mark', 'mark', 'Mark on Map')]);
   }
@@ -166,6 +170,10 @@ function describeToolTarget(state: GameState, target: ConcreteTarget, toolItemId
   if (target.kind === 'entity') {
     const entity = state.entities[target.entityId];
     if (entity?.kind === 'resource') {
+      if (entity.protected) {
+        const reason = 'Town tree is protected.';
+        return descriptor(entity.id, entity.name, `${entity.name} - Protected Tree`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
+      }
       if (toolMatchesResource(toolItemId, entity)) {
         const label = toolTargetLabel(toolItemId, entity);
         return descriptor(entity.id, entity.name, `${entity.name} - ${label}`, { ...primary, label }, [{ ...primary, label }, action('Inspect', 'inspect', 'Inspect')]);
@@ -177,6 +185,10 @@ function describeToolTarget(state: GameState, target: ConcreteTarget, toolItemId
   const tileLabel = inspectTargetForTool(state, toolItemId, target);
   if (tileLabel) {
     const label = toolTargetLabel(toolItemId, null);
+    if (tileLabel === 'Protected Tree') {
+      const reason = 'Town tree is protected.';
+      return descriptor(targetId(target), tileLabel, `${tileLabel} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
+    }
     return descriptor(targetId(target), tileLabel, `${tileLabel} - ${label}`, { ...primary, label }, [{ ...primary, label }, action('Inspect', 'inspect', 'Inspect')]);
   }
   const reason = `${toolName} cannot be used here.`;

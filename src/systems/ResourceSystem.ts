@@ -14,14 +14,15 @@ import { attemptSkillUse, getSkillValue } from './SkillSystem';
 import { recordResourceYield } from './TelemetrySystem';
 import { queueGatheringEffect } from './VfxSystem';
 
-const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: string; invalid: string; fail: string; depleted: string; range: number }> = {
+const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: string; invalid: string; fail: string; depleted: string; protected: string; range: number }> = {
   axe: {
     kind: 'tree',
     skill: 'Lumberjacking',
     verb: 'chop',
     invalid: text('error.treeRequired'),
     fail: 'You fail to produce usable wood.',
-    depleted: 'This tree has not recovered enough usable wood.',
+    depleted: 'Tree recovering.',
+    protected: 'Town tree is protected.',
     range: 5.2
   },
   pickaxe: {
@@ -31,6 +32,7 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
     invalid: text('error.noOreHere'),
     fail: 'You loosen only useless stone dust.',
     depleted: 'The vein is depleted.',
+    protected: 'This resource is protected.',
     range: 5.2
   },
   shovel: {
@@ -40,6 +42,7 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
     invalid: text('error.nothingBuriedHere'),
     fail: 'You find nothing useful.',
     depleted: 'The vein is depleted.',
+    protected: 'This resource is protected.',
     range: 5.2
   },
   fishing_pole: {
@@ -49,6 +52,7 @@ const toolConfig: Record<string, { kind: ResourceKind; skill: string; verb: stri
     invalid: text('error.waterRequired'),
     fail: 'The fish are not biting.',
     depleted: 'This spot needs time to settle.',
+    protected: 'This spot is protected.',
     range: 10
   }
 };
@@ -92,6 +96,7 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
     invalidAction(state, config.invalid, undefined, { position: state.player.position });
     return;
   }
+  const targetEntity = target.kind === 'entity' ? state.entities[target.entityId] : null;
   if (distance(state.player.position, position) > config.range) {
     state.player.targetPosition = approachPoint(state.player.position, position, Math.max(1.1, config.range - 0.6));
     state.ui.prompt = `${text('error.targetTooFar')} ${text('status.movingCloser', { action: config.verb })}`;
@@ -102,6 +107,10 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
   const tile = resolveResourceTile(state, target, config.kind);
   if (!tile) {
     invalidAction(state, config.invalid, undefined, { position });
+    return;
+  }
+  if (tile.protected) {
+    invalidAction(state, config.protected, 'Find a forest tree.', { position: { x: tile.x, y: 0, z: tile.z }, floatText: 'Protected', color: '#d8d8d8' });
     return;
   }
   if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) {
@@ -135,7 +144,15 @@ export function useToolOnTarget(state: GameState, areaManager: AreaManager, tool
   }
   for (const reward of rewards) addItem(state.player.inventory, reward.itemId, reward.quantity);
   tile.harvestsRemaining -= 1;
-  if (tile.harvestsRemaining <= 0 && config.kind !== 'water') tile.depletedUntil = state.clock + (config.kind === 'tree' ? 32 : 38);
+  if (tile.harvestsRemaining <= 0 && config.kind !== 'water') {
+    tile.depletedUntil = state.clock + (config.kind === 'tree' ? 32 : 38);
+    tile.visualState = config.kind === 'tree' ? 'stump' : 'depleted';
+    if (targetEntity?.kind === 'resource') {
+      targetEntity.depleted = true;
+      targetEntity.blocksMovement = false;
+      targetEntity.respawnTimer = config.kind === 'tree' ? 32 : 38;
+    }
+  }
   if (config.kind === 'water' && Math.random() < 0.18) tile.depletedUntil = state.clock + 12;
 
   const rewardText = rewards.map((reward) => `+${reward.quantity} ${itemDefs[reward.itemId]?.name ?? reward.itemId}`).join(', ');
@@ -156,6 +173,7 @@ export function updateResourceTiles(state: GameState): void {
     if (tile.depletedUntil > 0 && tile.depletedUntil <= state.clock) {
       tile.depletedUntil = 0;
       tile.harvestsRemaining = tile.maxHarvests;
+      tile.visualState = 'standing';
       if (tile.resourceKind === 'ore') tile.hiddenQuality = 0.7 + Math.random() * 0.45;
     }
   }
@@ -166,7 +184,8 @@ export function inspectTargetForTool(state: GameState, toolItemId: string, targe
   if (!config || !target) return null;
   const tile = resolveResourceTile(state, target, config.kind);
   if (!tile) return null;
-  if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) return `${tile.name} (depleted)`;
+  if (tile.protected) return 'Protected Tree';
+  if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) return tile.resourceKind === 'tree' ? 'Tree recovering' : `${tile.name} (depleted)`;
   return tile.name;
 }
 
@@ -209,6 +228,25 @@ function nearbyResourceTile(state: GameState, x: number, z: number, kind: Resour
   return null;
 }
 
+export function resourceTileForEntity(state: GameState, entity: Extract<GameState['entities'][string], { kind: 'resource' }>): ResourceTile {
+  return ensureTileFromEntity(state, entity, resourceKindForEntity(entity));
+}
+
+export function depleteResourceTileForEntity(state: GameState, entity: Extract<GameState['entities'][string], { kind: 'resource' }>): void {
+  const tile = resourceTileForEntity(state, entity);
+  tile.lastHarvestedAt = state.clock;
+  tile.harvestsRemaining = 0;
+  tile.depletedUntil = state.clock + entity.respawnSeconds;
+  tile.visualState = entity.resourceType === 'tree' ? 'stump' : 'depleted';
+}
+
+export function restoreResourceTileForEntity(state: GameState, entity: Extract<GameState['entities'][string], { kind: 'resource' }>): void {
+  const tile = resourceTileForEntity(state, entity);
+  tile.depletedUntil = 0;
+  tile.harvestsRemaining = tile.maxHarvests;
+  tile.visualState = 'standing';
+}
+
 function ensureTileFromEntity(state: GameState, entity: Extract<GameState['entities'][string], { kind: 'resource' }>, kind: ResourceKind): ResourceTile {
   const tileKind = kind;
   const key = resourceTileKey(entity.area, entity.position.x, entity.position.z, tileKind);
@@ -219,7 +257,12 @@ function ensureTileFromEntity(state: GameState, entity: Extract<GameState['entit
     x: Math.round(entity.position.x),
     z: Math.round(entity.position.z),
     resourceKind: tileKind,
-    name: tileKind === 'tree' ? 'Tree' : 'Rock Face',
+    name: entity.protected && tileKind === 'tree' ? 'Protected Tree' : tileKind === 'tree' ? 'Tree' : 'Rock Face',
+    classification: entity.classification,
+    protected: entity.protected ?? false,
+    tileId: `${entity.area}:${tileKind}:${Math.round(entity.position.x)},${Math.round(entity.position.z)}`,
+    entityId: entity.id,
+    visualState: entity.depleted ? (tileKind === 'tree' ? 'stump' : 'depleted') : 'standing',
     depletedUntil: 0,
     currentYieldTable:
       tileKind === 'tree'
@@ -240,6 +283,10 @@ function ensureTileFromEntity(state: GameState, entity: Extract<GameState['entit
   };
   state.world.resourceTiles[key] = tile;
   return tile;
+}
+
+function resourceKindForEntity(entity: Extract<GameState['entities'][string], { kind: 'resource' }>): ResourceKind {
+  return entity.resourceType === 'fish' ? 'water' : entity.resourceType;
 }
 
 function rollRewards(tile: ResourceTile, skillValue: number): Array<{ itemId: string; quantity: number }> {

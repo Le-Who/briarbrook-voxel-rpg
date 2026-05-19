@@ -1,4 +1,4 @@
-import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, CombatApproachMode, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapWaypointSource, MarketViewMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldPhase } from './types';
+import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, ChatPanelMode, CombatApproachMode, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapLayerId, MapWaypointSource, MarketViewMode, MinimapMode, MovementMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldPhase } from './types';
 import type { InteractionCommand } from '../systems/InteractionAffordanceSystem';
 
 export type GameAction =
@@ -81,6 +81,8 @@ export type GameAction =
   | { type: 'PIN_TREASURE_MAP'; mapId?: string }
   | { type: 'SET_MAP_WAYPOINT'; areaId: AreaId; position: Vec3; label?: string; source?: MapWaypointSource }
   | { type: 'CLEAR_MAP_WAYPOINT' }
+  | { type: 'SET_MINIMAP_MODE'; mode: MinimapMode }
+  | { type: 'TOGGLE_MAP_LAYER'; layerId: MapLayerId }
   | { type: 'SELECT_SPELL'; spellId: string }
   | { type: 'SET_SPELL_SEARCH'; search: string }
   | { type: 'SET_SPELLBOOK_CIRCLE'; circle: number | 'all' }
@@ -106,6 +108,8 @@ export type GameAction =
   | { type: 'SET_SKILL_RECENT_FILTER'; filter: SkillRecentFilter }
   | { type: 'SET_SKILL_PROFESSION_FILTER'; filter: ProfessionLensFilter }
   | { type: 'SET_PROFESSION_ATLAS_ZOOM'; zoom: number }
+  | { type: 'SET_PROFESSION_ATLAS_SEARCH'; search: string }
+  | { type: 'SET_PROFESSION_ATLAS_NODE'; nodeId: string | null }
   | { type: 'PIN_PROFESSION_GOAL'; goalId: string | null }
   | { type: 'TOGGLE_DEV_TRAVEL' }
   | { type: 'TOGGLE_DEV_OVERLAY' }
@@ -123,6 +127,10 @@ export type GameAction =
   | { type: 'UPDATE_INPUT_DEBUG'; patch: Partial<InputDebugState> }
   | { type: 'TOGGLE_FACING_DEBUG'; key: keyof DevToolState['facingDebug'] }
   | { type: 'SET_CHAT_TAB'; channel: ChatMessage['channel'] }
+  | { type: 'SET_CHAT_MODE'; mode: ChatPanelMode }
+  | { type: 'TOGGLE_CHAT_CHANNEL'; channel: ChatMessage['channel'] }
+  | { type: 'SET_CHAT_OPACITY'; opacity: number }
+  | { type: 'SET_CHAT_RETENTION'; limit: number }
   | { type: 'SEND_CHAT'; text: string }
   | { type: 'USE_HOTBAR'; slot: number }
   | { type: 'SET_ACTIVE_HOTBAR_SLOT'; slot: number }
@@ -148,7 +156,9 @@ export type GameAction =
   | { type: 'BEGIN_KEYBIND_CAPTURE'; actionId: InputActionId; context: InputBindingContext }
   | { type: 'SET_INPUT_BINDING'; actionId: InputActionId; context: InputBindingContext; key: string }
   | { type: 'RESET_INPUT_BINDINGS' }
+  | { type: 'SET_MOVEMENT_MODE'; mode: MovementMode }
   | { type: 'SET_CAMERA_SMOOTHING'; mode: CameraSmoothingMode }
+  | { type: 'TOGGLE_CAMERA_RELATIVE_MOVEMENT' }
   | { type: 'SET_WINDOW_LAYOUT'; windowId: ManagedWindowId; layout: UIWindowLayout }
   | { type: 'FOCUS_WINDOW'; windowId: ManagedWindowId }
   | { type: 'RESET_UI_LAYOUT' }

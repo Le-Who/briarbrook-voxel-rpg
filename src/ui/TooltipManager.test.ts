@@ -7,7 +7,7 @@ describe('TooltipManager', () => {
   it('keeps a stable tooltip mounted while the same anchor is hovered', () => {
     const manager = new TooltipManager({ showDelayMs: 200, hideDelayMs: 100, viewport: { width: 800, height: 600 } });
 
-    manager.enter({ id: 'inv:0:iron_sword', source: 'inventory', content: 'Iron Sword', rect: rect(120, 420) }, 1000);
+    manager.enter({ id: 'inv:0:iron_sword', source: 'inventory', content: 'Iron Sword', contentVersion: 'item:v1', rect: rect(120, 420) }, 1000);
     manager.tick(1199);
     expect(manager.snapshot().visible).toBe(false);
 
@@ -17,9 +17,16 @@ describe('TooltipManager', () => {
     expect(first.anchorId).toBe('inv:0:iron_sword');
     expect(first.remountCount).toBe(1);
 
-    manager.move({ id: 'inv:0:iron_sword', source: 'inventory', content: 'Iron Sword', rect: rect(121, 421) }, 1216);
+    manager.move({ id: 'inv:0:iron_sword', source: 'inventory', content: 'Iron Sword rebuilt every tick', contentVersion: 'item:v1', rect: rect(121, 421) }, 1216);
     manager.tick(1280);
     expect(manager.snapshot().remountCount).toBe(1);
+    expect(manager.snapshot().contentUpdateCount).toBe(0);
+    expect(manager.snapshot().positionUpdateCount).toBe(1);
+
+    manager.move({ id: 'inv:0:iron_sword', source: 'inventory', content: 'Iron Sword + durability changed', contentVersion: 'item:v2', rect: rect(128, 424) }, 1300);
+    expect(manager.snapshot().remountCount).toBe(1);
+    expect(manager.snapshot().contentUpdateCount).toBe(1);
+    expect(manager.snapshot().positionUpdateCount).toBe(2);
   });
 
   it('uses a hide grace period to avoid panel-border flicker', () => {
@@ -35,7 +42,9 @@ describe('TooltipManager', () => {
 
     manager.tick(320);
     expect(manager.snapshot().visible).toBe(false);
+    expect(manager.snapshot().unmountCount).toBe(1);
     expect(manager.snapshot().lastReason).toBe('left anchor');
+    expect(manager.snapshot().lastHideReason).toBe('left anchor');
   });
 
   it('clamps anchored tooltip position inside the viewport', () => {

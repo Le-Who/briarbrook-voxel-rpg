@@ -72,4 +72,25 @@ describe('save/load migrations', () => {
     expect(loadedStack?.uid).toBe(storedUid);
     expect(result.errors).toEqual([]);
   });
+
+  it('preserves movement settings and migrates missing movement mode to keyboard', () => {
+    const state = createInitialGameState();
+    state.ui.movementMode = 'mouse';
+    state.ui.cameraRelativeMovement = false;
+
+    saveGame(state);
+    const loaded = loadGame();
+
+    expect(loaded.ui.movementMode).toBe('mouse');
+    expect(loaded.ui.cameraRelativeMovement).toBe(false);
+
+    const legacy = createInitialGameState() as unknown as { ui: { movementMode?: unknown; cameraRelativeMovement?: unknown } };
+    delete legacy.ui.movementMode;
+    delete legacy.ui.cameraRelativeMovement;
+    saveGame(legacy as unknown as ReturnType<typeof createInitialGameState>);
+
+    const migrated = loadGame();
+    expect(migrated.ui.movementMode).toBe('keyboard');
+    expect(migrated.ui.cameraRelativeMovement).toBe(true);
+  });
 });

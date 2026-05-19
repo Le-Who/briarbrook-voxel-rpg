@@ -29,7 +29,7 @@ describe('world feedback policy', () => {
     state.ui.activeHotbarSlot = 6;
     const label = worldLabelForEntity(state, tree, { hoveredEntityId: tree.id, distanceToPlayer: 1 });
 
-    expect(label?.title).toBe('Chop tree');
+    expect(label?.title).toBe('Tree - Chop');
     expect(label?.detail).toBe('Iron Axe ready');
     expect(worldCursorKindForHover(state, { entity: tree })).toBe('harvest');
   });

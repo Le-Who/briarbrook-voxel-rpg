@@ -1,3 +1,6 @@
+import type { PerfMonitorSnapshot } from './PerfMonitor';
+import type { LoopGovernorSnapshot } from './LoopGovernor';
+
 export type AreaId = 'town' | 'bank' | 'blacksmith' | 'forest' | 'crypt' | 'road' | 'housing';
 
 export type SkillName = string;
@@ -64,6 +67,7 @@ export interface PlayerMovementState {
 }
 
 export type CombatApproachMode = 'manual' | 'assist' | 'aggressive' | 'melee_only';
+export type MovementMode = 'keyboard' | 'mouse' | 'keyboardMouse';
 
 export interface CombatPreferences {
   approachMode: CombatApproachMode;
@@ -379,6 +383,9 @@ export interface ResourceNodeEntity extends BaseEntity {
   kind: 'resource';
   resourceId: string;
   resourceType: 'tree' | 'ore' | 'fish' | 'herb';
+  classification?: TreeResourceClassification;
+  protected?: boolean;
+  visualVariant?: number;
   toolItemId: string;
   skill: SkillName;
   yieldItemId: string;
@@ -518,6 +525,14 @@ export interface TrainingOffer {
 
 export type ResourceKind = 'tree' | 'ore' | 'water' | 'herb';
 
+export type TreeResourceClassification =
+  | 'harvestableTree'
+  | 'protectedTownTree'
+  | 'decorativeTinyShrub'
+  | 'stumpDepletedTree'
+  | 'questTree'
+  | 'collisionOnlyProp';
+
 export interface ResourceYieldEntry {
   itemId: string;
   min: number;
@@ -532,6 +547,11 @@ export interface ResourceTile {
   z: number;
   resourceKind: ResourceKind;
   name: string;
+  classification?: TreeResourceClassification;
+  protected?: boolean;
+  tileId?: string;
+  entityId?: string;
+  visualState?: 'standing' | 'stump' | 'depleted';
   depletedUntil: number;
   currentYieldTable: ResourceYieldEntry[];
   hiddenQuality: number;
@@ -626,7 +646,7 @@ export interface QuestState {
 
 export interface ChatMessage {
   id: string;
-  channel: 'Local' | 'Global' | 'Party' | 'Guild' | 'System';
+  channel: 'Local' | 'Global' | 'Party' | 'Guild' | 'System' | 'Rumors';
   speaker?: string;
   text: string;
   tone?: 'normal' | 'system' | 'trade' | 'party' | 'danger';
@@ -1062,6 +1082,8 @@ export interface RenderStatsState {
   cachedIconCount: number;
   eventListenerCount: number;
   budget: RenderBudgetState;
+  perf: PerfMonitorSnapshot;
+  loop: LoopGovernorSnapshot;
 }
 
 export type InputMode = 'normal' | 'uiDragging' | 'itemDragging' | 'spellDragging' | 'targeting' | 'building' | 'chatFocused' | 'modalOpen' | 'paused' | 'devOverlay';
@@ -1212,9 +1234,13 @@ export interface UIState {
   skillRecentFilter: SkillRecentFilter;
   skillProfessionFilter: ProfessionLensFilter;
   professionAtlasZoom: number;
+  professionAtlasSearch: string;
+  selectedProfessionNodeId: string | null;
   pinnedProfessionGoalId: string | null;
   pinnedRumorId: string | null;
   mapWaypoint: MapWaypointState | null;
+  minimapMode: MinimapMode;
+  mapHiddenLayers: MapLayerId[];
   devTravel: boolean;
   fadeUntil: number;
   craftQuantity: number;
@@ -1223,6 +1249,10 @@ export interface UIState {
   marketView: MarketViewMode;
   marketSearch: string;
   chatTab: ChatMessage['channel'];
+  chatMode: ChatPanelMode;
+  chatHiddenChannels: ChatMessage['channel'][];
+  chatOpacity: number;
+  chatMessageRetention: number;
   activeHotbarSlot: number;
   hotbar: Array<HotbarBinding | null>;
   uiScale: number;
@@ -1238,9 +1268,11 @@ export interface UIState {
   audio: AudioSettingsState;
   lockUILayout: boolean;
   hudDensity: HudDensityMode;
+  movementMode: MovementMode;
   inputBindings: InputBindingState[];
   keybindingCapture: KeybindingCaptureState | null;
   cameraSmoothing: CameraSmoothingMode;
+  cameraRelativeMovement: boolean;
   windowLayouts: Partial<Record<ManagedWindowId, UIWindowLayout>>;
   windowLayoutPreset: UILayoutPreset;
   windowFocusOrder: ManagedWindowId[];
@@ -1267,6 +1299,9 @@ export interface AudioSettingsState {
 export type TooltipDetailMode = 'compact' | 'advanced';
 export type AdvancedTooltipModifier = 'shift' | 'alt' | 'ctrl';
 export type HudDensityMode = 'normal' | 'compact' | 'minimal';
+export type ChatPanelMode = 'expanded' | 'compact' | 'collapsed' | 'combatHidden';
+export type MinimapMode = 'compact' | 'standard' | 'expanded' | 'hidden';
+export type MapLayerId = 'terrain' | 'player' | 'companions' | 'services' | 'objective' | 'pinned' | 'danger' | 'entrances' | 'housing';
 export type SpellbookKnowledgeFilter = 'known' | 'all' | 'unknown';
 export type SpellbookViewMode = 'grid' | 'list' | 'circle';
 export type SpellbookRoleFilter = 'all' | 'Damage' | 'Healing' | 'Utility' | 'Control' | 'Travel' | 'Buff' | 'Debuff';
@@ -1286,7 +1321,7 @@ export type ProfessionLensFilter =
   | 'rogue'
   | 'provisioner'
   | 'battle_miner';
-export type ManagedWindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help';
+export type ManagedWindowId = 'inventory' | 'spellbook' | 'skills' | 'journal' | 'market' | 'help' | 'chat' | 'map';
 export type UILayoutPreset = 'default' | 'compact' | 'large' | 'combat' | 'crafting' | 'exploration' | 'stream';
 export interface UIWindowLayout {
   x: number;

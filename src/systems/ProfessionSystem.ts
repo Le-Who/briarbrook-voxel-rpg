@@ -1,4 +1,5 @@
 import { skillDefinitionById, skillDefinitions, skillGroups, skillsForGroup, type SkillDefinition, type SkillGroup } from '../data/skillDefinitions';
+import { professionClusters as relationshipProfessionClusters } from '../data/professions';
 import type { GameState, SkillGainMode, SkillId } from '../game/types';
 
 export type SkillsViewMode = 'ledger' | 'atlas' | 'milestones';
@@ -417,9 +418,17 @@ export function deriveMasteryMilestones(state: GameState): MasteryMilestone[] {
 export function describeProfessionGoal(goalId: string | null | undefined): { label: string; detail: string } | null {
   if (!goalId) return null;
   if (goalId.startsWith('profession:')) {
-    const lens = professionLenses.find((candidate) => candidate.id === goalId.slice('profession:'.length));
-    return lens ? { label: lens.name, detail: lens.starterGoals[0] ?? 'Use this as a planning lens.' } : null;
+    const id = goalId.slice('profession:'.length);
+    const lens = professionLenses.find((candidate) => candidate.id === id);
+    const cluster = relationshipProfessionClusters.find((candidate) => candidate.id === id);
+    if (lens) return { label: lens.name, detail: lens.starterGoals[0] ?? 'Use this as a planning lens.' };
+    if (cluster) return { label: cluster.title, detail: cluster.suggestedGoal };
+    return null;
   }
+  const cluster = relationshipProfessionClusters.find((candidate) => candidate.id === goalId);
+  if (cluster) return { label: cluster.title, detail: cluster.suggestedGoal };
+  const clusterNode = relationshipProfessionClusters.flatMap((candidate) => candidate.nodes).find((candidate) => candidate.id === goalId);
+  if (clusterNode) return { label: clusterNode.label, detail: clusterNode.description };
   const node = atlasNodeDefinitions.find((candidate) => candidate.id === goalId);
   if (node) return { label: node.label, detail: node.detail };
   const title = goalId

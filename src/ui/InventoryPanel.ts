@@ -84,11 +84,37 @@ function itemComparison(state: GameState, stack: ItemStack | null, def: ItemDef 
   </div>`;
 }
 
+function itemTooltipVersion(stack: ItemStack, state: GameState | undefined): string {
+  return [
+    state?.ui.tooltipMode ?? 'compact',
+    stack.uid,
+    stack.itemId,
+    stack.quantity,
+    stack.durability ?? '',
+    stack.maxDurability ?? '',
+    stack.quality ?? '',
+    stack.exceptional ? 'exceptional' : '',
+    equippedSlotForItem(state, stack.itemId) ?? '',
+    hotbarSlotForItem(state, stack.itemId) ?? ''
+  ].join(':');
+}
+
+function itemInspector(stack: ItemStack, state: GameState): string {
+  const details = buildItemTooltip(stack, state, 'pinned')
+    .split('\n')
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!details.length) return '';
+  return `<div class="item-inspector" data-item-inspector="true">${details.map((line) => `<span>${attr(line)}</span>`).join('')}</div>`;
+}
+
 export function renderSlots(inventory: InventoryState | Array<ItemStack | null>, kind: string, selected: number | null = null, state?: GameState): string {
   const slots = Array.isArray(inventory) ? inventory : inventory.slots;
   const container = kind === 'inv' ? 'inventory' : kind === 'trade' ? 'trade-player' : kind;
   const validDropContainer = container === 'inventory' || container === 'bank' || container === 'trade-player';
-  return `<div class="slot-grid ${kind}-grid">${slots
+  const inventoryAttrs = kind === 'inv' ? ' data-inventory-grid="true" data-slot-size-token="48"' : '';
+  return `<div class="slot-grid ${kind}-grid"${inventoryAttrs}>${slots
     .map((stack, index) => {
       const def = stack ? itemDefs[stack.itemId] : null;
       const selectedClass = selected === index ? ' selected' : '';
@@ -99,10 +125,11 @@ export function renderSlots(inventory: InventoryState | Array<ItemStack | null>,
           ? ` data-hotbar-source="${attr(source)}" draggable="true" data-drag-kind="item" data-source-window-id="${attr(container)}" data-source-slot-id="${index}" data-item-instance-id="${attr(stack.uid)}" data-item-definition-id="${attr(stack.itemId)}" data-quantity="${stack.quantity}" data-display-name="${attr(def.name)}"`
           : '';
       const dropAttr = validDropContainer ? ` data-item-drop-target="${attr(container)}:${index}"` : '';
-      const tooltipId = `${kind}:${index}:${stack?.itemId ?? 'empty'}`;
-      const compactTooltip = buildItemTooltip(stack, state, 'compact');
-      const advancedTooltip = buildItemTooltip(stack, state, 'advanced');
-      return `<button class="slot${selectedClass}${wearClass ? ` ${wearClass}` : ''}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs} data-tooltip-id="${attr(tooltipId)}" data-tooltip-source="${attr(kind)}" data-tooltip="${attr(compactTooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}" title="${attr(def?.name ?? 'Empty')}">
+      const tooltipAttrs =
+        stack && def
+          ? ` data-tooltip-id="${attr(`${kind}:${index}:${stack.itemId}`)}" data-tooltip-source="${attr(kind)}" data-tooltip-version="${attr(itemTooltipVersion(stack, state))}" data-tooltip="${attr(buildItemTooltip(stack, state, 'compact'))}" data-tooltip-advanced="${attr(buildItemTooltip(stack, state, 'advanced'))}" title="${attr(def.name)}"`
+          : '';
+      return `<button class="slot${selectedClass}${wearClass ? ` ${wearClass}` : ''}" data-${kind}-slot="${index}"${dropAttr}${dragAttrs}${tooltipAttrs}>
         ${def ? renderIcon(def.icon, def.name, itemIconCategory(def)) : ''}
         ${stack && stack.quantity > 1 ? `<span class="qty">${stack.quantity}</span>` : ''}
         ${slotBadges(stack, state)}
@@ -117,17 +144,14 @@ export function InventoryPanel(state: GameState): string {
   const stack = selected == null ? null : state.player.inventory.slots[selected];
   const def = stack ? itemDefs[stack.itemId] : null;
   const stats = calculateDerivedStats(state);
-  return `<section class="panel inventory-panel" data-window-id="inventory">
+  return `<section class="panel inventory-panel ui-contained-window" data-window-id="inventory" data-inventory-layout="resizable-grid">
     <header><span>Inventory</span><button data-action="toggle-panel" data-panel="inventory">x</button></header>
-    ${renderSlots(state.player.inventory, 'inv', selected, state)}
-    <footer class="panel-footer">
-      <span class="gold">●</span><span>${state.player.gold}</span>
-      <span class="spacer"></span><span>${calculateWeight(state).toFixed(0)}/${stats.carryCapacity.toFixed(0)}</span>
-    </footer>
+    <div class="inventory-grid-body" data-inventory-grid-body="true">${renderSlots(state.player.inventory, 'inv', selected, state)}</div>
     ${
       def
         ? `<div class="item-actions">
             <div class="item-actions-title"><strong>${def.name}</strong><button data-action="clear-selected-item" aria-label="Close">x</button></div>
+            ${stack ? itemInspector(stack, state) : ''}
             <button data-action="use-selected">Use</button>
             <button data-action="equip-selected">Equip</button>
             ${stack && stack.quantity > 1 ? '<button data-action="split-selected">Split</button>' : ''}
@@ -138,5 +162,9 @@ export function InventoryPanel(state: GameState): string {
           </div>`
         : ''
     }
+    <footer class="panel-footer" data-inventory-footer="true">
+      <span class="gold">●</span><span>${state.player.gold}</span>
+      <span class="spacer"></span><span>${calculateWeight(state).toFixed(0)}/${stats.carryCapacity.toFixed(0)}</span>
+    </footer>
   </section>`;
 }

@@ -11,7 +11,11 @@ describe('UI customization, presets, and accessibility options', () => {
     expect(uiLayoutPresets.large.uiScale).toBeGreaterThan(uiLayoutPresets.default.uiScale);
     expect(uiLayoutPresets.large.fontScale).toBeGreaterThan(uiLayoutPresets.default.fontScale);
     expect(uiLayoutPresets.combat.visiblePanels.combatActions).toBe(true);
+    expect(uiLayoutPresets.combat.chatMode).toBe('combatHidden');
+    expect(uiLayoutPresets.combat.minimapMode).toBe('compact');
     expect(uiLayoutPresets.exploration.hudDensity).toBe('minimal');
+    expect(uiLayoutPresets.exploration.chatMode).toBe('collapsed');
+    expect(uiLayoutPresets.exploration.minimapMode).toBe('compact');
   });
 
   it('applies presets to scale, tooltip mode, panels, and layout memory safely', () => {
@@ -28,6 +32,8 @@ describe('UI customization, presets, and accessibility options', () => {
     expect(simulation.state.ui.panels.market).toBe(true);
     expect(simulation.state.ui.marketView).toBe('work');
     expect(simulation.state.ui.tooltipMode).toBe('advanced');
+    expect(simulation.state.ui.chatMode).toBe('compact');
+    expect(simulation.state.ui.minimapMode).toBe('standard');
   });
 
   it('keeps large text and exploration presets inside managed-window bounds', () => {
@@ -37,6 +43,7 @@ describe('UI customization, presets, and accessibility options', () => {
 
     expect(large.spellbook.width).toBeGreaterThan(applyWindowPreset('compact', viewport).spellbook.width);
     expect(exploration.inventory.height).toBeLessThanOrEqual(large.inventory.height);
+    expect(exploration.chat.x).toBe(8);
   });
 
   it('updates audio accessibility settings through simulation actions', () => {
@@ -69,5 +76,22 @@ describe('UI customization, presets, and accessibility options', () => {
     expect(html).toContain('data-action="toggle-visual-audio-cues"');
     expect(html).toContain('data-action="capture-keybinding"');
     expect(html).toContain('data-action="reset-keybindings"');
+    expect(html).toContain('data-movement-mode="keyboard"');
+    expect(html).toContain('Keyboard Only');
+    expect(html).toContain('Move by mouse</span><b>Disabled');
+    expect(html).toContain('data-action="toggle-camera-relative-movement"');
+  });
+
+  it('renders movement help text from the selected movement mode', () => {
+    const state = createInitialGameState();
+    state.ui.panels.help = true;
+    state.ui.movementMode = 'mouse';
+
+    const html = HelpPanel(state);
+
+    expect(html).toContain('Mouse Only');
+    expect(html).toContain('Move</span><b>Click ground');
+    expect(html).toContain('Keyboard movement</span><b>Disabled');
+    expect(html).toContain('data-movement-mode="keyboardMouse"');
   });
 });

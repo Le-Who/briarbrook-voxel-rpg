@@ -3,6 +3,7 @@ import { createInitialGameState } from '../game/GameState';
 import { Simulation } from '../game/Simulation';
 import { triggerWorldEvent } from '../systems/LivingWorldSystem';
 import { deriveSpatialContext } from './SpatialUX';
+import { MapPanel } from './MapPanel';
 import { Minimap } from './Minimap';
 
 describe('map navigation and spatial UX', () => {
@@ -21,6 +22,55 @@ describe('map navigation and spatial UX', () => {
     expect(html).toContain('Safe / Guarded');
     expect(html).not.toContain('map-dot resource');
     expect(html).not.toContain('dev-travel');
+  });
+
+  it('renders compact minimap as a clean minimap-only HUD surface', () => {
+    const state = createInitialGameState();
+    state.ui.minimapMode = 'compact';
+
+    const html = Minimap(state);
+
+    expect(html).toContain('data-minimap-mode="compact"');
+    expect(html).toContain('data-map-layer="terrain"');
+    expect(html).toContain('data-map-layer="player"');
+    expect(html).not.toContain('area-name');
+    expect(html).not.toContain('coords');
+    expect(html).not.toContain('data-minimap-mode="expanded"');
+    expect(html).not.toContain('data-map-waypoint-area=');
+    expect(html).not.toContain('data-map-layer="services"');
+  });
+
+  it('moves route details, filters, legend, rumors, and entrances into the expanded map panel', () => {
+    const state = createInitialGameState();
+    const event = triggerWorldEvent(state, 'merchant_caravan');
+    state.ui.pinnedRumorId = event.id;
+    state.ui.minimapMode = 'expanded';
+    state.ui.panels.map = true;
+
+    const hudHtml = Minimap(state);
+    const mapHtml = MapPanel(state);
+
+    expect(hudHtml).toContain('data-minimap-mode="expanded"');
+    expect(mapHtml).toContain('data-window-id="map"');
+    expect(mapHtml).toContain('data-map-layer-toggle="services"');
+    expect(mapHtml).toContain('data-map-layer-toggle="entrances"');
+    expect(mapHtml).toContain('Terrain, roads, water, buildings');
+    expect(mapHtml).toContain('Signs: Bank west');
+    expect(mapHtml).toContain('Rumors');
+    expect(mapHtml).toContain(`event:${event.id}`);
+  });
+
+  it('applies expanded map layer filters without hiding the player marker by default', () => {
+    const state = createInitialGameState();
+    state.ui.minimapMode = 'expanded';
+    state.ui.panels.map = true;
+    state.ui.mapHiddenLayers = ['services'];
+
+    const html = MapPanel(state);
+
+    expect(html).toContain('data-map-layer="player"');
+    expect(html).not.toContain('data-map-layer="services"');
+    expect(html).toContain('data-map-layer-toggle="services"');
   });
 
   it('shows pinned rumors and treasure clues only when they are learned or pinned', () => {
@@ -96,5 +146,24 @@ describe('map navigation and spatial UX', () => {
     simulation.update(1 / 30);
 
     expect(state.ui.mapWaypoint).toBeNull();
+  });
+
+  it('switches minimap modes and map layer filters through simulation actions', () => {
+    const state = createInitialGameState();
+    const simulation = new Simulation(state);
+
+    simulation.dispatch({ type: 'SET_MINIMAP_MODE', mode: 'expanded' });
+    simulation.dispatch({ type: 'TOGGLE_MAP_LAYER', layerId: 'services' });
+    simulation.update(1 / 30);
+
+    expect(state.ui.minimapMode).toBe('expanded');
+    expect(state.ui.panels.map).toBe(true);
+    expect(state.ui.mapHiddenLayers).toContain('services');
+
+    simulation.dispatch({ type: 'SET_MINIMAP_MODE', mode: 'compact' });
+    simulation.update(1 / 30);
+
+    expect(state.ui.minimapMode).toBe('compact');
+    expect(state.ui.panels.map).toBe(false);
   });
 });

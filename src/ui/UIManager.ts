@@ -1,8 +1,9 @@
 import { buildPieces, itemDefs } from '../data/items';
 import { spellDefs } from '../data/spells';
 import type { GameAction } from '../game/Actions';
-import type { AudioVolumeCategory, EquipmentSlot, GameState, HotbarBinding, InputActionId, InputBindingContext, MapWaypointSource, Vec3 } from '../game/types';
+import type { AudioVolumeCategory, EquipmentSlot, GameState, HotbarBinding, InputActionId, InputBindingContext, MapWaypointSource, MovementMode, Vec3 } from '../game/types';
 import { inputActionDefinitions } from '../game/InputActionMap';
+import type { LoopDirtyFlags } from '../game/LoopGovernor';
 import { worldLabelForEntity } from '../game/WorldFeedback';
 import type { VoxelRenderer } from '../render/VoxelRenderer';
 import { iconCacheStats, renderIcon } from '../render/IconRenderer';
@@ -10,6 +11,7 @@ import { calculateDerivedStats } from '../systems/EquipmentSystem';
 import { calculateWeight } from '../systems/InventorySystem';
 import { inspectTargetForTool } from '../systems/ResourceSystem';
 import { emitAudioHook } from '../audio/AudioHooks';
+import { createCleanDirtySnapshot, createEmptyUiPerfCounters, type PerfDirtySnapshot, type PerfTooltipSnapshot, type UiPerfCounters } from '../game/PerfMonitor';
 import { BankPanel } from './BankPanel';
 import { BuildPanel } from './BuildPanel';
 import { CharacterPanel } from './CharacterPanel';
@@ -22,6 +24,7 @@ import { Hotbar } from './Hotbar';
 import { HelpPanel } from './HelpPanel';
 import { InventoryPanel } from './InventoryPanel';
 import { JournalPanel } from './JournalPanel';
+import { MapPanel } from './MapPanel';
 import { MarketBoardPanel } from './MarketBoardPanel';
 import { MerchantPanel } from './MerchantPanel';
 import { Minimap } from './Minimap';
@@ -31,6 +34,7 @@ import { SpellbookPanel } from './SpellbookPanel';
 import { TargetFrame } from './TargetFrame';
 import { TreasureMapPanel } from './TreasureMapPanel';
 import { TradePanel } from './TradePanel';
+import { TooltipManager, type TooltipAnchor } from './TooltipManager';
 import {
   evaluateDrop,
   hotbarBindingFromPayload,
@@ -75,6 +79,18 @@ type HotbarMenu =
 const UI_SCROLL_SETTLE_MS = 360;
 const UI_HUD_REPLACE_MIN_INTERVAL_MS = 180;
 
+export interface UiRenderOptions {
+  minimapDirty?: boolean;
+  tooltipDirty?: boolean;
+  dirtyFlags?: Partial<LoopDirtyFlags>;
+}
+
+interface NormalizedUiRenderOptions {
+  minimapDirty: boolean;
+  tooltipDirty: boolean;
+  dirtyFlags: Partial<LoopDirtyFlags>;
+}
+
 export function shouldShowMarketQuickButton(state: GameState): boolean {
   const gatheredGoods =
     Object.values(state.dev.telemetry.resourceYields).some((amount) => amount > 0) ||
@@ -91,8 +107,16 @@ export function shouldShowMarketQuickButton(state: GameState): boolean {
 export class UIManager {
   private hud: HTMLDivElement;
   private labels: HTMLDivElement;
+  private tooltipLayer: HTMLDivElement;
+  private tooltipManager = new TooltipManager();
   private windowManager: WindowManager;
   private lastHud = '';
+  private lastLabels = '';
+  private lastTooltipHtml = '';
+  private lastFragmentHtml = new Map<string, string>();
+  private perfCounters = createEmptyUiPerfCounters();
+  private perfDirty: PerfDirtySnapshot = createCleanDirtySnapshot();
+  private renderOptions: NormalizedUiRenderOptions = { minimapDirty: true, tooltipDirty: true, dirtyFlags: {} };
   private currentState: GameState | null = null;
   private uiPointerDown = false;
   private pendingHud: string | null = null;
@@ -107,9 +131,10 @@ export class UIManager {
   private lastHudReplacementAt = 0;
 
   constructor(private root: HTMLDivElement, private dispatch: Dispatch) {
-    this.root.innerHTML = '<div class="hud-layer"></div><div class="label-layer"></div>';
+    this.root.innerHTML = '<div class="hud-layer"></div><div class="label-layer"></div><div class="tooltip-layer" aria-live="polite"></div>';
     this.hud = this.root.querySelector('.hud-layer') as HTMLDivElement;
     this.labels = this.root.querySelector('.label-layer') as HTMLDivElement;
+    this.tooltipLayer = this.root.querySelector('.tooltip-layer') as HTMLDivElement;
     this.windowManager = new WindowManager(this.root);
     const resetUiLayout = () => {
       this.windowManager.resetLayout(this.hud);
@@ -127,12 +152,45 @@ export class UIManager {
       visibleWindowCount: this.root.querySelectorAll('[data-window-id]').length,
       iconRenderRequestCount: iconStats.iconRenderRequestCount,
       cachedIconCount: iconStats.cachedIconCount,
-      eventListenerCount: 13
+      eventListenerCount: 16
     };
   }
 
-  render(state: GameState, renderer: VoxelRenderer): void {
+  consumePerfCounters(): UiPerfCounters {
+    const snapshot: UiPerfCounters = {
+      ...this.perfCounters,
+      activeTimers: Number(this.scrollFlushTimer != null) + Number(this.hudReplacementTimer != null),
+      activeIntervals: 0,
+      dirty: { ...this.perfDirty },
+      windowRenderCounts: { ...this.perfCounters.windowRenderCounts },
+      tooltip: this.tooltipPerfSnapshot()
+    };
+    this.perfCounters = createEmptyUiPerfCounters();
+    this.perfDirty = createCleanDirtySnapshot();
+    return snapshot;
+  }
+
+  private tooltipPerfSnapshot(): PerfTooltipSnapshot {
+    const tooltip = this.tooltipManager.snapshot();
+    return {
+      mountCount: tooltip.mountCount,
+      unmountCount: tooltip.unmountCount,
+      contentUpdateCount: tooltip.contentUpdateCount,
+      positionUpdateCount: tooltip.positionUpdateCount,
+      currentAnchorId: tooltip.anchorId,
+      lastHideReason: tooltip.lastHideReason,
+      lastShowReason: tooltip.lastShowReason
+    };
+  }
+
+  render(state: GameState, renderer: VoxelRenderer, options: UiRenderOptions = {}): void {
     this.currentState = state;
+    this.renderOptions = {
+      minimapDirty: options.minimapDirty ?? true,
+      tooltipDirty: options.tooltipDirty ?? false,
+      dirtyFlags: options.dirtyFlags ?? {}
+    };
+    this.perfCounters.uiRenderCount += 1;
     this.root.style.setProperty('--ui-scale', String(state.ui.uiScale ?? 1));
     this.root.style.setProperty('--ui-font-scale', String(state.ui.fontScale ?? 1));
     this.root.style.setProperty('--tooltip-delay-ms', `${state.ui.tooltipDelayMs ?? 240}ms`);
@@ -142,31 +200,121 @@ export class UIManager {
     this.root.dataset.hudDensity = state.ui.hudDensity ?? 'normal';
     this.emitWindowAudioHooks(state);
     const hudHtml = this.renderHud(state);
+    const hudChanged = hudHtml !== this.lastHud;
+    let hudApplied = false;
+    this.perfDirty.hudChanged ||= hudChanged;
     const editingUiField = this.isEditingUiField();
-    if (hudHtml !== this.lastHud) {
+    if (hudChanged) {
       if (this.shouldDelayHudReplacement(editingUiField) || this.shouldThrottleHudReplacement()) {
         this.queueHudReplacement(hudHtml);
       } else {
         this.replaceHud(hudHtml);
+        hudApplied = true;
       }
     }
-    this.syncTooltipMode(state);
-    this.labels.innerHTML = this.renderLabels(state, renderer);
+    if (this.renderOptions.tooltipDirty && !hudApplied) this.syncTooltipMode(state);
+    const labelHtml = this.renderLabels(state, renderer);
+    this.perfDirty.labelsChanged ||= labelHtml !== this.lastLabels;
+    if (labelHtml !== this.lastLabels) {
+      this.labels.innerHTML = labelHtml;
+      this.lastLabels = labelHtml;
+      this.perfCounters.labelWriteCount += 1;
+    }
+    this.updateTooltipPortal(state);
   }
 
   private syncTooltipMode(state: GameState): void {
     const advanced = state.ui.tooltipMode === 'advanced';
+    let scanned = 0;
     this.hud.querySelectorAll<HTMLElement>('[data-tooltip-advanced]').forEach((element) => {
+      scanned += 1;
       element.dataset.tooltipCompact ??= element.dataset.tooltip ?? '';
       element.dataset.tooltip = advanced ? element.dataset.tooltipAdvanced ?? element.dataset.tooltipCompact ?? '' : element.dataset.tooltipCompact ?? '';
     });
+    this.perfCounters.tooltipSyncCount += scanned;
+    this.perfDirty.tooltipSyncChanged ||= scanned > 0;
+  }
+
+  private updateTooltipPortal(state: GameState): void {
+    const now = performance.now();
+    this.tooltipManager.setViewport({ width: window.innerWidth, height: window.innerHeight }, now);
+    this.tooltipManager.tick(now);
+    const snapshot = this.tooltipManager.snapshot();
+    this.tooltipLayer.dataset.tooltipMountCount = String(snapshot.mountCount);
+    this.tooltipLayer.dataset.tooltipUnmountCount = String(snapshot.unmountCount);
+    this.tooltipLayer.dataset.tooltipContentUpdateCount = String(snapshot.contentUpdateCount);
+    this.tooltipLayer.dataset.tooltipPositionUpdateCount = String(snapshot.positionUpdateCount);
+    this.tooltipLayer.dataset.tooltipAnchorId = snapshot.anchorId ?? '';
+    this.tooltipLayer.dataset.tooltipLastHideReason = snapshot.lastHideReason;
+    this.tooltipLayer.dataset.tooltipLastShowReason = snapshot.lastShowReason;
+    const html = this.tooltipManager.render(Boolean(state.dev.overlay));
+    if (html === this.lastTooltipHtml) return;
+    this.tooltipLayer.innerHTML = html;
+    this.lastTooltipHtml = html;
+  }
+
+  private tooltipAnchorFromElement(element: HTMLElement): TooltipAnchor | null {
+    const content = element.dataset.tooltip ?? '';
+    const id = element.dataset.tooltipId ?? '';
+    if (!id || !content.trim()) return null;
+    const rect = element.getBoundingClientRect();
+    return {
+      id,
+      source: element.dataset.tooltipSource ?? 'ui',
+      content,
+      contentVersion: element.dataset.tooltipVersion ?? content,
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      }
+    };
+  }
+
+  private tooltipElementFromTarget(target: EventTarget | null): HTMLElement | null {
+    if (!(target instanceof Element)) return null;
+    const element = target.closest('[data-tooltip-id][data-tooltip]');
+    return element instanceof HTMLElement ? element : null;
+  }
+
+  private handleTooltipPointerOver(event: PointerEvent): void {
+    const element = this.tooltipElementFromTarget(event.target);
+    if (!element || !this.root.contains(element)) return;
+    const anchor = this.tooltipAnchorFromElement(element);
+    if (!anchor) return;
+    this.tooltipManager.enter(anchor, performance.now());
+    if (this.currentState) this.updateTooltipPortal(this.currentState);
+  }
+
+  private handleTooltipPointerMove(event: PointerEvent): void {
+    const element = this.tooltipElementFromTarget(event.target);
+    if (!element || !this.root.contains(element)) return;
+    const anchor = this.tooltipAnchorFromElement(element);
+    if (!anchor) return;
+    this.tooltipManager.move(anchor, performance.now());
+    if (this.currentState) this.updateTooltipPortal(this.currentState);
+  }
+
+  private handleTooltipPointerOut(event: PointerEvent): void {
+    const element = this.tooltipElementFromTarget(event.target);
+    if (!element) return;
+    const related = event.relatedTarget;
+    if (related instanceof Node && element.contains(related)) return;
+    if (related instanceof Element && related.closest('[data-tooltip-id][data-tooltip]') === element) return;
+    this.tooltipManager.leave(performance.now());
+    if (this.currentState) this.updateTooltipPortal(this.currentState);
   }
 
   private replaceHud(html: string): void {
     const scrollSnapshot = captureManagedScrollPositions(this.hud);
+    const chatAtBottom = this.isChatAtBottom();
     const focusedContextCommand = this.focusedContextCommand();
     this.hud.innerHTML = html;
     this.lastHud = html;
+    this.perfCounters.hudReplacementCount += 1;
     this.pendingHud = null;
     this.lastHudReplacementAt = performance.now();
     if (this.hudReplacementTimer != null) {
@@ -175,8 +323,53 @@ export class UIManager {
     }
     this.windowManager.decorate(this.hud);
     restoreManagedScrollPositions(this.hud, scrollSnapshot);
+    if (chatAtBottom) this.scrollChatToLatest();
     this.renderLocalOverlays();
+    if (this.currentState && (this.renderOptions.tooltipDirty || this.currentState.ui.tooltipMode === 'advanced')) this.syncTooltipMode(this.currentState);
     this.syncContextMenuFocus(focusedContextCommand);
+  }
+
+  private chatLogElement(): HTMLElement | null {
+    return this.hud.querySelector<HTMLElement>('.chat-log');
+  }
+
+  private isChatAtBottom(): boolean {
+    const log = this.chatLogElement();
+    if (!log) return true;
+    return log.scrollHeight - log.scrollTop - log.clientHeight <= 12;
+  }
+
+  private scrollChatToLatest(): void {
+    const log = this.chatLogElement();
+    if (!log) return;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  private chatInputElement(): HTMLInputElement | null {
+    return this.hud.querySelector<HTMLInputElement>('.chat-input input[name="chat"]');
+  }
+
+  private chatInputFocused(): boolean {
+    const input = this.chatInputElement();
+    return Boolean(input && document.activeElement === input);
+  }
+
+  private focusChatInput(): boolean {
+    const state = this.currentState;
+    const chatHiddenInCombat = Boolean(state && state.ui.chatMode === 'combatHidden' && (state.player.activeTargetId || state.combat.meleeCooldown > 0 || state.combat.rangedCooldown > 0 || state.combat.magicCooldown > 0));
+    if (!state || state.ui.chatMode === 'collapsed' || chatHiddenInCombat) return false;
+    const input = this.chatInputElement();
+    if (!input) return false;
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(input.value.length, input.value.length);
+    return true;
+  }
+
+  private blurChatInput(): boolean {
+    const input = this.chatInputElement();
+    if (!input || document.activeElement !== input) return false;
+    input.blur();
+    return true;
   }
 
   private isEditingUiField(): boolean {
@@ -209,6 +402,7 @@ export class UIManager {
 
   private queueHudReplacement(html: string): void {
     this.pendingHud = html;
+    this.perfCounters.hudQueuedCount += 1;
     if (this.hudReplacementTimer != null) return;
     const elapsed = performance.now() - this.lastHudReplacementAt;
     const delay = Math.max(0, UI_HUD_REPLACE_MIN_INTERVAL_MS - elapsed);
@@ -264,34 +458,61 @@ export class UIManager {
   }
 
   private renderHud(state: GameState): string {
-    return `${this.playerStatus(state)}
-      ${TargetFrame(state)}
-      ${Minimap(state)}
-      ${HelpPanel(state)}
-      ${CombatActionsPanel(state)}
-      ${InventoryPanel(state)}
-      ${JournalPanel(state)}
-      ${MarketBoardPanel(state)}
-      ${TreasureMapPanel(state)}
-      ${this.statusPanel(state)}
-      ${QuestTracker(state)}
-      ${GuidePanel(state)}
-      ${CharacterPanel(state)}
-      ${SkillsPanel(state)}
-      ${SpellbookPanel(state)}
-      ${BankPanel(state)}
-      ${TradePanel(state)}
-      ${MerchantPanel(state)}
-      ${CraftingPanel(state)}
-      ${BuildPanel(state)}
-      ${ChatPanel(state)}
-      ${Hotbar(state)}
-      ${this.actionProgress(state)}
-      ${this.contextMenu(state)}
-      ${this.damageIndicator(state)}
-      ${this.areaFade(state)}
-      ${DevOverlay(state)}
-      <div class="prompt">${state.ui.prompt}</div>`;
+    return `${this.renderTrackedFragment('playerStatus', () => this.playerStatus(state))}
+      ${this.renderTrackedFragment('targetFrame', () => TargetFrame(state))}
+      ${this.renderMinimapFragment(state)}
+      ${this.renderTrackedFragment('mapPanel', () => MapPanel(state), this.fragmentDirty('minimapDirty', 'journalDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('help', () => HelpPanel(state), this.fragmentDirty('windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('combatActions', () => CombatActionsPanel(state), this.fragmentDirty('entitiesDirty', 'equipmentDirty', 'hotbarDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('inventory', () => InventoryPanel(state), this.fragmentDirty('inventoryDirty', 'equipmentDirty', 'hotbarDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('journal', () => JournalPanel(state), this.fragmentDirty('journalDirty', 'inventoryDirty', 'skillsDirty', 'spellbookDirty', 'marketDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('market', () => MarketBoardPanel(state), this.fragmentDirty('marketDirty', 'inventoryDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('treasureMap', () => TreasureMapPanel(state), this.fragmentDirty('journalDirty', 'inventoryDirty', 'minimapDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('status', () => this.statusPanel(state))}
+      ${this.renderTrackedFragment('questTracker', () => QuestTracker(state), this.fragmentDirty('journalDirty', 'worldDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('guide', () => GuidePanel(state), this.fragmentDirty('journalDirty', 'inventoryDirty', 'skillsDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('character', () => CharacterPanel(state), this.fragmentDirty('inventoryDirty', 'equipmentDirty', 'skillsDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('skills', () => SkillsPanel(state), this.fragmentDirty('skillsDirty', 'inventoryDirty', 'spellbookDirty', 'journalDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('spellbook', () => SpellbookPanel(state), this.fragmentDirty('spellbookDirty', 'inventoryDirty', 'hotbarDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('bank', () => BankPanel(state), this.fragmentDirty('inventoryDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('trade', () => TradePanel(state), this.fragmentDirty('inventoryDirty', 'marketDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('merchant', () => MerchantPanel(state), this.fragmentDirty('inventoryDirty', 'marketDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('crafting', () => CraftingPanel(state), this.fragmentDirty('inventoryDirty', 'skillsDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('build', () => BuildPanel(state), this.fragmentDirty('inventoryDirty', 'worldDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('chat', () => ChatPanel(state), this.fragmentDirty('chatDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('hotbar', () => Hotbar(state), this.fragmentDirty('hotbarDirty', 'inventoryDirty', 'equipmentDirty', 'spellbookDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('actionProgress', () => this.actionProgress(state))}
+      ${this.renderTrackedFragment('contextMenu', () => this.contextMenu(state))}
+      ${this.renderTrackedFragment('damageIndicator', () => this.damageIndicator(state))}
+      ${this.renderTrackedFragment('areaFade', () => this.areaFade(state))}
+      ${this.renderTrackedFragment('devOverlay', () => DevOverlay(state))}
+      ${this.renderTrackedFragment('prompt', () => `<div class="prompt">${state.ui.prompt}</div>`)}`;
+  }
+
+  private renderTrackedFragment(id: string, render: () => string, dirty = true): string {
+    const cached = this.lastFragmentHtml.get(id);
+    if (!dirty && cached != null) return cached;
+    const html = render();
+    this.perfCounters.windowRenderCounts[id] = (this.perfCounters.windowRenderCounts[id] ?? 0) + 1;
+    if (id === 'minimap') this.perfCounters.minimapUpdateCount += 1;
+    if (cached !== undefined && cached !== html) {
+      this.perfDirty.anyWindowChanged = true;
+      if (id === 'minimap') this.perfDirty.minimapChanged = true;
+    }
+    this.lastFragmentHtml.set(id, html);
+    return html;
+  }
+
+  private fragmentDirty(...keys: Array<keyof LoopDirtyFlags>): boolean {
+    const flags = this.renderOptions.dirtyFlags;
+    if (!Object.keys(flags).length) return true;
+    return keys.some((key) => Boolean(flags[key]));
+  }
+
+  private renderMinimapFragment(state: GameState): string {
+    const cached = this.lastFragmentHtml.get('minimap');
+    if (!this.renderOptions.minimapDirty && cached != null) return cached;
+    return this.renderTrackedFragment('minimap', () => Minimap(state));
   }
 
   private areaFade(state: GameState): string {
@@ -567,6 +788,10 @@ export class UIManager {
       true
     );
 
+    this.root.addEventListener('pointerover', (event) => this.handleTooltipPointerOver(event), true);
+    this.root.addEventListener('pointermove', (event) => this.handleTooltipPointerMove(event), { capture: true, passive: true });
+    this.root.addEventListener('pointerout', (event) => this.handleTooltipPointerOut(event), true);
+
     this.root.addEventListener(
       'pointerdown',
       (event) => {
@@ -574,6 +799,7 @@ export class UIManager {
         if (!target) return;
         this.uiPointerDown = true;
         this.markScrollInteraction(target);
+        if (this.chatInputFocused() && !target.closest('.chat-panel')) this.blurChatInput();
         if (this.hotbarAssignMenu && !target.closest('.hotbar-assign-menu')) this.closeHotbarAssignMenu();
         if (!this.currentState?.ui.lockUILayout && this.windowManager.handlePointerDown(event)) {
           this.updateInputDebug({
@@ -624,7 +850,28 @@ export class UIManager {
       (event) => {
         if (this.currentState?.ui.keybindingCapture) return;
         if (this.handleContextMenuKey(event)) return;
+        if (event.key === 'Enter' && this.chatInputFocused()) {
+          const input = this.chatInputElement();
+          this.dispatch({ type: 'SEND_CHAT', text: input?.value ?? '' });
+          if (input) {
+            input.value = '';
+            input.blur();
+          }
+          this.preventBrowserDefault(event, 'ui:chat-send');
+          event.stopImmediatePropagation();
+          return;
+        }
+        if (event.key === 'Enter' && !isEditableTarget(event.target) && !isEditableTarget(document.activeElement) && this.focusChatInput()) {
+          this.preventBrowserDefault(event, 'ui:chat-focus');
+          event.stopImmediatePropagation();
+          return;
+        }
         if (event.key !== 'Escape') return;
+        if (this.blurChatInput()) {
+          this.preventBrowserDefault(event, 'ui:chat-blur');
+          event.stopImmediatePropagation();
+          return;
+        }
         if (isEditableTarget(event.target) || isEditableTarget(document.activeElement)) return;
         const canceledDrag = this.cancelActiveDrag();
         const closedWindow = canceledDrag ? false : this.closeTopmostWindow();
@@ -725,6 +972,20 @@ export class UIManager {
         this.dispatch({ type: 'SET_CHAT_TAB', channel: chatTab as GameState['ui']['chatTab'] });
         return;
       }
+      const chatMode = button.dataset.chatMode;
+      if (chatMode === 'expanded' || chatMode === 'compact' || chatMode === 'collapsed' || chatMode === 'combatHidden') {
+        this.dispatch({ type: 'SET_CHAT_MODE', mode: chatMode });
+        return;
+      }
+      const chatChannelToggle = button.dataset.chatChannelToggle;
+      if (chatChannelToggle) {
+        this.dispatch({ type: 'TOGGLE_CHAT_CHANNEL', channel: chatChannelToggle as GameState['ui']['chatTab'] });
+        return;
+      }
+      if (button.dataset.chatLatest) {
+        this.scrollChatToLatest();
+        return;
+      }
       const marketCategory = button.dataset.marketCategory;
       if (marketCategory) {
         this.dispatch({ type: 'SET_MARKET_FILTER', category: marketCategory as GameState['ui']['marketCategory'] });
@@ -773,7 +1034,13 @@ export class UIManager {
       const atlasZoom = button.dataset.atlasZoom;
       if (atlasZoom) {
         if (atlasZoom === 'reset') this.dispatch({ type: 'SET_PROFESSION_ATLAS_ZOOM', zoom: 1 });
+        else if (atlasZoom === 'fit') this.dispatch({ type: 'SET_PROFESSION_ATLAS_ZOOM', zoom: 0.85 });
         else this.dispatch({ type: 'SET_PROFESSION_ATLAS_ZOOM', zoom: (this.currentState?.ui.professionAtlasZoom ?? 1) + Number(atlasZoom) });
+        return;
+      }
+      const atlasNode = button.dataset.atlasNode;
+      if (atlasNode) {
+        this.dispatch({ type: 'SET_PROFESSION_ATLAS_NODE', nodeId: atlasNode });
         return;
       }
       const atlasSkill = button.dataset.atlasSkill;
@@ -799,6 +1066,16 @@ export class UIManager {
       const atlasAction = button.dataset.atlasAction;
       if (atlasAction) {
         this.dispatch({ type: 'SHOW_PROMPT', message: button.dataset.description ?? atlasAction });
+        return;
+      }
+      const minimapMode = button.dataset.minimapMode;
+      if (minimapMode === 'compact' || minimapMode === 'standard' || minimapMode === 'expanded' || minimapMode === 'hidden') {
+        this.dispatch({ type: 'SET_MINIMAP_MODE', mode: minimapMode });
+        return;
+      }
+      const mapLayerToggle = button.dataset.mapLayerToggle;
+      if (mapLayerToggle) {
+        this.dispatch({ type: 'TOGGLE_MAP_LAYER', layerId: mapLayerToggle as GameState['ui']['mapHiddenLayers'][number] });
         return;
       }
       const waypointArea = button.dataset.mapWaypointArea;
@@ -883,6 +1160,11 @@ export class UIManager {
       if (layoutPreset) {
         this.dispatch({ type: 'APPLY_UI_LAYOUT_PRESET', preset: layoutPreset as GameState['ui']['windowLayoutPreset'] });
         this.windowManager.resetLayout(this.hud);
+        return;
+      }
+      const movementMode = button.dataset.movementMode;
+      if (movementMode === 'keyboard' || movementMode === 'mouse' || movementMode === 'keyboardMouse') {
+        this.dispatch({ type: 'SET_MOVEMENT_MODE', mode: movementMode as MovementMode });
         return;
       }
       const spell = button.dataset.spell;
@@ -1011,7 +1293,7 @@ export class UIManager {
         return;
       }
       if (button.dataset.devOpenPanels) {
-        ['inventory', 'spellbook', 'skills', 'journal', 'market', 'crafting', 'character', 'help', 'status', 'quest', 'guide', 'treasureMap', 'combatActions', 'build'].forEach((panel) => {
+        ['inventory', 'spellbook', 'skills', 'journal', 'market', 'map', 'crafting', 'character', 'help', 'status', 'quest', 'guide', 'treasureMap', 'combatActions', 'build'].forEach((panel) => {
           this.dispatch({ type: 'TOGGLE_PANEL', panel, open: true });
         });
         return;
@@ -1052,7 +1334,10 @@ export class UIManager {
       this.preventBrowserDefault(event, 'ui:chat-submit');
       const input = form.querySelector<HTMLInputElement>('input[name="chat"]');
       this.dispatch({ type: 'SEND_CHAT', text: input?.value ?? '' });
-      if (input) input.value = '';
+      if (input) {
+        input.value = '';
+        input.blur();
+      }
     });
 
     this.root.addEventListener('change', (event) => {
@@ -1060,15 +1345,32 @@ export class UIManager {
       if (target.dataset.action === 'trade-gold') {
         this.dispatch({ type: 'SET_TRADE_GOLD', side: 'player', amount: Number(target.value) });
       }
+      if (target.dataset.action === 'chat-retention') {
+        this.dispatch({ type: 'SET_CHAT_RETENTION', limit: Number(target.value) });
+      }
     });
 
     this.root.addEventListener('input', (event) => {
       const target = event.target as HTMLInputElement;
+      if (target.dataset.action === 'chat-opacity') {
+        this.dispatch({ type: 'SET_CHAT_OPACITY', opacity: Number(target.value) });
+      }
       if (target.dataset.action === 'skill-search') {
         this.dispatch({ type: 'SET_SKILL_SEARCH', search: target.value });
         if (this.currentState) {
           this.replaceHud(this.renderHud(this.currentState));
           const search = this.root.querySelector<HTMLInputElement>('.skill-search');
+          if (search) {
+            search.focus();
+            search.setSelectionRange(search.value.length, search.value.length);
+          }
+        }
+      }
+      if (target.dataset.action === 'atlas-search') {
+        this.dispatch({ type: 'SET_PROFESSION_ATLAS_SEARCH', search: target.value });
+        if (this.currentState) {
+          this.replaceHud(this.renderHud(this.currentState));
+          const search = this.root.querySelector<HTMLInputElement>('.atlas-search');
           if (search) {
             search.focus();
             search.setSelectionRange(search.value.length, search.value.length);
@@ -1387,6 +1689,14 @@ export class UIManager {
       this.dispatch({ type: 'TOGGLE_PAUSE', paused: false });
       return true;
     }
+    if (key === 'chat') {
+      this.dispatch({ type: 'SET_CHAT_MODE', mode: 'collapsed' });
+      return true;
+    }
+    if (key === 'map') {
+      this.dispatch({ type: 'SET_MINIMAP_MODE', mode: 'standard' });
+      return true;
+    }
     if (state.ui.panels[key]) {
       this.dispatch({ type: 'TOGGLE_PANEL', panel: key, open: false });
       return true;
@@ -1518,6 +1828,9 @@ export class UIManager {
         break;
       case 'reset-keybindings':
         this.dispatch({ type: 'RESET_INPUT_BINDINGS' });
+        break;
+      case 'toggle-camera-relative-movement':
+        this.dispatch({ type: 'TOGGLE_CAMERA_RELATIVE_MOVEMENT' });
         break;
       case 'reset-ui-layout':
         this.dispatch({ type: 'RESET_UI_LAYOUT' });

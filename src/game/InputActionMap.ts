@@ -217,7 +217,8 @@ export function bindingSummary(binding: InputBindingState): string {
 
 export function inputContextsForMode(mode: InputMode): InputBindingContext[] {
   if (mode === 'chatFocused') return [];
-  if (mode === 'paused' || mode === 'modalOpen') return ['ui'];
+  if (mode === 'paused') return ['debug', 'ui'];
+  if (mode === 'modalOpen') return ['ui'];
   if (mode === 'devOverlay') return ['debug', 'ui'];
   if (mode === 'uiDragging' || mode === 'itemDragging' || mode === 'spellDragging') return [];
   if (mode === 'building' || mode === 'targeting') return ['gameplay', 'ui', 'debug'];

@@ -8,6 +8,8 @@ function attr(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
 }
 
+const MARKET_ORDER_WINDOW_ROWS = 60;
+
 function requirementsLabel(requirements: RecipeRequirement[]): string {
   return requirements.map((requirement) => `${itemDefs[requirement.itemId]?.name ?? requirement.itemId} ${requirement.quantity}`).join(' + ');
 }
@@ -34,7 +36,7 @@ export function MarketBoardPanel(state: GameState): string {
 
   const workOrdersHtml = `<div class="market-work-column">
         <h3>Available Work Orders</h3>
-        ${workOrders
+        ${workOrders.slice(0, MARKET_ORDER_WINDOW_ROWS)
           .map((order) => {
             const required = order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }];
             const ready = required.every((requirement) => getItemCount(state.player.inventory, requirement.itemId) >= requirement.quantity);
@@ -49,7 +51,7 @@ export function MarketBoardPanel(state: GameState): string {
       </div>`;
   const buyOrdersHtml = `<div>
         <h3>Buy Orders</h3>
-        ${buyOrders
+        ${buyOrders.slice(0, MARKET_ORDER_WINDOW_ROWS)
           .map((order) => {
             const def = itemDefs[order.itemId];
             const have = getItemCount(state.player.inventory, order.itemId);
@@ -64,7 +66,7 @@ export function MarketBoardPanel(state: GameState): string {
       </div>`;
   const sellOrdersHtml = `<div>
         <h3>Sell Orders</h3>
-        ${sellOrders
+        ${sellOrders.slice(0, MARKET_ORDER_WINDOW_ROWS)
           .map((order) => {
             const def = itemDefs[order.itemId];
             return `<article class="market-order supply">
@@ -78,7 +80,7 @@ export function MarketBoardPanel(state: GameState): string {
       </div>`;
   const columns = view === 'work' ? workOrdersHtml : view === 'trade' ? `${buyOrdersHtml}${sellOrdersHtml}` : `${workOrdersHtml}${buyOrdersHtml}${sellOrdersHtml}`;
 
-  return `<section class="panel market-panel market-mode-${view}" data-window-id="market">
+  return `<section class="panel market-panel market-mode-${view} ui-contained-window" data-window-id="market">
     <header><span>Briarbrook Market Board</span><button data-action="toggle-panel" data-panel="market">x</button></header>
     <div class="market-controls">
       <div class="market-view-tabs">
@@ -89,7 +91,7 @@ export function MarketBoardPanel(state: GameState): string {
         ${marketCategories.map((entry) => `<button class="${category === entry ? 'active' : ''}" data-market-category="${entry}">${entry}</button>`).join('')}
       </div>
     </div>
-    <div class="market-columns">
+    <div class="market-columns" data-virtualized-list="market" data-total-rows="${workOrders.length + buyOrders.length + sellOrders.length}" data-rendered-rows="${Math.min(workOrders.length, MARKET_ORDER_WINDOW_ROWS) + Math.min(buyOrders.length, MARKET_ORDER_WINDOW_ROWS) + Math.min(sellOrders.length, MARKET_ORDER_WINDOW_ROWS)}">
       ${columns}
     </div>
   </section>`;

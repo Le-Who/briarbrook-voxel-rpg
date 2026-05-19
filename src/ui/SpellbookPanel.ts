@@ -12,6 +12,7 @@ function attr(value: string): string {
 
 const roles: SpellbookRoleFilter[] = ['all', 'Damage', 'Healing', 'Utility', 'Control', 'Travel', 'Buff', 'Debuff'];
 const views: SpellbookViewMode[] = ['grid', 'list', 'circle'];
+const SPELLBOOK_WINDOW_ROWS = 96;
 
 function reagentText(state: GameState, reagents: RecipeRequirement[]): string {
   if (!reagents.length) return '<span class="ready">No reagents</span>';
@@ -54,6 +55,17 @@ function assignedSlot(state: GameState, spellId: string): string {
   return `Hotbar ${index === 9 ? 0 : index + 1}`;
 }
 
+function spellTooltipVersion(state: GameState, spell: SpellDefinition, isKnown: boolean): string {
+  return [
+    state.ui.tooltipMode,
+    spell.id,
+    isKnown ? 'known' : 'unknown',
+    state.player.mana.toFixed(0),
+    assignedSlot(state, spell.id),
+    spell.reagents.map((req) => `${req.itemId}:${getItemCount(state.player.inventory, req.itemId)}`).join('|')
+  ].join(':');
+}
+
 export function SpellbookPanel(state: GameState): string {
   if (!state.ui.panels.spellbook) return '';
   const known = new Set(state.player.spellbook.knownSpellIds);
@@ -75,7 +87,7 @@ export function SpellbookPanel(state: GameState): string {
   const selected = visible.find((spell) => spell.id === state.ui.selectedSpellId) ?? visible[0];
   const selectedKnown = selected ? known.has(selected.id) : false;
 
-  return `<section class="panel spellbook-panel" data-window-id="spellbook">
+  return `<section class="panel spellbook-panel ui-contained-window" data-window-id="spellbook">
     <header><span>Spellbook</span><button data-action="toggle-panel" data-panel="spellbook">x</button></header>
     <div class="spellbook-filters" data-spellbook-filter="${knowledge}">
       <input class="spellbook-search" data-action="spellbook-search" value="${attr(state.ui.spellbookSearch ?? '')}" placeholder="Search spells, words, reagents" />
@@ -101,19 +113,20 @@ export function SpellbookPanel(state: GameState): string {
 
 function renderSpellList(state: GameState, spells: SpellDefinition[], selectedId: string, known: Set<string>, view: SpellbookViewMode, knowledge: SpellbookKnowledgeFilter): string {
   if (!spells.length) return '<div class="spell-list empty-state">No spells match.</div>';
+  const renderedSpells = spells.slice(0, SPELLBOOK_WINDOW_ROWS);
   if (view === 'circle') {
-    return `<div class="spell-list spell-circle-view">${spellCircles
+    return `<div class="spell-list spell-circle-view" data-virtualized-list="spells" data-total-rows="${spells.length}" data-rendered-rows="${renderedSpells.length}">${spellCircles
       .map((circle) => {
-        const circleSpells = spells.filter((spell) => spell.circle === circle);
+        const circleSpells = renderedSpells.filter((spell) => spell.circle === circle);
         if (!circleSpells.length) return '';
         return `<section class="spell-circle-group"><h3>Circle ${circle}</h3><div class="spell-card-grid">${circleSpells.map((spell) => renderSpellCard(state, spell, selectedId, known.has(spell.id), knowledge)).join('')}</div></section>`;
       })
       .join('')}</div>`;
   }
   if (view === 'list') {
-    return `<div class="spell-list spell-list-view">${spells.map((spell) => renderSpellRow(state, spell, selectedId, known.has(spell.id), knowledge)).join('')}</div>`;
+    return `<div class="spell-list spell-list-view" data-virtualized-list="spells" data-total-rows="${spells.length}" data-rendered-rows="${renderedSpells.length}">${renderedSpells.map((spell) => renderSpellRow(state, spell, selectedId, known.has(spell.id), knowledge)).join('')}</div>`;
   }
-  return `<div class="spell-list spell-card-grid">${spells.map((spell) => renderSpellCard(state, spell, selectedId, known.has(spell.id), knowledge)).join('')}</div>`;
+  return `<div class="spell-list spell-card-grid" data-virtualized-list="spells" data-total-rows="${spells.length}" data-rendered-rows="${renderedSpells.length}">${renderedSpells.map((spell) => renderSpellCard(state, spell, selectedId, known.has(spell.id), knowledge)).join('')}</div>`;
 }
 
 function renderSpellCard(state: GameState, spell: SpellDefinition, selectedId: string, isKnown: boolean, knowledge: SpellbookKnowledgeFilter): string {
@@ -122,7 +135,7 @@ function renderSpellCard(state: GameState, spell: SpellDefinition, selectedId: s
   const hotbarSource = isKnown ? `data-hotbar-source="spell:${attr(spell.id)}" draggable="true"` : '';
   const tooltip = buildSpellTooltip(spell, state, isKnown, 'compact');
   const advancedTooltip = buildSpellTooltip(spell, state, isKnown, 'advanced');
-  return `<button class="spell-card ${selectedId === spell.id ? 'active' : ''} ${isKnown ? 'known' : 'unknown'} role-${role.toLowerCase()}" data-spell="${attr(spell.id)}" data-spell-role="${attr(role)}" ${hotbarSource} data-tooltip-id="spell:${attr(spell.id)}" data-tooltip-source="spellbook" data-tooltip="${attr(tooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}">
+  return `<button class="spell-card ${selectedId === spell.id ? 'active' : ''} ${isKnown ? 'known' : 'unknown'} role-${role.toLowerCase()}" data-spell="${attr(spell.id)}" data-spell-role="${attr(role)}" ${hotbarSource} data-tooltip-id="spell:${attr(spell.id)}" data-tooltip-source="spellbook" data-tooltip-version="${attr(spellTooltipVersion(state, spell, isKnown))}" data-tooltip="${attr(tooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}">
     ${isKnown ? renderIcon(spell.iconDescriptor, spell.displayName, spellIconCategory(spell)) : '<span class="locked-spell-icon">?</span>'}
     <span class="spell-card-name">${name}</span>
     <span class="spell-card-meta"><b>C${spell.circle}</b><i>${role}</i><em>${isKnown ? 'Known' : 'Locked'}</em>${isKnown ? `<small>${spell.manaCost}m</small>` : ''}</span>

@@ -8,6 +8,7 @@ describe('skill graph and profession clarity UI', () => {
     const state = createInitialGameState();
     state.ui.panels.skills = true;
     state.ui.skillView = 'ledger';
+    state.player.selectedSkillGroup = 'Combat';
 
     const html = SkillsPanel(state);
 

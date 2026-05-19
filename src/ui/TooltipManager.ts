@@ -11,6 +11,7 @@ export interface TooltipAnchor {
   id: string;
   source: string;
   content: string;
+  contentVersion?: string;
   rect: TooltipRect;
 }
 
@@ -27,8 +28,14 @@ export interface TooltipSnapshot {
   content: string;
   lastReason: string;
   remountCount: number;
+  mountCount: number;
+  unmountCount: number;
+  contentUpdateCount: number;
+  positionUpdateCount: number;
   lastUpdateAt: number;
   pinned: boolean;
+  lastHideReason: string;
+  lastShowReason: string;
   position: { left: number; top: number; width: number; height: number };
 }
 
@@ -45,8 +52,13 @@ export class TooltipManager {
   private showAt: number | null = null;
   private hideAt: number | null = null;
   private lastReason = 'idle';
-  private remountCount = 0;
+  private mountCount = 0;
+  private unmountCount = 0;
+  private contentUpdateCount = 0;
+  private positionUpdateCount = 0;
   private lastUpdateAt = 0;
+  private lastHideReason = 'none';
+  private lastShowReason = 'none';
   private pinned = false;
   private position = { left: 0, top: 0, width: 0, height: 0 };
 
@@ -64,18 +76,27 @@ export class TooltipManager {
     if (this.sameAnchor(anchor)) {
       this.hideAt = null;
       this.showAt ??= now + this.showDelayMs;
-      if (this.anchor && this.anchor.content !== anchor.content) {
-        this.anchor = anchor;
+      if (this.anchor && this.contentVersion(this.anchor) !== this.contentVersion(anchor)) {
+        this.anchor = { ...anchor };
+        this.contentUpdateCount += 1;
         this.lastUpdateAt = now;
-        if (this.visible) this.position = this.calculatePosition(anchor);
+        if (this.visible) this.updatePosition(anchor, now, 'content updated');
       } else if (!this.visible) {
-        this.anchor = anchor;
+        this.anchor = { ...anchor };
+      } else if (this.anchor && rectChangedMeaningfully(this.anchor.rect, anchor.rect)) {
+        this.anchor = { ...this.anchor, rect: anchor.rect };
+        this.updatePosition(this.anchor, now, 'anchor moved');
       }
       this.lastReason = this.visible ? 'same anchor' : 'hover delay';
       return;
     }
 
-    this.anchor = anchor;
+    if (this.visible) {
+      this.visible = false;
+      this.unmountCount += 1;
+      this.lastHideReason = 'anchor changed';
+    }
+    this.anchor = { ...anchor };
     this.visible = false;
     this.showAt = now + this.showDelayMs;
     this.hideAt = null;
@@ -88,17 +109,22 @@ export class TooltipManager {
       return;
     }
     this.hideAt = null;
-    if (!this.visible) this.anchor = anchor;
-    if (this.anchor.content !== anchor.content) {
-      this.anchor = anchor;
+    if (!this.visible) this.anchor = { ...anchor };
+    if (this.contentVersion(this.anchor) !== this.contentVersion(anchor)) {
+      this.anchor = { ...anchor };
+      this.contentUpdateCount += 1;
       this.lastUpdateAt = now;
-      if (this.visible) this.position = this.calculatePosition(anchor);
+      if (this.visible) this.updatePosition(anchor, now, 'content updated');
+    } else if (this.visible && rectChangedMeaningfully(this.anchor.rect, anchor.rect)) {
+      this.anchor = { ...this.anchor, rect: anchor.rect };
+      this.updatePosition(this.anchor, now, 'anchor moved');
     }
   }
 
   leave(now: number, reason = 'left anchor'): void {
     this.showAt = null;
     this.lastReason = reason;
+    this.lastHideReason = reason;
     if (!this.visible) {
       this.anchor = null;
       this.hideAt = null;
@@ -108,11 +134,13 @@ export class TooltipManager {
   }
 
   clear(now: number, reason = 'cleared'): void {
+    if (this.visible) this.unmountCount += 1;
     this.anchor = null;
     this.visible = false;
     this.showAt = null;
     this.hideAt = null;
     this.lastReason = reason;
+    this.lastHideReason = reason;
     this.lastUpdateAt = now;
   }
 
@@ -120,9 +148,7 @@ export class TooltipManager {
     if (viewport.width === this.viewport.width && viewport.height === this.viewport.height) return;
     this.viewport = viewport;
     if (this.visible && this.anchor) {
-      this.position = this.calculatePosition(this.anchor);
-      this.lastUpdateAt = now;
-      this.lastReason = 'viewport resized';
+      this.updatePosition(this.anchor, now, 'viewport resized');
     }
   }
 
@@ -132,14 +158,17 @@ export class TooltipManager {
       this.showAt = null;
       this.hideAt = null;
       this.position = this.calculatePosition(this.anchor);
-      this.remountCount += 1;
+      this.mountCount += 1;
+      this.positionUpdateCount += 1;
       this.lastUpdateAt = now;
+      this.lastShowReason = 'show delay elapsed';
       this.lastReason = 'shown';
     }
     if (this.visible && this.hideAt != null && now >= this.hideAt) {
       this.visible = false;
       this.anchor = null;
       this.hideAt = null;
+      this.unmountCount += 1;
       this.lastUpdateAt = now;
     }
   }
@@ -151,9 +180,15 @@ export class TooltipManager {
       source: this.anchor?.source ?? null,
       content: this.anchor?.content ?? '',
       lastReason: this.lastReason,
-      remountCount: this.remountCount,
+      remountCount: this.mountCount,
+      mountCount: this.mountCount,
+      unmountCount: this.unmountCount,
+      contentUpdateCount: this.contentUpdateCount,
+      positionUpdateCount: this.positionUpdateCount,
       lastUpdateAt: this.lastUpdateAt,
       pinned: this.pinned,
+      lastHideReason: this.lastHideReason,
+      lastShowReason: this.lastShowReason,
       position: this.position
     };
   }
@@ -171,13 +206,27 @@ export class TooltipManager {
       <p><span>Hover</span><b>${escapeHtml(snap.anchorId ?? 'none')}</b></p>
       <p><span>Source</span><b>${escapeHtml(snap.source ?? 'none')}</b></p>
       <p><span>Reason</span><b>${escapeHtml(snap.lastReason)}</b></p>
-      <p><span>Remounts</span><b>${snap.remountCount}</b></p>
+      <p><span>Mounts</span><b>${snap.mountCount}</b></p>
+      <p><span>Unmounts</span><b>${snap.unmountCount}</b></p>
+      <p><span>Content</span><b>${snap.contentUpdateCount}</b></p>
+      <p><span>Position</span><b>${snap.positionUpdateCount}</b></p>
       <p><span>Updated</span><b>${snap.lastUpdateAt.toFixed(0)}</b></p>
     </div>`;
   }
 
   private sameAnchor(anchor: TooltipAnchor): boolean {
     return this.anchor?.id === anchor.id && this.anchor.source === anchor.source;
+  }
+
+  private contentVersion(anchor: TooltipAnchor): string {
+    return anchor.contentVersion ?? anchor.content;
+  }
+
+  private updatePosition(anchor: TooltipAnchor, now: number, reason: string): void {
+    this.position = this.calculatePosition(anchor);
+    this.positionUpdateCount += 1;
+    this.lastUpdateAt = now;
+    this.lastReason = reason;
   }
 
   private calculatePosition(anchor: TooltipAnchor): { left: number; top: number; width: number; height: number } {
@@ -198,6 +247,10 @@ export class TooltipManager {
       height: size.height
     };
   }
+}
+
+function rectChangedMeaningfully(a: TooltipRect, b: TooltipRect): boolean {
+  return Math.abs(a.left - b.left) > 2 || Math.abs(a.top - b.top) > 2 || Math.abs(a.width - b.width) > 2 || Math.abs(a.height - b.height) > 2;
 }
 
 function estimateSize(content: string): { width: number; height: number } {

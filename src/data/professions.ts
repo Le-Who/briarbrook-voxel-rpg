@@ -16,7 +16,7 @@ export type ProfessionId =
   | 'rogue'
   | 'naturalist';
 
-export type ProfessionNodeType = 'skill' | 'action' | 'tool' | 'station' | 'spell' | 'recipe' | 'milestone' | 'goal';
+export type ProfessionNodeType = 'skill' | 'action' | 'tool' | 'station' | 'spell' | 'recipe' | 'resource' | 'output' | 'service' | 'milestone' | 'goal' | 'future';
 export type ProfessionEdgeType = 'trains' | 'requires' | 'supports' | 'unlocks' | 'improves' | 'consumes' | 'produces';
 export type MasteryRewardType = 'clarity' | 'recipe' | 'utility' | 'active' | 'quality_of_life';
 
@@ -168,25 +168,34 @@ export const professionClusters: ProfessionCluster[] = [
     suggestedGoal: 'Find a clue, reveal risk, and open a cache safely.',
     nodes: [
       n('treasure_goal', 'goal', 'Treasure Hunter Initiate', 'Turn clues into safe loot.', 50, 16),
+      n('service_rumor_board', 'service', 'Rumor Board', 'Town leads and rumors point toward map fragments and caches.', 8, 24, 'rumor_board'),
       n('skill_cartography', 'skill', 'Cartography', 'Deciphers maps and supports route clues.', 18, 40, 'Cartography'),
+      n('resource_map_fragment', 'resource', 'Map Fragment', 'A clue piece that can become a rough treasure map.', 8, 58, 'map_fragment'),
       n('skill_detect_hidden', 'skill', 'Detect Hidden', 'Finds hidden caches and suspicious terrain.', 52, 34, 'Detect Hidden'),
+      n('output_treasure_map', 'output', 'Treasure Map', 'Map fragments and deciphered clues point to a search area.', 40, 58, 'rough_treasure_map'),
       n('skill_lockpicking', 'skill', 'Lockpicking', 'Opens locked containers.', 78, 50, 'Lockpicking'),
       n('skill_remove_trap', 'skill', 'Remove Trap', 'Disarms known traps.', 64, 72, 'Remove Trap'),
       n('tool_lockpick', 'tool', 'Lockpick', 'Consumable tool for locks.', 92, 72, 'lockpick'),
       n('action_decipher', 'action', 'Decipher Map', 'Use Cartography on a rough treasure map.', 20, 72, 'decipher-map'),
+      n('future_survey_contracts', 'future', 'Survey Contracts', 'Future repeatable route and cache commissions.', 86, 28, 'survey_contracts'),
       n('milestone_cache', 'milestone', 'First Cache', 'Open one safe hidden reward.', 48, 88, 'treasure_hunter_initiate')
     ],
     edges: [
+      e('service_rumor_board', 'resource_map_fragment', 'produces', 'leads'),
+      e('resource_map_fragment', 'action_decipher', 'consumes', 'clue'),
       e('action_decipher', 'skill_cartography', 'trains', 'trains'),
+      e('skill_cartography', 'output_treasure_map', 'produces', 'deciphers'),
+      e('output_treasure_map', 'skill_detect_hidden', 'supports', 'search area'),
       e('skill_detect_hidden', 'skill_remove_trap', 'supports', 'reveals'),
       e('tool_lockpick', 'skill_lockpicking', 'requires', 'uses'),
+      e('skill_cartography', 'future_survey_contracts', 'supports', 'future work'),
       e('skill_remove_trap', 'milestone_cache', 'supports', 'safer loot'),
       e('skill_cartography', 'milestone_cache', 'unlocks', 'cache route')
     ]
   },
   {
     id: 'smith_artisan',
-    title: 'Smith/Artisan',
+    title: 'Town Smith',
     summary: 'Ore, forge, repairs, work orders, and maker identity.',
     color: '#c77748',
     skills: ['Mining', 'Blacksmithing', 'Arms Lore', 'Item Identification', 'Tinkering'],
@@ -233,7 +242,7 @@ export const professionClusters: ProfessionCluster[] = [
   },
   {
     id: 'healer',
-    title: 'Healer',
+    title: 'Field Medic',
     summary: 'Bandages, anatomy, potions, cure, and field recovery.',
     color: '#d96b6b',
     skills: ['Healing', 'Anatomy', 'Alchemy', 'Magery', 'Meditation'],
@@ -301,8 +310,8 @@ export const professionClusters: ProfessionCluster[] = [
   },
   {
     id: 'naturalist',
-    title: 'Naturalist/Tamer',
-    summary: 'Fishing, herbs, animals, taming, veterinary, and future wilderness play.',
+    title: 'Provisioner',
+    summary: 'Fishing, herbs, food, potions, animals, and future wilderness supply.',
     color: '#65a77a',
     skills: ['Fishing', 'Alchemy', 'Animal Lore', 'Animal Taming', 'Veterinary', 'Herding'],
     suggestedGoal: 'Gather food and reagents now; animal loops come later.',

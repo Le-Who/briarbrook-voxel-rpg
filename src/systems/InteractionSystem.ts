@@ -23,6 +23,7 @@ import { recordResourceYield } from './TelemetrySystem';
 import { interactContainer } from './ContainerSystem';
 import { transitionPlayerToArea } from './TransitionSystem';
 import { pushVisualEffect, queueGatheringEffect } from './VfxSystem';
+import { depleteResourceTileForEntity, restoreResourceTileForEntity } from './ResourceSystem';
 
 function randomInt(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min + 1));
@@ -195,6 +196,11 @@ function handleQuestContact(state: GameState, giver: string): void {
 export function gatherResource(state: GameState, entityId: string): void {
   const entity = state.entities[entityId];
   if (!entity || entity.kind !== 'resource') return;
+  if (entity.protected) {
+    state.ui.prompt = 'Town tree is protected.';
+    addFloatingText(state, 'Protected', entity.position, '#d8d8d8');
+    return;
+  }
   if (entity.depleted) {
     state.ui.prompt = `${entity.name} is depleted.`;
     queueGatheringEffect(state, entity.resourceType, entity.position, 'depleted');
@@ -259,6 +265,7 @@ function completeGathering(state: GameState, entity: Extract<GameState['entities
   entity.depleted = true;
   entity.blocksMovement = false;
   entity.respawnTimer = entity.respawnSeconds ?? definition.respawnSeconds;
+  depleteResourceTileForEntity(state, entity);
   attemptSkillUse(state, entity.skill, {
     verb: 'harvest-resource',
     difficulty: entity.resourceType === 'ore' ? 30 : 22,
@@ -310,6 +317,7 @@ export function updateResources(state: GameState, dt: number): void {
     if (entity.respawnTimer <= 0) {
       entity.depleted = false;
       entity.blocksMovement = true;
+      restoreResourceTileForEntity(state, entity);
     }
   }
 }

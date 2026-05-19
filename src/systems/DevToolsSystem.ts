@@ -120,6 +120,7 @@ export function devResetResources(state: GameState): void {
     tile.depletedUntil = 0;
     tile.harvestsRemaining = tile.maxHarvests;
     tile.lastHarvestedAt = 0;
+    tile.visualState = 'standing';
   });
   state.world.resourcePressure = {};
   state.ui.prompt = 'Resources reset.';
