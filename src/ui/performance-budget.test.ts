@@ -4,6 +4,8 @@ import { createInitialGameState } from '../game/GameState';
 import { renderIcon, iconCacheStats, resetIconCacheStatsForTests } from '../render/IconRenderer';
 import { assetPerformanceBudget, createInitialRenderStats, renderPerformanceBudget, renderStatsWithinBudget } from '../render/RenderBudgets';
 import { DevOverlay } from './DevOverlay';
+import viteConfigSource from '../../vite.config.ts?raw';
+import uiManagerSource from './UIManager.ts?raw';
 
 describe('UI and render performance budget', () => {
   it('tracks UI, frame, icon and listener metrics in the render stats contract', () => {
@@ -44,6 +46,42 @@ describe('UI and render performance budget', () => {
     expect(second).toBe(first);
     expect(stats.iconRenderRequestCount).toBe(2);
     expect(stats.cachedIconCount).toBe(1);
+  });
+
+  it('keeps Vite chunk splitting guardrails for vendor surfaces', () => {
+    expect(viteConfigSource).toContain('three-core');
+    expect(viteConfigSource).toContain('three-vendor');
+    expect(viteConfigSource).toContain('react-vendor');
+  });
+
+  it('keeps always-visible player status rendering behind dirty-state guards', () => {
+    expect(uiManagerSource).toContain("renderTrackedFragment('playerStatus', () => this.playerStatus(state), this.fragmentDirty(");
+    expect(uiManagerSource).toContain("'equipmentDirty'");
+    expect(uiManagerSource).toContain("'spellbookDirty'");
+  });
+
+  it('keeps the dev overlay out of the normal startup UI chunk', () => {
+    expect(uiManagerSource).not.toContain("import { DevOverlay } from './DevOverlay'");
+    expect(uiManagerSource).toContain("import('./DevOverlay')");
+  });
+
+  it('keeps React-owned legacy panel modules out of the UIManager startup path', () => {
+    for (const legacyPanel of [
+      'BankPanel',
+      'BuildPanel',
+      'ChatPanel',
+      'CraftingPanel',
+      'HelpPanel',
+      'Hotbar',
+      'InventoryPanel',
+      'JournalPanel',
+      'MapPanel',
+      'MarketBoardPanel',
+      'SkillsPanel',
+      'SpellbookPanel'
+    ]) {
+      expect(uiManagerSource).not.toContain(`import { ${legacyPanel} }`);
+    }
   });
 
   it('exposes performance bottleneck rows in the dev overlay', () => {

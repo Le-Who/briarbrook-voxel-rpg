@@ -52,7 +52,6 @@ import { clearSave, saveGame } from './SaveLoad';
 import type { GameState, MovementMode, TargetRef, Vec3 } from './types';
 import { sanitizeUiStateReferences } from './UIStateSelectors';
 import { setSkillMode } from '../systems/SkillSystem';
-import { applyScreenshotParityPreset, clearScreenshotParityPreset } from '../tools/screenshotParity';
 import { updateWindowFocusOrder } from '../ui/WindowManager';
 import { applyUiLayoutPresetSettings } from '../ui/UILayoutPresets';
 
@@ -660,10 +659,10 @@ export class Simulation {
         devTeleportToScene(this.state, this.areaManager, action.sceneId);
         break;
       case 'DEV_APPLY_SCREENSHOT_PARITY':
-        applyScreenshotParityPreset(this.state, this.areaManager, action.presetId);
+        this.applyScreenshotParityPreset(action.presetId);
         break;
       case 'DEV_CLEAR_SCREENSHOT_PARITY':
-        clearScreenshotParityPreset(this.state);
+        this.clearScreenshotParityPreset();
         break;
       case 'DEV_TELEPORT_AREA':
         devTeleportToArea(this.state, this.areaManager, action.areaId);
@@ -1003,6 +1002,34 @@ export class Simulation {
       });
       this.state.realtime.actionHistory = this.state.realtime.actionHistory.slice(0, 24);
     }
+  }
+
+  private applyScreenshotParityPreset(presetId: string): void {
+    void import('../tools/screenshotParity')
+      .then(({ applyScreenshotParityPreset }) => {
+        applyScreenshotParityPreset(this.state, this.areaManager, presetId);
+        sanitizeUiStateReferences(this.state);
+        refreshQuestProgress(this.state);
+        this.emit();
+      })
+      .catch(() => {
+        this.state.ui.prompt = `Unable to load screenshot parity preset: ${presetId}.`;
+        this.emit();
+      });
+  }
+
+  private clearScreenshotParityPreset(): void {
+    void import('../tools/screenshotParity')
+      .then(({ clearScreenshotParityPreset }) => {
+        clearScreenshotParityPreset(this.state);
+        sanitizeUiStateReferences(this.state);
+        refreshQuestProgress(this.state);
+        this.emit();
+      })
+      .catch(() => {
+        this.state.ui.prompt = 'Unable to load screenshot parity tools.';
+        this.emit();
+      });
   }
 
   private updateActionBuffer(): void {

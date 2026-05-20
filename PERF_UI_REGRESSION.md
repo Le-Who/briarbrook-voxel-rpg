@@ -7,10 +7,10 @@ Last updated: 2026-05-20.
 Current verification on 2026-05-20:
 
 - `npm run lint`: passed (`tsc --noEmit`).
-- `npm test`: passed, 88 files / 402 tests.
-- `npm run test:perf-ui`: passed, 12 files / 72 tests.
+- `npm test`: passed, 88 files / 412 tests.
+- `npm run test:perf-ui`: passed, 12 files / 77 tests.
 - `npm run content:validate`: passed, 0 errors / 0 warnings.
-- `npm run build`: passed with the known large chunk warning.
+- `npm run build`: passed with the known app-entry large chunk warning.
 - Browser smoke from prompt 117 covered R1-R9 HUD screenshot parity across desktop viewports and UI scales; dev overlay counters remain the source of truth for live render/DOM budget reads.
 
 ## Automated Gate
@@ -102,5 +102,5 @@ Severity rules:
 
 | Issue | Severity | Workaround |
 | --- | --- | --- |
-| Vite build warns that the main JS chunk is over 500 kB. | Low | Track for future code-splitting; not a functional regression. |
+| Vite build warns that the app entry chunk is over 500 kB. | Low | Track for future game-code splitting; not a functional regression. |
 | Headless/first-load browser warns that AudioContext needs a user gesture. | Low | Expected browser autoplay policy; first user gesture resumes audio. |

@@ -124,7 +124,7 @@ npm run build
 
 `npm run content:validate` validates content registries, ids, dead references, and representative spawn/test data. It currently passes with 0 warnings.
 
-`npm run build` currently passes with the known Vite warning that the app entry and Three vendor chunks are over 500 kB after minification. That warning is accepted for the internal alpha branch and tracked in `docs/UI_BUNDLE_AUDIT.md`.
+`npm run build` currently passes with the known Vite warning that the app entry chunk is over 500 kB after minification. That warning is accepted for the internal alpha branch and tracked in `docs/UI_BUNDLE_AUDIT.md`.
 
 ## Controls
 

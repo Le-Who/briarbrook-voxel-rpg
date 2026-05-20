@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import indexHtml from '../../index.html?raw';
 import faviconSvg from '../../public/favicon.svg?raw';
 import { createInitialGameState } from '../game/GameState';
+import { Simulation } from '../game/Simulation';
 import { SnapshotSerializer } from '../net/SnapshotSerializer';
 import { interactContainer, revealMagicalContainers, unlockContainerWithSpell } from '../systems/ContainerSystem';
 import { devAddGold, devCompleteQuestStep, devGiveSpell, devResetResources, devSetSkillValue, devSpawnEnemy, devSpawnItem, devSimulateTime } from '../systems/DevToolsSystem';
@@ -10,6 +11,7 @@ import { AreaManager } from '../world/AreaManager';
 import { createContentRegistry } from './ContentRegistry';
 import { validateContent } from './ContentValidation';
 import { createDevScenePresets } from './devScenes';
+import { validateRuntimeContent } from './runtimeContentValidation';
 import { applyScreenshotParityPreset, createScreenshotParityPresets } from './screenshotParity';
 
 describe('production content tools', () => {
@@ -20,6 +22,23 @@ describe('production content tools', () => {
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
+  });
+
+  it('keeps runtime content validation active through the lazy startup helper', async () => {
+    const state = createInitialGameState();
+    state.dev.contentValidation = {
+      ok: false,
+      errors: ['not checked'],
+      warnings: [],
+      checkedAt: -1
+    };
+
+    await validateRuntimeContent(state);
+
+    expect(state.dev.contentValidation.ok).toBe(true);
+    expect(state.dev.contentValidation.errors).toEqual([]);
+    expect(state.dev.contentValidation.warnings).toEqual([]);
+    expect(state.dev.contentValidation.checkedAt).toBe(state.clock);
   });
 
   it('links a static favicon so browser smoke does not add 404 noise', () => {
@@ -98,6 +117,24 @@ describe('production content tools', () => {
     expect(state.ui.panels.crafting).toBe(true);
     expect(state.ui.panels.inventory).toBe(true);
     expect(state.ui.selectedStationType).toBe('forge');
+  });
+
+  it('loads screenshot parity mutators through dev actions on demand', async () => {
+    const simulation = new Simulation(createInitialGameState());
+    simulation.state.dev.overlay = true;
+    simulation.dispatch({ type: 'DEV_APPLY_SCREENSHOT_PARITY', presetId: 'r8-profession-atlas' });
+
+    simulation.update(simulation.state.realtime.fixedDelta);
+    await waitFor(() => simulation.state.dev.screenshotParity.active);
+
+    expect(simulation.state.dev.screenshotParity.presetId).toBe('r8-profession-atlas');
+    expect(simulation.state.ui.panels.skills).toBe(true);
+
+    simulation.dispatch({ type: 'DEV_CLEAR_SCREENSHOT_PARITY' });
+    simulation.update(simulation.state.realtime.fixedDelta);
+    await waitFor(() => !simulation.state.dev.screenshotParity.active);
+
+    expect(simulation.state.dev.screenshotParity.presetId).toBeNull();
   });
 
   it('applies all reference presets with short HUD prompts instead of capture debug text', () => {
@@ -196,3 +233,11 @@ describe('production content tools', () => {
     expect(state.quests.bones_beneath.objectives.find((objective) => objective.containerId === chest.id)?.progress).toBe(1);
   });
 });
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  expect(predicate()).toBe(true);
+}

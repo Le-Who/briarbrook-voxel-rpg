@@ -38,6 +38,56 @@ interface BoxInstanceBatch {
   instances: BoxInstance[];
 }
 
+export type RuntimeDynamicLight = [x: number, y: number, z: number, color: string, intensity: number, distance: number];
+
+export const runtimeDynamicLightPlans: Partial<Record<AreaId, RuntimeDynamicLight[]>> = {
+  town: [
+    [-8, 2.2, -2, '#ffb35a', 0.9, 8],
+    [6, 2.2, -3, '#ffb35a', 0.9, 8],
+    [0, 2.4, 12, '#ffd27d', 0.75, 8]
+  ],
+  bank: [
+    [-4, 2.4, -3, '#ffc56f', 1.3, 9],
+    [5, 2.2, -2, '#ffc56f', 1.0, 8],
+    [1.5, 1.8, -1, '#ffd890', 0.8, 7]
+  ],
+  blacksmith: [
+    [2, 1.6, -2, '#ff5b22', 2.3, 10],
+    [-5, 2.2, 4, '#ffc06d', 0.9, 7],
+    [5, 2.2, -3, '#ffc06d', 0.8, 7]
+  ],
+  forest: [
+    [-6, 4, 4, '#b7f08c', 0.55, 12],
+    [6, 2, -6, '#ffc062', 0.8, 8]
+  ],
+  crypt: [
+    [-8, 1.8, -4, '#ff8e39', 1.5, 8],
+    [5, 1.8, -6, '#ff8e39', 1.5, 8],
+    [0, 1.5, 10, '#ff8e39', 1.0, 7]
+  ],
+  road: [
+    [1, 2, 2, '#ffb45f', 1.1, 8],
+    [-5, 2, -1, '#ffb45f', 1.0, 8],
+    [6, 1.5, -1, '#e45132', 0.55, 7]
+  ],
+  housing: [
+    [-8, 2, 5, '#ffd18a', 0.8, 8],
+    [8, 2, 0, '#ffd18a', 0.65, 8]
+  ]
+};
+
+const MAX_PICK_MESHES_PER_ENTITY = 2;
+
+export function selectPrimaryPickTargetIndexes(volumes: number[], maxTargets = MAX_PICK_MESHES_PER_ENTITY): number[] {
+  return volumes
+    .map((volume, index) => ({ volume, index }))
+    .filter((entry) => entry.volume > 0)
+    .sort((a, b) => b.volume - a.volume || a.index - b.index)
+    .slice(0, Math.max(0, maxTargets))
+    .map((entry) => entry.index)
+    .sort((a, b) => a - b);
+}
+
 export class VoxelRenderer {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.OrthographicCamera(-8, 8, 5, -5, 0.1, 1000);
@@ -121,9 +171,8 @@ export class VoxelRenderer {
     this.pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     recordRaycastCall();
-    const meshes: THREE.Object3D[] = [];
-    this.records.forEach((record) => meshes.push(...record.group.children));
-    this.lastRaycastCandidateCount = this.countPickableMeshes();
+    const meshes = this.collectPickableMeshes();
+    this.lastRaycastCandidateCount = meshes.length;
     const hits = this.raycaster.intersectObjects(meshes, true);
     const object = hits[0]?.object;
     if (!object) return null;
@@ -258,43 +307,7 @@ export class VoxelRenderer {
       light.userData.light = true;
       this.scene.add(light);
     };
-    const areaLights: Partial<Record<AreaId, Array<[number, number, number, string, number, number]>>> = {
-      town: [
-        [-8, 2.2, -2, '#ffb35a', 0.9, 8],
-        [6, 2.2, -3, '#ffb35a', 0.9, 8],
-        [0, 2.4, 12, '#ffd27d', 0.75, 8],
-        [13, 2.2, 4, '#ffb35a', 0.8, 8]
-      ],
-      bank: [
-        [-4, 2.4, -3, '#ffc56f', 1.3, 9],
-        [5, 2.2, -2, '#ffc56f', 1.0, 8],
-        [1.5, 1.8, -1, '#ffd890', 0.8, 7]
-      ],
-      blacksmith: [
-        [2, 1.6, -2, '#ff5b22', 2.3, 10],
-        [-5, 2.2, 4, '#ffc06d', 0.9, 7],
-        [5, 2.2, -3, '#ffc06d', 0.8, 7]
-      ],
-      forest: [
-        [-6, 4, 4, '#b7f08c', 0.55, 12],
-        [6, 2, -6, '#ffc062', 0.8, 8]
-      ],
-      crypt: [
-        [-8, 1.8, -4, '#ff8e39', 1.5, 8],
-        [5, 1.8, -6, '#ff8e39', 1.5, 8],
-        [0, 1.5, 10, '#ff8e39', 1.0, 7]
-      ],
-      road: [
-        [1, 2, 2, '#ffb45f', 1.1, 8],
-        [-5, 2, -1, '#ffb45f', 1.0, 8],
-        [6, 1.5, -1, '#e45132', 0.55, 7]
-      ],
-      housing: [
-        [-8, 2, 5, '#ffd18a', 0.8, 8],
-        [8, 2, 0, '#ffd18a', 0.65, 8]
-      ]
-    };
-    areaLights[areaId]?.forEach((entry) => point(...entry));
+    runtimeDynamicLightPlans[areaId]?.forEach((entry) => point(...entry));
   }
 
   private updateEntities(state: GameState): void {
@@ -1660,6 +1673,7 @@ export class VoxelRenderer {
       child.receiveShadow = true;
       child.userData.entityId = id;
     });
+    this.markPrimaryPickTargets(group);
     this.entityGroup.add(group);
     const record = { group, kind };
     this.records.set(id, record);
@@ -2561,13 +2575,36 @@ export class VoxelRenderer {
   }
 
   private countPickableMeshes(): number {
-    let count = 0;
+    return this.collectPickableMeshes().length;
+  }
+
+  private collectPickableMeshes(): THREE.Mesh[] {
+    const meshes: THREE.Mesh[] = [];
     this.records.forEach((record) => {
       record.group.traverse((child) => {
-        if (child instanceof THREE.Mesh) count += 1;
+        if (child instanceof THREE.Mesh && child.userData.primaryPickTarget) meshes.push(child);
       });
     });
-    return count;
+    return meshes;
+  }
+
+  private markPrimaryPickTargets(group: THREE.Group): void {
+    group.updateMatrixWorld(true);
+    const meshes: THREE.Mesh[] = [];
+    const volumes: number[] = [];
+    const box = new THREE.Box3();
+    const size = new THREE.Vector3();
+    group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      child.userData.primaryPickTarget = false;
+      box.setFromObject(child);
+      box.getSize(size);
+      meshes.push(child);
+      volumes.push(size.x * size.y * size.z);
+    });
+    selectPrimaryPickTargetIndexes(volumes).forEach((index) => {
+      meshes[index].userData.primaryPickTarget = true;
+    });
   }
 
   private readMemoryMb(): number | null {

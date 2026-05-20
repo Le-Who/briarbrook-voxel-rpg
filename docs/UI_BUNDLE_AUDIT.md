@@ -4,6 +4,14 @@ Prompt 131 status: accepted for the React UI alpha path, with the remaining Vite
 
 Prompt 132 status: accepted for internal alpha with the remaining warning classified as an acceptable known issue.
 
+Prompt 133 status: Three.js vendor output is split below the default Vite warning threshold. The remaining warning is the app entry chunk.
+
+Prompt 134 status: screenshot parity preset metadata stays available to the dev overlay, while the heavier preset mutator now loads as a lazy dev chunk when a screenshot parity action is invoked.
+
+Prompt 135 status: runtime content validation remains active but loads the registry and validation modules through lazy startup diagnostics instead of the app entry path.
+
+Prompt 136 status: Dev overlay diagnostics and React-owned legacy panel modules are no longer in the normal `UIManager` startup path. The remaining warning is the app entry chunk.
+
 ## Scope
 
 - Browser-only Vite + TypeScript + Three.js.
@@ -52,20 +60,40 @@ Initial static JS is now split into the app entry, React vendor, and Three vendo
 - React render counts are sampled through `consumeReactRenderCounts()` and flow into `PerfMonitor.windowRenderPerSecond` with `react:*` panel ids.
 - Existing performance surfaces continue to track FPS, frame time, subsystem timings, tooltip mount/update counts, window render counts, DOM node count, visible window count, and Loop Governor cadence.
 - `UIManager.getPerformanceStats()` now counts React windows marked with `data-ui-window="true"` in the visible window budget.
+- Game-loop DOM/window/icon diagnostics now refresh at a 1 second cadence instead of querying the DOM on every scheduled tick.
+- Screenshot parity application/clear logic is loaded on demand by the queued dev actions; the overlay keeps only the small preset metadata in the startup path.
+- Startup content validation remains active through `validateRuntimeContent`, with registry and validator modules loaded as lazy diagnostic chunks.
+- Dev overlay diagnostics load on first overlay use instead of through the normal HUD startup path.
+- `UIManager` no longer statically imports legacy panel modules for React-owned panels such as inventory, bank, hotbar, spellbook, crafting, journal, market, map, skills, build, chat, and help.
 
 ## Warning Status
 
-The Vite warning is reduced but not eliminated. The remaining oversized chunks are:
+The Vite warning is reduced but not eliminated. The remaining oversized chunk is:
 
-- `index-CD-GMfYw.js` at 941.78 kB minified, mostly core gameplay/data/UI integration code.
-- `three-vendor-NbT07Q_C.js` at 503.69 kB minified, just over the default warning threshold.
+- `index-Cnhbo3Qi.js` at 778.22 kB minified / 221.19 kB gzip, mostly core gameplay/data/UI integration code.
 
-Next action, outside prompt 131 unless requested: split large static game data and renderer-adjacent systems by route/area, then evaluate whether Three.js can stay as one vendor chunk with a documented threshold or needs a dedicated warning limit.
+The Three.js vendor output is now below the threshold:
+
+- `three-core-CFK7APYo.js` at 167.39 kB minified.
+- `three-vendor-D7JRZpM9.js` at 339.90 kB minified.
+
+Additional lazy dev chunks:
+
+- `screenshotParityPresets-BHt6vKIA.js` at 1.95 kB minified / 0.84 kB gzip.
+- `screenshotParity-DEO-jhjS.js` at 9.78 kB minified / 3.37 kB gzip.
+- `DevOverlay-DTaaZFeQ.js` at 26.56 kB minified / 7.82 kB gzip.
+
+Additional lazy content-validation chunks:
+
+- `ContentRegistry-CIoFrPPL.js` at 6.56 kB minified / 1.58 kB gzip.
+- `ContentValidation-BF9fxRVf.js` at 22.12 kB minified / 5.56 kB gzip.
+
+Next action: split large static game data and renderer-adjacent systems by route/area or dynamic ownership boundaries without introducing circular Rollup chunks.
 
 ## Acceptance
 
 - Initial gameplay bundle impact is documented.
-- React vendor and Three vendor chunks are visible in build output.
+- React vendor, Three core, and Three vendor chunks are visible in build output.
 - Profession Atlas / Adventure Map and Knowledge panels are dynamically imported.
 - Heavy UI workspaces are not part of the initial app entry chunk.
 - React root shell avoids frame/clock-driven rerenders.

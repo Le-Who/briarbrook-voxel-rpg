@@ -6,10 +6,20 @@ import { Simulation } from './Simulation';
 import { Input } from './Input';
 import { LoopGovernor } from './LoopGovernor';
 import { consumeRuntimePerfCounters, PerfMonitor } from './PerfMonitor';
-import { createContentRegistry } from '../tools/ContentRegistry';
-import { logContentValidation, validateContent } from '../tools/ContentValidation';
+import { validateRuntimeContent } from '../tools/runtimeContentValidation';
 import { createGameUIBridge, type GameUIBridge } from '../ui/react/bridge/GameUIBridge';
 import { consumeReactRenderCounts } from '../ui/react/components/renderMetrics';
+
+export const UI_PERFORMANCE_STATS_SAMPLE_MS = 1000;
+
+export function shouldSampleUiPerformanceStats(time: number, lastSampleAt: number | null, sampleMs = UI_PERFORMANCE_STATS_SAMPLE_MS): boolean {
+  return lastSampleAt == null || time - lastSampleAt >= sampleMs;
+}
+
+type UiPerformanceStats = Pick<
+  ReturnType<UIManager['getPerformanceStats']>,
+  'domNodeCount' | 'visibleWindowCount' | 'iconRenderRequestCount' | 'cachedIconCount' | 'eventListenerCount'
+>;
 
 export class Game {
   private simulation = new Simulation(loadGame());
@@ -22,6 +32,14 @@ export class Game {
   private readonly reactUIBridge: GameUIBridge;
   private lastFrame = performance.now();
   private lastSimulation = performance.now();
+  private lastUiPerformanceStatsAt: number | null = null;
+  private lastUiPerformanceStats: UiPerformanceStats = {
+    domNodeCount: 0,
+    visibleWindowCount: 0,
+    iconRenderRequestCount: 0,
+    cachedIconCount: 0,
+    eventListenerCount: 0
+  };
   private running = false;
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLDivElement) {
@@ -123,11 +141,15 @@ export class Game {
       tooltip: uiPerf.tooltip
     });
     this.perf.markDirty(uiPerf.dirty);
+    if (shouldSampleUiPerformanceStats(time, this.lastUiPerformanceStatsAt)) {
+      this.lastUiPerformanceStats = this.ui.getPerformanceStats();
+      this.lastUiPerformanceStatsAt = time;
+    }
     this.simulation.state.dev.renderStats = {
       ...renderStats,
       fps: frameDt > 0 ? Math.round(1 / frameDt) : 0,
       frameTimeMs: Number((frameDt * 1000).toFixed(1)),
-      ...this.ui.getPerformanceStats(),
+      ...this.lastUiPerformanceStats,
       perf: this.perf.sample(time),
       loop: decision.snapshot
     };
@@ -145,8 +167,15 @@ export class Game {
   }
 
   private validateStartupContent(): void {
-    const validation = validateContent(createContentRegistry(this.simulation.state), this.simulation.state.clock);
-    this.simulation.state.dev.contentValidation = validation;
-    logContentValidation(validation);
+    void validateRuntimeContent(this.simulation.state).catch((error: unknown) => {
+      this.simulation.state.dev.contentValidation = {
+        ...this.simulation.state.dev.contentValidation,
+        ok: false,
+        checkedAt: this.simulation.state.clock,
+        errors: ['Runtime content validation failed to load.'],
+        warnings: []
+      };
+      console.error('[content] runtime validation failed to load', error);
+    });
   }
 }

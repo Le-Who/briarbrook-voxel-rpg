@@ -5,7 +5,7 @@ export class MaterialLibrary {
   private materials = new Map<string, THREE.MeshStandardMaterial>();
 
   get(name: string, color: string, options: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
-    const key = `${name}:${color}:${JSON.stringify(options)}`;
+    const key = `${name}:${color}:${stableMaterialOptionKey(options)}`;
     const existing = this.materials.get(key);
     if (existing) return existing;
     const material = new THREE.MeshStandardMaterial({
@@ -45,6 +45,16 @@ export class MaterialLibrary {
     this.materials.forEach((material) => material.dispose());
     this.materials.clear();
   }
+}
+
+function stableMaterialOptionKey(value: unknown): string {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (value instanceof THREE.Color) return `Color:${value.getHexString()}`;
+  if (Array.isArray(value)) return `[${value.map((entry) => stableMaterialOptionKey(entry)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([entryKey, entryValue]) => `${JSON.stringify(entryKey)}:${stableMaterialOptionKey(entryValue)}`).join(',')}}`;
 }
 
 export const areaAmbient: Record<AreaId, { bg: string; fog: string; hemi: string; sun: string; intensity: number }> = {

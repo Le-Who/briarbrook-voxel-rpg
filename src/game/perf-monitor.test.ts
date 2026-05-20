@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { shouldSampleUiPerformanceStats, UI_PERFORMANCE_STATS_SAMPLE_MS } from './Game';
 import { consumeRuntimePerfCounters, PerfMonitor, recordPathfindingCall, recordRaycastCall } from './PerfMonitor';
 
 describe('PerfMonitor', () => {
@@ -58,5 +59,11 @@ describe('PerfMonitor', () => {
 
     expect(consumeRuntimePerfCounters()).toEqual({ raycastCalls: 3, pathfindingCalls: 1 });
     expect(consumeRuntimePerfCounters()).toEqual({ raycastCalls: 0, pathfindingCalls: 0 });
+  });
+
+  it('keeps DOM/window diagnostics on a low-frequency sampling cadence', () => {
+    expect(shouldSampleUiPerformanceStats(100, null)).toBe(true);
+    expect(shouldSampleUiPerformanceStats(450, 100)).toBe(false);
+    expect(shouldSampleUiPerformanceStats(100 + UI_PERFORMANCE_STATS_SAMPLE_MS, 100)).toBe(true);
   });
 });

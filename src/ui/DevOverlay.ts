@@ -3,7 +3,7 @@ import { itemDefs } from '../data/items';
 import { createProgressionBalanceReport, summarizeFirstHourBalance } from '../systems/BalanceSystem';
 import { skillGainsPerMinute } from '../systems/TelemetrySystem';
 import { createDevScenePresets } from '../tools/devScenes';
-import { createScreenshotParityPresets } from '../tools/screenshotParity';
+import { createScreenshotParityPresets } from '../tools/screenshotParityPresets';
 import type { GameState, ResourceTile, TargetRef } from '../game/types';
 
 export function DevOverlay(state: GameState): string {

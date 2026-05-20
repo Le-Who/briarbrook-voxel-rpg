@@ -1,7 +1,7 @@
 # Performance Audit
 
 Current status update: 2026-05-20
-Current validation: `npm run lint`, `npm test`, `npm run test:perf-ui`, `npm run content:validate`, and `npm run build` all pass on the post-foundation/internal-alpha branch. `content:validate` reports 0 warnings, and `npm run build` still reports the accepted Vite large-chunk warning for the main JavaScript bundle.
+Current validation: `npm run lint`, `npm test`, `npm run test:perf-ui`, `npm run content:validate`, and `npm run build` all pass on the post-foundation/internal-alpha branch. `content:validate` reports 0 warnings, and `npm run build` still reports the accepted Vite large-chunk warning for the main app entry bundle.
 
 This document keeps the original Phase 10 browser profiling table as the baseline that motivated loop-governor, dirty UI, minimap, tooltip, and DOM containment work. The current R1-R9 visual-reference budget captures and worst-observed render stats live in `VISUAL_BUDGET.md`.
 
@@ -137,7 +137,17 @@ CPU estimate is main-thread measured work per second: `(simulation avg ms + rend
 
 Known accepted warnings:
 
-- Vite reports the main JavaScript chunk over 500 kB after minification.
+- Vite reports the main app entry chunk over 500 kB after minification.
+
+## Current Optimization Notes
+
+- UI DOM/window/icon diagnostics now refresh at a 1 second cadence instead of querying the DOM on every scheduled tick; frame/FPS and loop cadence counters still update in the live frame path.
+- Three.js vendor output is split into `three-core` and `three-vendor` chunks under the default 500 kB warning threshold. The remaining accepted Vite warning is the app entry chunk.
+- Screenshot parity mutators and startup content validation diagnostics now load through lazy chunks while preserving the existing dev overlay and content-validation contracts.
+- The always-visible player status HUD fragment now uses the existing dirty-state cache so clean UI cadence frames do not keep calling its loadout icon render paths.
+- Dev overlay diagnostics now load on first overlay use, and React-owned legacy panel modules are removed from the normal `UIManager` startup path. The current production build keeps the app entry at 778.22 kB minified / 221.19 kB gzip, down from 908.62 kB in the prior local build.
+- Runtime dynamic point lights now use an exported budget-checked plan, and entity raycasts use bounded primary pick meshes instead of every decorative child mesh. The 1366x768 R1-R9 reference sweep showed raycast candidates reduced from 184/105/90/189/27/27/46/184/255 to 63/33/25/88/5/5/15/63/120 with dynamic point lights at or below 3 in every area.
+- `MaterialLibrary` now uses stable option-key serialization so equivalent material parameter objects share the same `MeshStandardMaterial` even when property insertion order differs.
 
 ## Optimization Plan
 

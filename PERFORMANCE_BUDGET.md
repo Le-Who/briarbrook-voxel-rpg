@@ -17,7 +17,7 @@ The visual-reference pass adds screenshot-parity budget captures for R1-R9 in `V
 - Active gameplay FPS cap: default 60, optional 120, or Custom from 30 to 240. The selected cap affects active/combat render cadence only; simulation remains fixed at 60 Hz.
 - Meshes: 1200 total, with repeated static objects expected to move toward batching or instancing.
 - Triangles: 140000 target.
-- Raycast candidates: 900 target.
+- Raycast candidates: 900 target. The runtime counter tracks bounded primary pick-target meshes, not every decorative child mesh inside a rendered entity.
 - UI DOM nodes: 1800 target with inventory, spellbook, journal, and help open.
 - Visible managed windows: 8 target.
 - Cached icons: 260 target; icon source size remains 64x64 SVG/viewBox unless a later atlas replaces it.
@@ -38,6 +38,11 @@ The visual-reference pass adds screenshot-parity budget captures for R1-R9 in `V
 - New treasure, economy, housing, and living-world visual hooks must reuse existing budget counters rather than adding untracked DOM or mesh families.
 - Any scene-density pass that raises draw calls, meshes, DOM nodes, raycast candidates, or estimated frame time must update `VISUAL_BUDGET.md` or the relevant QA document with before/after stats.
 
+## Current Render Notes
+
+- Runtime point-light plans are exported and covered by render-budget tests; each area stays at or below the three-light hard budget.
+- Entity raycasts query only primary pick meshes per visible entity, reducing candidate counts without hiding visual detail or changing target affordances.
+
 ## Current Verification Gate
 
 Run before publishing internal alpha changes:
@@ -52,4 +57,4 @@ npm run build
 
 Current accepted non-blockers:
 
-- Main Vite JavaScript chunk remains over the default 500 kB warning threshold.
+- Main app entry JavaScript chunk remains over the default 500 kB warning threshold.

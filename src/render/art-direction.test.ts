@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import * as Materials from './Materials';
-import { areaAmbient } from './Materials';
-import { createInitialRenderStats, estimateRenderFrameMs, renderPerformanceBudget, renderStatsWithinBudget } from './RenderBudgets';
+import { areaAmbient, MaterialLibrary } from './Materials';
+import { assetPerformanceBudget, createInitialRenderStats, estimateRenderFrameMs, renderPerformanceBudget, renderStatsWithinBudget } from './RenderBudgets';
 import { VoxelKit, type VoxelBuilderOptions } from './VoxelKit';
+import { runtimeDynamicLightPlans, selectPrimaryPickTargetIndexes } from './VoxelRenderer';
 
 describe('art direction consolidation', () => {
   it('keeps required procedural builders reusable and metadata-aware', () => {
@@ -96,6 +97,16 @@ describe('art direction consolidation', () => {
     expect(new Set(Object.values(areaAmbient).map((entry) => entry.bg)).size).toBeGreaterThan(4);
   });
 
+  it('reuses materials for equivalent options regardless of property order', () => {
+    const library = new MaterialLibrary();
+    const first = library.get('cache-order-smoke', '#ff9b2f', { transparent: true, opacity: 0.52, emissive: '#ff5c1f', emissiveIntensity: 0.8 });
+    const second = library.get('cache-order-smoke', '#ff9b2f', { emissiveIntensity: 0.8, emissive: '#ff5c1f', opacity: 0.52, transparent: true });
+
+    expect(second).toBe(first);
+
+    library.dispose();
+  });
+
   it('defines prompt-110 lighting presets with bounded dynamic lights', () => {
     const presets = (Materials as unknown as { visualLightingPresets?: Record<string, { area: string; phase: string; dynamicLightBudget: number; mood: string }> }).visualLightingPresets;
 
@@ -112,6 +123,18 @@ describe('art direction consolidation', () => {
       expect(preset.mood.length).toBeGreaterThan(10);
       expect(preset.dynamicLightBudget).toBeLessThanOrEqual(3);
     });
+  });
+
+  it('keeps runtime area point-light plans inside the hard visual budget', () => {
+    Object.entries(runtimeDynamicLightPlans).forEach(([area, lights]) => {
+      expect(lights.length, area).toBeLessThanOrEqual(assetPerformanceBudget.maxDynamicLights);
+    });
+  });
+
+  it('selects a bounded primary mesh set for entity raycasts', () => {
+    expect(selectPrimaryPickTargetIndexes([0.01, 0.7, 0.04, 0.35, 0.02], 2)).toEqual([1, 3]);
+    expect(selectPrimaryPickTargetIndexes([0.02, 0.03, 0.04], 1)).toEqual([2]);
+    expect(selectPrimaryPickTargetIndexes([], 2)).toEqual([]);
   });
 
   it('tracks render budget fields and flags over-budget scenes', () => {

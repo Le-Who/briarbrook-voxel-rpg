@@ -66,7 +66,7 @@ New unique mesh families are justified only when they create a reusable builder 
 - Prefer existing `VoxelKit` builders before custom mesh clusters.
 - If a repeated prop family exceeds roughly 50 instances in a scene, evaluate instancing/batching before adding more.
 - Dynamic point lights are reserved for forges, torches, spell effects, and key lamps; decorative lights must be baked into emissive material or omitted.
-- Raycast candidates should include interactables and useful hover targets only, not every decorative prop.
+- Raycast candidates should include interactables and useful hover targets only, not every decorative prop or decorative child mesh.
 
 ## R1 Budget Capture - Prompt 111
 
@@ -187,6 +187,27 @@ Budget decisions:
 - R4 accepts the live gathering progress prompt after simulation advances, while unit coverage verifies the initial short affordance prompt.
 - Remaining warnings are non-blocking browser automation warnings: AudioContext autoplay and Chromium `ReadPixels` during screenshot capture.
 
+## R1-R9 Raycast And Light Budget Capture - Prompt 119
+
+Captured at 1366x768 after moving runtime point-light plans behind a test-covered budget table and narrowing entity raycasts to primary pick-target meshes.
+
+| Ref | Dynamic Point Lights | Raycast Candidates Before | Raycast Candidates After | Pick Proof |
+| --- | ---: | ---: | ---: | --- |
+| R1 | 3 / 3 | 184 | 63 | Bank portal pick resolves. |
+| R2 | 3 / 3 | 105 | 33 | Highway Bandit pick resolves. |
+| R3 | 3 / 3 | 90 | 25 | Skeletal Warrior pick resolves. |
+| R4 | 2 / 3 | 189 | 88 | Active gathering target remains visible and budgeted. |
+| R5 | 3 / 3 | 27 | 5 | Smithy service entities remain visible and budgeted. |
+| R6 | 3 / 3 | 27 | 5 | Bank service entities remain visible and budgeted. |
+| R7 | 2 / 3 | 46 | 15 | Build-mode scene remains budgeted. |
+| R8 | 3 / 3 | 184 | 63 | Profession Atlas town background remains budgeted. |
+| R9 | 2 / 3 | 255 | 120 | Adventure Map forest background remains budgeted. |
+
+Budget decisions:
+- The raycast counter now represents primary pick-target meshes per visible entity, not every child mesh in an entity model.
+- Entity visuals, labels, service markers, terrain dressing, and static scene detail were not removed to reduce the counter.
+- Runtime dynamic-light additions must go through `runtimeDynamicLightPlans` and stay within `assetPerformanceBudget.maxDynamicLights`.
+
 ## Verification Gates
 
 Required after each implementation prompt in the visual block:
@@ -203,15 +224,15 @@ Required after each implementation prompt in the visual block:
 Current full-project publish gate on 2026-05-20:
 
 - `npm run lint`: passed (`tsc --noEmit`).
-- `npm test`: passed, 88 files / 402 tests.
-- `npm run test:perf-ui`: passed, 12 files / 72 tests.
+- `npm test`: passed, 88 files / 415 tests.
+- `npm run test:perf-ui`: passed, 12 files / 77 tests.
 - `npm run content:validate`: passed, 0 errors / 0 warnings.
 - `npm run build`: passed with the accepted Vite large-chunk warning.
 
 Remaining budget risks:
 
 - Future Treasure Hunting expansion must reuse the R1-R9 budget counters for clue markers, secret containers, traps, map updates, floating text, and reward VFX.
-- Current Vite bundle size warning is not a frame-budget failure, but it remains a release polish/code-splitting item.
+- Current Vite app-entry bundle size warning is not a frame-budget failure, but it remains a release polish/code-splitting item.
 - Content validation is currently clean; future content taxonomy warnings should not be treated as render-budget failures unless they change runtime visual scope.
 
 ## Visual Budget Checklist

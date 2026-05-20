@@ -12,26 +12,13 @@ import { calculateWeight } from '../systems/InventorySystem';
 import { inspectTargetForTool } from '../systems/ResourceSystem';
 import { emitAudioHook } from '../audio/AudioHooks';
 import { createCleanDirtySnapshot, createEmptyUiPerfCounters, type PerfDirtySnapshot, type PerfTooltipSnapshot, type UiPerfCounters } from '../game/PerfMonitor';
-import { BankPanel } from './BankPanel';
-import { BuildPanel } from './BuildPanel';
 import { CharacterPanel } from './CharacterPanel';
 import { CombatActionsPanel } from './CombatActionsPanel';
-import { ChatPanel } from './ChatPanel';
-import { CraftingPanel } from './CraftingPanel';
-import { DevOverlay } from './DevOverlay';
 import { GuidePanel } from './GuidePanel';
-import { Hotbar } from './Hotbar';
-import { HelpPanel } from './HelpPanel';
-import { InventoryPanel } from './InventoryPanel';
-import { JournalPanel } from './JournalPanel';
-import { MapPanel } from './MapPanel';
-import { MarketBoardPanel } from './MarketBoardPanel';
 import { MerchantPanel } from './MerchantPanel';
 import { Minimap } from './Minimap';
 import { PartyFrame } from './PartyFrame';
 import { QuestTracker } from './QuestTracker';
-import { SkillsPanel } from './SkillsPanel';
-import { SpellbookPanel } from './SpellbookPanel';
 import { TargetFrame } from './TargetFrame';
 import { TreasureMapPanel } from './TreasureMapPanel';
 import { TradePanel } from './TradePanel';
@@ -48,9 +35,9 @@ import {
 } from './DragPayload';
 import { captureManagedScrollPositions, isEditableTarget, isScrollableTarget, restoreManagedScrollPositions, WindowManager } from './WindowManager';
 import { shouldDeferHudReplacement, shouldThrottleHudReplacement } from './UIRenderGuards';
-import { isReactPanel } from './react/bridge/uiPanelRegistry';
 
 type Dispatch = (action: GameAction) => void;
+type DevOverlayRenderer = (state: GameState) => string;
 
 function isCompanionCommand(value: string): value is CompanionCommand {
   return value === 'follow' || value === 'hold' || value === 'assist' || value === 'passive';
@@ -124,6 +111,9 @@ export class UIManager {
   private perfDirty: PerfDirtySnapshot = createCleanDirtySnapshot();
   private renderOptions: NormalizedUiRenderOptions = { minimapDirty: true, tooltipDirty: true, dirtyFlags: {} };
   private currentState: GameState | null = null;
+  private devOverlayRenderer: DevOverlayRenderer | null = null;
+  private devOverlayLoadStarted = false;
+  private devOverlayLoadFailed = false;
   private uiPointerDown = false;
   private pendingHud: string | null = null;
   private hotbarDrag: PendingHotbarDrag | null = null;
@@ -464,35 +454,35 @@ export class UIManager {
   }
 
   private renderHud(state: GameState): string {
-    return `${this.renderTrackedFragment('playerStatus', () => this.playerStatus(state))}
+    return `${this.renderTrackedFragment('playerStatus', () => this.playerStatus(state), this.fragmentDirty('worldDirty', 'entitiesDirty', 'inventoryDirty', 'equipmentDirty', 'hotbarDirty', 'spellbookDirty', 'journalDirty', 'marketDirty', 'windowLayoutDirty'))}
       ${this.renderTrackedFragment('partyFrame', () => PartyFrame(state), this.fragmentDirty('entitiesDirty', 'worldDirty'))}
       ${this.renderTrackedFragment('targetFrame', () => TargetFrame(state))}
       ${this.renderMinimapFragment(state)}
-      ${this.renderTrackedFragment('mapPanel', () => (isReactPanel('map') ? '' : MapPanel(state)), this.fragmentDirty('minimapDirty', 'journalDirty', 'windowLayoutDirty'))}
-      ${this.renderTrackedFragment('help', () => (isReactPanel('help') ? '' : HelpPanel(state)), this.fragmentDirty('windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('mapPanel', () => '', this.fragmentDirty('minimapDirty', 'journalDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('help', () => '', this.fragmentDirty('windowLayoutDirty', 'tooltipDirty'))}
       ${this.renderTrackedFragment('combatActions', () => CombatActionsPanel(state), this.fragmentDirty('entitiesDirty', 'equipmentDirty', 'hotbarDirty', 'windowLayoutDirty'))}
-      ${this.renderTrackedFragment('inventory', () => (isReactPanel('inventory') ? '' : InventoryPanel(state)), this.fragmentDirty('inventoryDirty', 'equipmentDirty', 'hotbarDirty', 'windowLayoutDirty', 'tooltipDirty'))}
-      ${this.renderTrackedFragment('journal', () => (isReactPanel('journal') ? '' : JournalPanel(state)), this.fragmentDirty('journalDirty', 'inventoryDirty', 'skillsDirty', 'spellbookDirty', 'marketDirty', 'windowLayoutDirty'))}
-      ${this.renderTrackedFragment('market', () => (isReactPanel('market') ? '' : MarketBoardPanel(state)), this.fragmentDirty('marketDirty', 'inventoryDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('inventory', () => '', this.fragmentDirty('inventoryDirty', 'equipmentDirty', 'hotbarDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('journal', () => '', this.fragmentDirty('journalDirty', 'inventoryDirty', 'skillsDirty', 'spellbookDirty', 'marketDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('market', () => '', this.fragmentDirty('marketDirty', 'inventoryDirty', 'windowLayoutDirty'))}
       ${this.renderTrackedFragment('treasureMap', () => TreasureMapPanel(state), this.fragmentDirty('journalDirty', 'inventoryDirty', 'minimapDirty', 'windowLayoutDirty'))}
       ${this.renderTrackedFragment('status', () => this.statusPanel(state))}
       ${this.renderTrackedFragment('questTracker', () => QuestTracker(state), this.fragmentDirty('journalDirty', 'worldDirty', 'windowLayoutDirty'))}
       ${this.renderTrackedFragment('guide', () => GuidePanel(state), this.fragmentDirty('journalDirty', 'inventoryDirty', 'skillsDirty', 'windowLayoutDirty'))}
       ${this.renderTrackedFragment('character', () => CharacterPanel(state), this.fragmentDirty('inventoryDirty', 'equipmentDirty', 'skillsDirty', 'windowLayoutDirty'))}
-      ${this.renderTrackedFragment('skills', () => (isReactPanel('skills') ? '' : SkillsPanel(state)), this.fragmentDirty('skillsDirty', 'inventoryDirty', 'spellbookDirty', 'journalDirty', 'windowLayoutDirty', 'tooltipDirty'))}
-      ${this.renderTrackedFragment('spellbook', () => (isReactPanel('spellbook') ? '' : SpellbookPanel(state)), this.fragmentDirty('spellbookDirty', 'inventoryDirty', 'hotbarDirty', 'windowLayoutDirty', 'tooltipDirty'))}
-      ${this.renderTrackedFragment('bank', () => (isReactPanel('bank') ? '' : BankPanel(state)), this.fragmentDirty('inventoryDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('skills', () => '', this.fragmentDirty('skillsDirty', 'inventoryDirty', 'spellbookDirty', 'journalDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('spellbook', () => '', this.fragmentDirty('spellbookDirty', 'inventoryDirty', 'hotbarDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('bank', () => '', this.fragmentDirty('inventoryDirty', 'windowLayoutDirty', 'tooltipDirty'))}
       ${this.renderTrackedFragment('trade', () => TradePanel(state), this.fragmentDirty('inventoryDirty', 'marketDirty', 'windowLayoutDirty'))}
       ${this.renderTrackedFragment('merchant', () => MerchantPanel(state), this.fragmentDirty('inventoryDirty', 'marketDirty', 'windowLayoutDirty'))}
-      ${this.renderTrackedFragment('crafting', () => (isReactPanel('crafting') ? '' : CraftingPanel(state)), this.fragmentDirty('inventoryDirty', 'skillsDirty', 'windowLayoutDirty', 'tooltipDirty'))}
-      ${this.renderTrackedFragment('build', () => (isReactPanel('build') ? '' : BuildPanel(state)), this.fragmentDirty('inventoryDirty', 'worldDirty', 'windowLayoutDirty', 'tooltipDirty'))}
-      ${this.renderTrackedFragment('chat', () => (isReactPanel('chat') ? '' : ChatPanel(state)), this.fragmentDirty('chatDirty', 'windowLayoutDirty'))}
-      ${this.renderTrackedFragment('hotbar', () => (isReactPanel('hotbar') ? '' : Hotbar(state)), this.fragmentDirty('hotbarDirty', 'inventoryDirty', 'equipmentDirty', 'spellbookDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('crafting', () => '', this.fragmentDirty('inventoryDirty', 'skillsDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('build', () => '', this.fragmentDirty('inventoryDirty', 'worldDirty', 'windowLayoutDirty', 'tooltipDirty'))}
+      ${this.renderTrackedFragment('chat', () => '', this.fragmentDirty('chatDirty', 'windowLayoutDirty'))}
+      ${this.renderTrackedFragment('hotbar', () => '', this.fragmentDirty('hotbarDirty', 'inventoryDirty', 'equipmentDirty', 'spellbookDirty', 'tooltipDirty'))}
       ${this.renderTrackedFragment('actionProgress', () => this.actionProgress(state))}
       ${this.renderTrackedFragment('contextMenu', () => this.contextMenu(state))}
       ${this.renderTrackedFragment('damageIndicator', () => this.damageIndicator(state))}
       ${this.renderTrackedFragment('areaFade', () => this.areaFade(state))}
-      ${this.renderTrackedFragment('devOverlay', () => DevOverlay(state))}
+      ${this.renderDevOverlayFragment(state)}
       ${this.renderTrackedFragment('prompt', () => `<div class="prompt">${state.ui.prompt}</div>`)}`;
   }
 
@@ -520,6 +510,39 @@ export class UIManager {
     const cached = this.lastFragmentHtml.get('minimap');
     if (!this.renderOptions.minimapDirty && cached != null) return cached;
     return this.renderTrackedFragment('minimap', () => Minimap(state));
+  }
+
+  private renderDevOverlayFragment(state: GameState): string {
+    const cached = this.lastFragmentHtml.get('devOverlay');
+    if (!state.dev.overlay) {
+      if (cached === '') return cached;
+      return this.renderTrackedFragment('devOverlay', () => '');
+    }
+    return this.renderTrackedFragment('devOverlay', () => {
+      if (this.devOverlayRenderer) return this.devOverlayRenderer(state);
+      this.loadDevOverlay();
+      if (this.devOverlayLoadFailed) {
+        return '<section class="dev-overlay"><header><span>Dev Tools</span><b class="bad">load failed</b><button data-action="toggle-dev-overlay">x</button></header><div class="dev-grid"><div><p><span>Dev overlay</span><b>unavailable</b></p></div></div></section>';
+      }
+      return '<section class="dev-overlay"><header><span>Dev Tools</span><b>loading</b><button data-action="toggle-dev-overlay">x</button></header><div class="dev-grid"><div><p><span>Dev overlay</span><b>loading diagnostics</b></p></div></div></section>';
+    });
+  }
+
+  private loadDevOverlay(): void {
+    if (this.devOverlayLoadStarted) return;
+    this.devOverlayLoadStarted = true;
+    void import('./DevOverlay')
+      .then(({ DevOverlay }) => {
+        this.devOverlayRenderer = DevOverlay;
+        this.lastFragmentHtml.delete('devOverlay');
+        if (this.currentState?.dev.overlay) this.replaceHud(this.renderHud(this.currentState));
+      })
+      .catch((error: unknown) => {
+        this.devOverlayLoadFailed = true;
+        this.lastFragmentHtml.delete('devOverlay');
+        console.error('[ui] failed to load dev overlay', error);
+        if (this.currentState?.dev.overlay) this.replaceHud(this.renderHud(this.currentState));
+      });
   }
 
   private areaFade(state: GameState): string {
