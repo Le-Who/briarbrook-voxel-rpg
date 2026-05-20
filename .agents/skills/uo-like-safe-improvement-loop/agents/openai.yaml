@@ -1,0 +1,4 @@
+interface:
+  display_name: "UO-like Safe Improvement Loop"
+  short_description: "Evidence-first continuous UO-like project improvement."
+  default_prompt: "Use $uo-like-safe-improvement-loop to improve this UO-like project with measured gates and protected gameplay semantics."

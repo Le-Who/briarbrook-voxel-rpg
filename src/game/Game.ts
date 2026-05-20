@@ -8,6 +8,8 @@ import { LoopGovernor } from './LoopGovernor';
 import { consumeRuntimePerfCounters, PerfMonitor } from './PerfMonitor';
 import { createContentRegistry } from '../tools/ContentRegistry';
 import { logContentValidation, validateContent } from '../tools/ContentValidation';
+import { createGameUIBridge, type GameUIBridge } from '../ui/react/bridge/GameUIBridge';
+import { consumeReactRenderCounts } from '../ui/react/components/renderMetrics';
 
 export class Game {
   private simulation = new Simulation(loadGame());
@@ -17,11 +19,18 @@ export class Game {
   private audio = new AudioManager(this.simulation.state.ui.audio);
   private governor = new LoopGovernor();
   private perf = new PerfMonitor();
+  private readonly reactUIBridge: GameUIBridge;
   private lastFrame = performance.now();
   private lastSimulation = performance.now();
   private running = false;
 
   constructor(private canvas: HTMLCanvasElement, uiRoot: HTMLDivElement) {
+    this.reactUIBridge = createGameUIBridge({
+      getState: () => this.simulation.state,
+      dispatch: (action) => this.simulation.dispatch(action),
+      subscribe: (listener) => this.simulation.subscribe(listener),
+      getGame: () => this
+    });
     this.renderer = new VoxelRenderer(canvas, this.simulation.areaManager);
     this.ui = new UIManager(uiRoot, (action) => this.simulation.dispatch(action));
     this.input = new Input(canvas, this.renderer, this.simulation.areaManager, () => this.simulation.state, (action) => this.simulation.dispatch(action));
@@ -40,6 +49,10 @@ export class Game {
 
   stop(): void {
     this.running = false;
+  }
+
+  getReactUIBridge(): GameUIBridge {
+    return this.reactUIBridge;
   }
 
   private tick(time: number): void {
@@ -93,6 +106,7 @@ export class Game {
     }
 
     const uiPerf = this.ui.consumePerfCounters();
+    const reactRenderCounts = consumeReactRenderCounts();
     const runtimePerf = consumeRuntimePerfCounters();
     this.perf.addCounters({
       uiRenderPerSecond: uiPerf.uiRenderCount,
@@ -105,7 +119,7 @@ export class Game {
       pathfindingPerSecond: runtimePerf.pathfindingCalls,
       activeTimers: uiPerf.activeTimers + 1,
       activeIntervals: uiPerf.activeIntervals,
-      windowRenderCounts: uiPerf.windowRenderCounts,
+      windowRenderCounts: { ...uiPerf.windowRenderCounts, ...reactRenderCounts },
       tooltip: uiPerf.tooltip
     });
     this.perf.markDirty(uiPerf.dirty);

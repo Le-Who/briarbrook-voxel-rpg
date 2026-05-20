@@ -3,4 +3,5 @@ dist/
 *.log
 vite-dev.*.log
 artifacts/
+output/playwright/
 *.zip

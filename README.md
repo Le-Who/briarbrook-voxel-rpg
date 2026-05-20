@@ -4,6 +4,47 @@ A browser-based voxel RPG vertical slice built with TypeScript, Vite, and Three.
 
 Briarbrook is inspired by classic sandbox RPG verbs at a high level: town life, skills, inventory, banking, crafting, gathering, trading, housing, quests, and dungeon combat. It does not use copied names, maps, lore, UI assets, art packs, or external visual assets.
 
+## Stack Specification
+
+### Runtime And Package Baseline
+
+- Browser-only single-page game. `index.html` mounts one WebGL canvas (`#game-canvas`) and one DOM UI root (`#ui-root`), then loads `src/main.ts` as the Vite module entrypoint.
+- TypeScript-first codebase with `strict` compiler checks, ES2022 target, DOM typings, bundler-style module resolution, isolated modules, and no emitted JavaScript during the static check.
+- Vite is the development server, production bundler, and preview host. `vite.config.ts` keeps React and Three.js vendor chunks explicit and leaves the remaining chunk warning visible.
+- npm is the package manager surface. `package-lock.json` is lockfile version 3 and should be kept in sync with `package.json`.
+- Runtime dependency footprint is intentionally small: Three.js, React, and React DOM are the production dependencies. TypeScript, Vite, Vitest, Playwright, and type packages are development dependencies.
+- There is no React Three Fiber, Vue, Phaser, Redux, Tailwind, server framework, database client, or shipped backend service in the current runtime.
+
+### Application Architecture
+
+- `src/main.ts` creates the `Game` instance and exposes it as `window.briarbrookGame` for local debugging and smoke checks.
+- `src/game/Game.ts` is the top-level coordinator. It wires `Simulation`, `Input`, `VoxelRenderer`, `UIManager`, `AudioManager`, `LoopGovernor`, `PerfMonitor`, save/load, and startup content validation.
+- `src/game/Simulation.ts` is the authoritative local action dispatcher. DOM handlers and Three.js rendering should dispatch actions instead of mutating gameplay state directly.
+- `src/game/GameState.ts` and `src/game/types.ts` define the serializable gameplay state and shared domain contracts.
+- `src/systems/*` holds gameplay systems: combat, movement, inventory, crafting, economy, housing, quests, skills, magic, treasure, crime/reputation, companions, world density, feedback, telemetry, and transitions.
+- `src/data/*` is the data registry layer for areas, items, skills, recipes, resources, spells, quests, economy, housing, professions, risk zones, treasure, combat encounters, tree resources, and visual prefabs.
+- `src/net/*` contains multiplayer-readiness scaffolding: authoritative simulation, client input commands, event bus, local prediction, reconciliation hooks, protocol types, snapshot serialization, and the town-room sync spike. This is not a shipped network backend.
+
+### Rendering, UI, And Assets
+
+- Rendering is custom Three.js code under `src/render/*`. `VoxelRenderer`, `VoxelKit`, `Materials`, `RenderBudgets`, visual-reference plans, icon rendering, equipment visuals, and asset pipeline helpers live there.
+- The visual style is procedural voxel-inspired runtime geometry. The current shipped game does not import a complete `.vox`, Blockbench, or external art-pack scene at runtime.
+- Source art experiments and future pipeline material live under `assets/source/*`, with generated/exported placeholders under `assets/generated/*` and `assets/exported/*`.
+- UI is migrating to React for player-facing HUD/windows under `src/ui/react/*`, mounted into `#ui-root` beside the single Three.js canvas. `UIManager` remains for transitional legacy surfaces, tooltip/minimap support, and direct regression contracts while React owns inventory, bank, hotbar, spellbook, crafting, journal, market, map, Profession Atlas, build mode, chat, help, and settings.
+- `src/ui/WindowManager.ts`, `src/ui/react/windows/windowManagerV2.ts`, `DragPayload.ts`, layout presets, render guards, tooltip manager, minimap, and visual theme files own the movable/resizable window layer and UI performance budget contracts.
+- `src/styles.css` is the global styling surface. There is no CSS preprocessor, CSS-in-JS runtime, or component library.
+- Audio is local browser audio logic under `src/audio/*`, with settings, hooks, cue catalog coverage, and ambient update integration through `AudioManager`.
+
+### Persistence, Tooling, And Validation
+
+- Save/load is local browser persistence through `src/game/SaveLoad.ts`, backed by `localStorage` and a sanitized serializable `GameState`.
+- `src/net/SnapshotSerializer.ts` covers snapshot round trips for multiplayer-readiness and production-tool checks, separate from the local save format.
+- Content tooling lives under `src/tools/*` and `tools/content-validate.mjs`. It provides content registry export, validation, authoring previews, stability-gate checks, accessibility certification, production-tool checks, screenshot parity helpers, and next-pillar decision coverage.
+- Tests are Vitest-based and colocated with the systems they protect (`*.test.ts` under `src/**`). The focused performance/UI gate is an explicit list in `npm run test:perf-ui`.
+- The static quality gate is `npm run lint`, implemented as `tsc --noEmit`; ESLint is not configured in this repository.
+- The production build gate is `npm run build`, implemented as `tsc && vite build`.
+- `npm run build:health` is a convenience shortcut for `npm test && npm run build`; it does not replace the full playable-cut gate listed below.
+
 ## Current Build Status
 
 The current branch contains the post-foundation scope gate, visual-reference implementation pass, gameplay-depth pillars, internal alpha release candidate gate, and next-pillar decision matrix. It is ready for focused internal alpha playtesting, not a broad external release.
@@ -68,6 +109,9 @@ Before treating a cut as playable, run:
 npm run lint
 npm test
 npm run test:perf-ui
+npm run test:ui-smoke
+npm run test:ui-visual
+npm run test:ui-alpha
 npm run content:validate
 npm run build
 ```
@@ -76,9 +120,11 @@ npm run build
 
 `npm run test:perf-ui` is the focused regression gate for performance and UI stability. It covers performance counters, loop governor behavior, frame-rate cap settings, DOM render containment, tooltip stability, chat modes, minimap/map behavior, movement modes, save/load persistence, tree harvestability, and Profession Atlas UI.
 
+`npm run test:ui-smoke`, `npm run test:ui-visual`, and `npm run test:ui-alpha` are project-local Playwright gates for the React UI migration. They use the managed Vite server in `playwright.config.ts` and do not depend on the Codex in-app browser.
+
 `npm run content:validate` validates content registries, ids, dead references, and representative spawn/test data. It currently passes with 18 known warnings for event economy-impact labels and the `tool:torch` MagicaVoxel source metadata.
 
-`npm run build` currently passes with the known Vite warning that the main JavaScript chunk is over 500 kB after minification. That warning is accepted for the internal alpha branch and tracked for later code splitting.
+`npm run build` currently passes with the known Vite warning that the app entry and Three vendor chunks are over 500 kB after minification. That warning is accepted for the internal alpha branch and tracked in `docs/UI_BUNDLE_AUDIT.md`.
 
 ## Controls
 
