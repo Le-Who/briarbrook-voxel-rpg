@@ -60,6 +60,10 @@ export interface LoopDecision {
 
 type TimedSubsystem = 'input' | 'simulation' | 'render' | 'ui' | 'minimap';
 
+export const DEFAULT_CUSTOM_FRAME_RATE_CAP = 90;
+export const MIN_CUSTOM_FRAME_RATE_CAP = 30;
+export const MAX_CUSTOM_FRAME_RATE_CAP = 240;
+
 const cadenceByMode: Record<ActivityMode, LoopCadence> = {
   ActiveGameplay: { simulationHz: 60, renderHz: 60, uiHz: 30, minimapHz: 4, raycastHz: 30, animationPolicy: 'full' },
   Combat: { simulationHz: 60, renderHz: 60, uiHz: 30, minimapHz: 4, raycastHz: 30, animationPolicy: 'full' },
@@ -109,6 +113,23 @@ export function mergeLoopGovernorSnapshot(snapshot?: Partial<LoopGovernorSnapsho
   };
 }
 
+export function sanitizeFrameRateCapMode(value: unknown): GameState['ui']['frameRateCapMode'] {
+  return value === '120' || value === 'custom' || value === '60' ? value : '60';
+}
+
+export function sanitizeCustomFrameRateCap(value: unknown): number {
+  const fps = Math.round(Number(value));
+  if (!Number.isFinite(fps)) return DEFAULT_CUSTOM_FRAME_RATE_CAP;
+  return Math.max(MIN_CUSTOM_FRAME_RATE_CAP, Math.min(MAX_CUSTOM_FRAME_RATE_CAP, fps));
+}
+
+export function resolveFrameRateCap(ui: Pick<GameState['ui'], 'frameRateCapMode' | 'customFrameRateCap'>): number {
+  const mode = sanitizeFrameRateCapMode(ui.frameRateCapMode);
+  if (mode === '120') return 120;
+  if (mode === 'custom') return sanitizeCustomFrameRateCap(ui.customFrameRateCap);
+  return 60;
+}
+
 export class LoopGovernor {
   private lastRunAt: Partial<Record<TimedSubsystem, number>> = {};
   private previousSignatures: Record<keyof LoopDirtyFlags, string> | null = null;
@@ -117,7 +138,7 @@ export class LoopGovernor {
 
   decide(time: number, state: GameState, options: { pendingActions: boolean; documentHidden: boolean }): LoopDecision {
     const mode = options.documentHidden ? 'BackgroundTab' : activityModeForState(state);
-    const cadence = cadenceByMode[mode];
+    const cadence = cadenceForMode(mode, state);
     const signatures = dirtySignatures(state);
     const dirtyFlags = this.previousSignatures ? compareDirtyFlags(this.previousSignatures, signatures) : allDirtyFlags();
     const modeChanged = this.previousMode !== mode;
@@ -166,6 +187,14 @@ export class LoopGovernor {
   currentSnapshot(): LoopGovernorSnapshot {
     return this.snapshot;
   }
+}
+
+function cadenceForMode(mode: ActivityMode, state: GameState): LoopCadence {
+  const cadence = { ...cadenceByMode[mode] };
+  if (mode === 'ActiveGameplay' || mode === 'Combat') {
+    cadence.renderHz = resolveFrameRateCap(state.ui);
+  }
+  return cadence;
 }
 
 function activityModeForState(state: GameState): ActivityMode {
@@ -235,7 +264,7 @@ function dirtySignatures(state: GameState): Record<keyof LoopDirtyFlags, string>
     marketDirty: `${state.ui.panels.market}:${state.ui.marketCategory}:${state.ui.marketView}:${state.ui.marketSearch}:${demandSignals}:${workOrders}:${state.world.economy.transactionLog.length}`,
     minimapDirty: `${state.ui.minimapMode}:${state.ui.mapHiddenLayers.join(',')}:${tile}:${state.ui.mapWaypoint?.areaId ?? '-'}:${state.ui.mapWaypoint?.position.x ?? '-'}:${state.ui.mapWaypoint?.position.z ?? '-'}:${state.world.discoveredAreas.join('|')}:${state.world.activeEvents.map((event) => `${event.id}:${event.discovered}:${event.endsAt > state.clock}`).join('|')}`,
     tooltipDirty: `${state.ui.tooltipMode}:${state.ui.tooltipDelayMs}:${targetKey(state.ui.hoverTarget)}:${targetKey(state.ui.selectedTarget)}`,
-    windowLayoutDirty: `${panels}:${JSON.stringify(state.ui.windowLayouts)}:${state.ui.uiScale}:${state.ui.fontScale}:${state.ui.hudDensity}`
+    windowLayoutDirty: `${panels}:${JSON.stringify(state.ui.windowLayouts)}:${state.ui.uiScale}:${state.ui.fontScale}:${state.ui.hudDensity}:${state.ui.frameRateCapMode}:${state.ui.customFrameRateCap}`
   };
 }
 

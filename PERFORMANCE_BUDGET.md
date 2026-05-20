@@ -13,7 +13,8 @@ The visual-reference pass adds screenshot-parity budget captures for R1-R9 in `V
 ## Budgets
 
 - Normal play draw calls: 450 target.
-- Estimated frame time: 16.7 ms target.
+- Estimated frame time: 16.7 ms target at the default 60 FPS cap.
+- Active gameplay FPS cap: default 60, optional 120, or Custom from 30 to 240. The selected cap affects active/combat render cadence only; simulation remains fixed at 60 Hz.
 - Meshes: 1200 total, with repeated static objects expected to move toward batching or instancing.
 - Triangles: 140000 target.
 - Raycast candidates: 900 target.
@@ -33,6 +34,7 @@ The visual-reference pass adds screenshot-parity budget captures for R1-R9 in `V
 - Prefer shared materials/geometries, procedural prefab reuse, and InstancedMesh for repeated props.
 - Treat budget failures as investigation triggers, not automatic feature cuts.
 - Keep normal-mode debug controls out of the HUD; reference capture helpers must stay behind dev-only paths.
+- User-selected FPS caps must not bypass reduced planning, pause, loading, or background cadences.
 - New treasure, economy, housing, and living-world visual hooks must reuse existing budget counters rather than adding untracked DOM or mesh families.
 - Any scene-density pass that raises draw calls, meshes, DOM nodes, raycast candidates, or estimated frame time must update `VISUAL_BUDGET.md` or the relevant QA document with before/after stats.
 

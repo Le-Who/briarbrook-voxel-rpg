@@ -775,6 +775,17 @@ button:hover {
   padding: 0 8px;
 }
 
+.help-setting .fps-custom-input {
+  flex: 0 0 64px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--text-strong);
+  background: rgba(10, 12, 12, 0.72);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+}
+
 .audio-settings {
   display: grid !important;
   gap: 5px !important;

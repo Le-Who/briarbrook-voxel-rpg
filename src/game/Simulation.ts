@@ -47,6 +47,7 @@ import { AreaManager } from '../world/AreaManager';
 import type { GameAction } from './Actions';
 import { createId, createInitialGameState } from './GameState';
 import { actionLabelForId, createDefaultInputBindings, findInputBindingConflicts, keyLabel, rebindInputAction } from './InputActionMap';
+import { sanitizeCustomFrameRateCap } from './LoopGovernor';
 import { clearSave, saveGame } from './SaveLoad';
 import type { GameState, MovementMode, TargetRef, Vec3 } from './types';
 import { sanitizeUiStateReferences } from './UIStateSelectors';
@@ -828,6 +829,15 @@ export class Simulation {
       case 'SET_HUD_DENSITY':
         this.state.ui.hudDensity = action.density;
         break;
+      case 'SET_FRAME_RATE_CAP_MODE':
+        this.state.ui.frameRateCapMode = action.mode;
+        this.state.ui.prompt = `Frame-rate cap: ${frameRateCapLabel(action.mode, this.state.ui.customFrameRateCap)}.`;
+        break;
+      case 'SET_CUSTOM_FRAME_RATE_CAP':
+        this.state.ui.customFrameRateCap = sanitizeCustomFrameRateCap(action.fps);
+        this.state.ui.frameRateCapMode = 'custom';
+        this.state.ui.prompt = `Frame-rate cap: ${this.state.ui.customFrameRateCap} FPS.`;
+        break;
       case 'BEGIN_KEYBIND_CAPTURE':
         this.state.ui.keybindingCapture = { actionId: action.actionId, context: action.context };
         this.state.ui.prompt = `Press a key for ${actionLabelForId(action.actionId)}.`;
@@ -1567,4 +1577,9 @@ function movementModeLabel(mode: MovementMode): string {
   if (mode === 'keyboard') return 'Keyboard Only';
   if (mode === 'mouse') return 'Mouse Only';
   return 'Keyboard + Mouse';
+}
+
+function frameRateCapLabel(mode: GameState['ui']['frameRateCapMode'], customFrameRateCap: number): string {
+  if (mode === 'custom') return `${sanitizeCustomFrameRateCap(customFrameRateCap)} FPS`;
+  return `${mode} FPS`;
 }

@@ -19,6 +19,9 @@ export function HelpPanel(state: GameState): string {
     .join('');
   const cameraSmoothing = state.ui.cameraSmoothing ?? 'medium';
   const cameraLabel = cameraSmoothing[0].toUpperCase() + cameraSmoothing.slice(1);
+  const frameRateMode = state.ui.frameRateCapMode ?? '60';
+  const customFrameRateCap = customFrameRateCapValue(state);
+  const frameRateLabel = frameRateMode === 'custom' ? `${customFrameRateCap} FPS` : `${frameRateMode} FPS`;
   const layoutButtons = Object.values(uiLayoutPresets)
     .map((preset) => `<button class="${state.ui.windowLayoutPreset === preset.id ? 'active' : ''}" data-layout-preset="${preset.id}">${preset.label}</button>`)
     .join('');
@@ -43,6 +46,10 @@ export function HelpPanel(state: GameState): string {
       <div class="help-setting"><span>Damage Numbers</span><b>${state.ui.showDamageNumbers ? 'On' : 'Off'}</b><button data-action="toggle-damage-numbers">${state.ui.showDamageNumbers ? 'Hide' : 'Show'}</button></div>
       <div class="help-setting"><span>Skill Toasts</span><b>${state.ui.showSkillGainToasts ? 'On' : 'Off'}</b><button data-action="toggle-skill-gain-toasts">${state.ui.showSkillGainToasts ? 'Hide' : 'Show'}</button></div>
       <div class="help-setting"><span>Chat Tabs</span><b>${state.ui.showChatTabs ? 'On' : 'Off'}</b><button data-action="toggle-chat-tabs">${state.ui.showChatTabs ? 'Hide' : 'Show'}</button></div>
+      <div class="help-setting frame-rate-setting"><span>FPS Cap</span><b>${frameRateLabel}</b>
+        ${(['60', '120', 'custom'] as const).map((mode) => `<button class="${frameRateMode === mode ? 'active' : ''}" data-frame-rate-cap="${mode}">${mode === 'custom' ? 'Custom' : mode}</button>`).join('')}
+        <input class="fps-custom-input" type="number" min="30" max="240" step="5" value="${customFrameRateCap}" data-action="custom-frame-rate-cap" aria-label="Custom FPS cap">
+      </div>
       <div class="help-setting"><span>Minimap</span><b>${state.ui.minimapMode}</b>
         ${(['compact', 'standard', 'expanded', 'hidden'] as const).map((mode) => `<button class="${state.ui.minimapMode === mode ? 'active' : ''}" data-minimap-mode="${mode}">${mode === 'expanded' ? 'Map' : mode[0].toUpperCase()}</button>`).join('')}
       </div>
@@ -86,6 +93,12 @@ function movementModeButtonLabel(mode: GameState['ui']['movementMode']): string 
   if (mode === 'keyboard') return 'Keyboard';
   if (mode === 'mouse') return 'Mouse';
   return 'Both';
+}
+
+function customFrameRateCapValue(state: GameState): number {
+  const value = Math.round(Number(state.ui.customFrameRateCap));
+  if (!Number.isFinite(value)) return 90;
+  return Math.max(30, Math.min(240, value));
 }
 
 function movementHelpRows(mode: GameState['ui']['movementMode']): Array<{ label: string; value: string }> {

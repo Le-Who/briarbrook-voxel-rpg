@@ -68,6 +68,7 @@ export interface PlayerMovementState {
 
 export type CombatApproachMode = 'manual' | 'assist' | 'aggressive' | 'melee_only';
 export type MovementMode = 'keyboard' | 'mouse' | 'keyboardMouse';
+export type FrameRateCapMode = '60' | '120' | 'custom';
 
 export interface CombatPreferences {
   approachMode: CombatApproachMode;
@@ -1377,6 +1378,8 @@ export interface UIState {
   audio: AudioSettingsState;
   lockUILayout: boolean;
   hudDensity: HudDensityMode;
+  frameRateCapMode: FrameRateCapMode;
+  customFrameRateCap: number;
   movementMode: MovementMode;
   inputBindings: InputBindingState[];
   keybindingCapture: KeybindingCaptureState | null;

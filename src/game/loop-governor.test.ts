@@ -59,6 +59,36 @@ describe('LoopGovernor', () => {
     expect(decision.cadence.renderHz).toBe(60);
   });
 
+  it('allows the player to raise active render cadence without changing simulation cadence', () => {
+    const state = createInitialGameState();
+    closePanels(state);
+    (state.ui as unknown as { frameRateCapMode: string; customFrameRateCap: number }).frameRateCapMode = '120';
+    const governor = new LoopGovernor();
+
+    const decision = governor.decide(0, state, { pendingActions: false, documentHidden: false });
+
+    expect(decision.mode).toBe('ActiveGameplay');
+    expect(decision.cadence.renderHz).toBe(120);
+    expect(decision.cadence.simulationHz).toBe(60);
+  });
+
+  it('uses custom fps caps for active play while preserving reduced planning cadences', () => {
+    const state = createInitialGameState();
+    closePanels(state);
+    (state.ui as unknown as { frameRateCapMode: string; customFrameRateCap: number }).frameRateCapMode = 'custom';
+    (state.ui as unknown as { frameRateCapMode: string; customFrameRateCap: number }).customFrameRateCap = 144;
+    const governor = new LoopGovernor();
+
+    const active = governor.decide(0, state, { pendingActions: false, documentHidden: false });
+    state.ui.panels.inventory = true;
+    const planning = governor.decide(100, state, { pendingActions: false, documentHidden: false });
+
+    expect(active.cadence.renderHz).toBe(144);
+    expect(active.cadence.simulationHz).toBe(60);
+    expect(planning.mode).toBe('InventoryOnly/Planning');
+    expect(planning.cadence.renderHz).toBe(15);
+  });
+
   it('pauses simulation work unless a queued action needs processing', () => {
     const state = createInitialGameState();
     state.paused = true;

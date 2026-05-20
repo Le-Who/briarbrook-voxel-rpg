@@ -1153,6 +1153,8 @@ export function createInitialGameState(): GameState {
       audio: createDefaultAudioSettings(),
       lockUILayout: false,
       hudDensity: 'normal',
+      frameRateCapMode: '60',
+      customFrameRateCap: 90,
       movementMode: 'keyboard',
       inputBindings: createDefaultInputBindings(),
       keybindingCapture: null,

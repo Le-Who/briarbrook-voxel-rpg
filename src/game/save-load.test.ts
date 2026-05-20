@@ -95,6 +95,27 @@ describe('save/load migrations', () => {
     expect(migrated.ui.cameraRelativeMovement).toBe(true);
   });
 
+  it('preserves frame-rate cap settings and migrates missing caps to defaults', () => {
+    const state = createInitialGameState();
+    (state.ui as unknown as { frameRateCapMode: string; customFrameRateCap: number }).frameRateCapMode = 'custom';
+    (state.ui as unknown as { frameRateCapMode: string; customFrameRateCap: number }).customFrameRateCap = 144;
+
+    saveGame(state);
+    const loaded = loadGame();
+
+    expect((loaded.ui as unknown as { frameRateCapMode: string }).frameRateCapMode).toBe('custom');
+    expect((loaded.ui as unknown as { customFrameRateCap: number }).customFrameRateCap).toBe(144);
+
+    const legacy = createInitialGameState() as unknown as { ui: { frameRateCapMode?: unknown; customFrameRateCap?: unknown } };
+    delete legacy.ui.frameRateCapMode;
+    delete legacy.ui.customFrameRateCap;
+    saveGame(legacy as unknown as ReturnType<typeof createInitialGameState>);
+
+    const migrated = loadGame();
+    expect((migrated.ui as unknown as { frameRateCapMode: string }).frameRateCapMode).toBe('60');
+    expect((migrated.ui as unknown as { customFrameRateCap: number }).customFrameRateCap).toBe(90);
+  });
+
   it('preserves active companion-lite state and migrates saves with no party list', () => {
     const state = createInitialGameState();
     hireCompanion(state, 'npc_liora_town', { role: 'guard' });

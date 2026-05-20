@@ -77,10 +77,25 @@ describe('UI customization, presets, and accessibility options', () => {
     expect(html).toContain('data-action="toggle-visual-audio-cues"');
     expect(html).toContain('data-action="capture-keybinding"');
     expect(html).toContain('data-action="reset-keybindings"');
+    expect(html).toContain('data-frame-rate-cap="60"');
+    expect(html).toContain('data-frame-rate-cap="120"');
+    expect(html).toContain('data-frame-rate-cap="custom"');
+    expect(html).toContain('data-action="custom-frame-rate-cap"');
     expect(html).toContain('data-movement-mode="keyboard"');
     expect(html).toContain('Keyboard Only');
     expect(html).toContain('Move by mouse</span><b>Disabled');
     expect(html).toContain('data-action="toggle-camera-relative-movement"');
+  });
+
+  it('updates frame-rate cap settings through simulation actions', () => {
+    const simulation = new Simulation(createInitialGameState());
+
+    simulation.dispatch({ type: 'SET_FRAME_RATE_CAP_MODE', mode: '120' });
+    simulation.dispatch({ type: 'SET_CUSTOM_FRAME_RATE_CAP', fps: 143.7 });
+    simulation.update(1 / 30);
+
+    expect(simulation.state.ui.frameRateCapMode).toBe('custom');
+    expect(simulation.state.ui.customFrameRateCap).toBe(144);
   });
 
   it('renders movement help text from the selected movement mode', () => {

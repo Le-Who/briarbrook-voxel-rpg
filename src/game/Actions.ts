@@ -1,4 +1,4 @@
-import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, ChatPanelMode, CombatApproachMode, CompanionCommand, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapLayerId, MapWaypointSource, MarketViewMode, MinimapMode, MovementMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldEventType, WorldPhase } from './types';
+import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, ChatPanelMode, CombatApproachMode, CompanionCommand, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, FrameRateCapMode, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapLayerId, MapWaypointSource, MarketViewMode, MinimapMode, MovementMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldEventType, WorldPhase } from './types';
 import type { InteractionCommand } from '../systems/InteractionAffordanceSystem';
 
 export type GameAction =
@@ -163,6 +163,8 @@ export type GameAction =
   | { type: 'TOGGLE_VISUAL_AUDIO_CUES' }
   | { type: 'TOGGLE_LOCK_UI_LAYOUT' }
   | { type: 'SET_HUD_DENSITY'; density: HudDensityMode }
+  | { type: 'SET_FRAME_RATE_CAP_MODE'; mode: FrameRateCapMode }
+  | { type: 'SET_CUSTOM_FRAME_RATE_CAP'; fps: number }
   | { type: 'BEGIN_KEYBIND_CAPTURE'; actionId: InputActionId; context: InputBindingContext }
   | { type: 'SET_INPUT_BINDING'; actionId: InputActionId; context: InputBindingContext; key: string }
   | { type: 'RESET_INPUT_BINDINGS' }

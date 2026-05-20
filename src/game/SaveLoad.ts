@@ -13,7 +13,7 @@ import { createInitialRenderStats } from '../render/RenderBudgets';
 import { normalizeCompanionState } from '../systems/CompanionSystem';
 import { ensureFacingState } from '../systems/FacingSystem';
 import { sanitizeInputBindings } from './InputActionMap';
-import { mergeLoopGovernorSnapshot } from './LoopGovernor';
+import { mergeLoopGovernorSnapshot, sanitizeCustomFrameRateCap, sanitizeFrameRateCapMode } from './LoopGovernor';
 import { mergePerfSnapshot } from './PerfMonitor';
 import type { BuildingEntity, EnemyEntity, GameState, HousingStorageState, ItemType, MovementMode, PortalEntity, ResourceNodeEntity } from './types';
 
@@ -239,6 +239,8 @@ export function loadGame(): GameState {
     parsed.ui.audio = sanitizeAudioSettings(parsed.ui.audio);
     parsed.ui.lockUILayout ??= false;
     parsed.ui.hudDensity ??= 'normal';
+    parsed.ui.frameRateCapMode = sanitizeFrameRateCapMode(parsed.ui.frameRateCapMode);
+    parsed.ui.customFrameRateCap = sanitizeCustomFrameRateCap(parsed.ui.customFrameRateCap);
     parsed.ui.movementMode = sanitizeMovementMode(parsed.ui.movementMode);
     parsed.ui.inputBindings = sanitizeInputBindings(parsed.ui.inputBindings);
     parsed.ui.keybindingCapture = null;

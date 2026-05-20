@@ -3,7 +3,7 @@ import { spellDefs } from '../data/spells';
 import type { GameAction } from '../game/Actions';
 import type { AudioVolumeCategory, CompanionCommand, EquipmentSlot, GameState, HotbarBinding, InputActionId, InputBindingContext, MapWaypointSource, MovementMode, Vec3 } from '../game/types';
 import { inputActionDefinitions } from '../game/InputActionMap';
-import type { LoopDirtyFlags } from '../game/LoopGovernor';
+import { sanitizeCustomFrameRateCap, type LoopDirtyFlags } from '../game/LoopGovernor';
 import { worldLabelForEntity } from '../game/WorldFeedback';
 import type { VoxelRenderer } from '../render/VoxelRenderer';
 import { iconCacheStats, renderIcon } from '../render/IconRenderer';
@@ -1193,6 +1193,11 @@ export class UIManager {
         this.dispatch({ type: 'SET_MOVEMENT_MODE', mode: movementMode as MovementMode });
         return;
       }
+      const frameRateCap = button.dataset.frameRateCap;
+      if (frameRateCap === '60' || frameRateCap === '120' || frameRateCap === 'custom') {
+        this.dispatch({ type: 'SET_FRAME_RATE_CAP_MODE', mode: frameRateCap });
+        return;
+      }
       const spell = button.dataset.spell;
       if (spell) {
         this.dispatch({ type: 'SELECT_SPELL', spellId: spell });
@@ -1406,6 +1411,16 @@ export class UIManager {
       if (target.dataset.action === 'chat-opacity') {
         this.dispatch({ type: 'SET_CHAT_OPACITY', opacity: Number(target.value) });
       }
+      if (target.dataset.action === 'custom-frame-rate-cap') {
+        const fps = sanitizeCustomFrameRateCap(Number(target.value));
+        this.dispatch({ type: 'SET_CUSTOM_FRAME_RATE_CAP', fps });
+        if (this.currentState) {
+          this.currentState.ui.customFrameRateCap = fps;
+          this.currentState.ui.frameRateCapMode = 'custom';
+          this.currentState.ui.prompt = `Frame-rate cap: ${fps} FPS.`;
+          this.syncFrameRateCapControls('custom', fps);
+        }
+      }
       if (target.dataset.action === 'skill-search') {
         this.dispatch({ type: 'SET_SKILL_SEARCH', search: target.value });
         if (this.currentState) {
@@ -1490,6 +1505,18 @@ export class UIManager {
       currentTarget: null
     };
     this.updateInputDebug({ lastRawInput: 'ui:pointerdown', lastIntent: 'UI_DRAG_ARM:hotbar', pointerCapture: this.hotbarPointerCaptureStatus() });
+  }
+
+  private syncFrameRateCapControls(mode: GameState['ui']['frameRateCapMode'], customFrameRateCap: number): void {
+    const setting = this.root.querySelector<HTMLElement>('.frame-rate-setting');
+    if (!setting) return;
+    const label = setting.querySelector<HTMLElement>('b');
+    if (label) {
+      label.textContent = mode === 'custom' ? `${customFrameRateCap} FPS` : `${mode} FPS`;
+    }
+    setting.querySelectorAll<HTMLButtonElement>('[data-frame-rate-cap]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.frameRateCap === mode);
+    });
   }
 
   private updateHotbarDrag(event: PointerEvent): boolean {

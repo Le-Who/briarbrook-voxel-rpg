@@ -13,7 +13,7 @@ Recent hardening includes:
 - Post-foundation audit and Golden Path QA covering the first playable route.
 - R1-R9 visual-reference targets implemented as interactive states: Briarbrook town hub, road combat, crypt combat, forest gathering, smithy, bank, housing build mode, Profession Atlas, and Adventure Map.
 - CPU, render, DOM, tooltip, and visual-reference budget instrumentation with dev overlay counters.
-- Loop governor throttling for active play, planning panels, pause/menu states, and background tabs.
+- Loop governor throttling for active play, planning panels, pause/menu states, and background tabs, with a selectable active FPS cap.
 - DOM rendering containment for inventory, chat, spellbook, skills, tooltips, and minimap.
 - Stable tooltip lifecycle with viewport boundary clamping.
 - First-class movable, resizable, collapsible chat panel.
@@ -74,7 +74,7 @@ npm run build
 
 `npm run lint` is the TypeScript static quality gate (`tsc --noEmit`). The project does not currently configure ESLint.
 
-`npm run test:perf-ui` is the focused regression gate for performance and UI stability. It covers performance counters, loop governor behavior, DOM render containment, tooltip stability, chat modes, minimap/map behavior, movement modes, save/load persistence, tree harvestability, and Profession Atlas UI.
+`npm run test:perf-ui` is the focused regression gate for performance and UI stability. It covers performance counters, loop governor behavior, frame-rate cap settings, DOM render containment, tooltip stability, chat modes, minimap/map behavior, movement modes, save/load persistence, tree harvestability, and Profession Atlas UI.
 
 `npm run content:validate` validates content registries, ids, dead references, and representative spawn/test data. It currently passes with 18 known warnings for event economy-impact labels and the `tool:torch` MagicaVoxel source metadata.
 
@@ -105,9 +105,11 @@ npm run build
 
 Movement Mode and camera-relative movement are configured from the Help panel. Keyboard Only is the default so accidental ground clicks do not move the player.
 
+The Help panel also exposes the active gameplay FPS cap: 60 FPS by default, 120 FPS for high-refresh displays, or Custom from 30 to 240 FPS. This only changes active/combat render cadence; simulation remains fixed at 60 Hz and planning/pause/background modes keep their reduced cadences.
+
 ## Implemented Systems
 
-- Serializable `GameState` owns player, entities, inventory, bank, skills, quests, chat, craft queue, build mode, projectiles, loot, resources, UI layout, movement settings, performance counters, and placed buildings.
+- Serializable `GameState` owns player, entities, inventory, bank, skills, quests, chat, craft queue, build mode, projectiles, loot, resources, UI layout, movement/FPS-cap settings, performance counters, and placed buildings.
 - `Simulation` is the action dispatcher; DOM and Three.js do not directly mutate gameplay state.
 - Procedural voxel-style world rendering for Briarbrook, bank, smithy, forest, crypt, road encounter, and housing plot.
 - Real item stacks, equipment, weight, consumables, banking, trade offers, and gold.
@@ -127,17 +129,18 @@ Recommended manual smoke:
 
 1. Start a fresh game in town and verify Keyboard Only mode blocks ground-click movement.
 2. Switch to Mouse Only and Keyboard + Mouse, checking that each mode honors its movement contract.
-3. Resize inventory, hover edge slots, and confirm tooltip bounds.
-4. Collapse and expand chat while messages arrive.
-5. Switch minimap compact, standard, expanded, and hidden.
-6. Open Skills -> Profession Atlas, search a node, select it, and pin it to Journal.
-7. Open Adventure Map, toggle layers, and confirm compact minimap behavior remains readable.
-8. Chop a forest tree and try a protected town tree.
-9. Fight road bandits, crypt undead, and a target-frame enemy while checking damage/status readability.
-10. Cast Detect Magic, Telekinesis, Unlock, Magic Lock, and Magic Trap against treasure/secret/container cases.
-11. Complete one work order, repair or craft one item, and verify economy sink feedback.
-12. Place housing objects, save, reload, and confirm placement/storage state survives.
-13. Leave town/menu/help states idle with the dev overlay open and confirm reduced loop cadence.
+3. Switch FPS cap between 60, 120, and Custom; confirm active/combat cadence changes while simulation cadence and menu throttling stay stable.
+4. Resize inventory, hover edge slots, and confirm tooltip bounds.
+5. Collapse and expand chat while messages arrive.
+6. Switch minimap compact, standard, expanded, and hidden.
+7. Open Skills -> Profession Atlas, search a node, select it, and pin it to Journal.
+8. Open Adventure Map, toggle layers, and confirm compact minimap behavior remains readable.
+9. Chop a forest tree and try a protected town tree.
+10. Fight road bandits, crypt undead, and a target-frame enemy while checking damage/status readability.
+11. Cast Detect Magic, Telekinesis, Unlock, Magic Lock, and Magic Trap against treasure/secret/container cases.
+12. Complete one work order, repair or craft one item, and verify economy sink feedback.
+13. Place housing objects, save, reload, and confirm placement/storage state survives.
+14. Leave town/menu/help states idle with the dev overlay open and confirm reduced loop cadence.
 
 ## Current Limitations
 

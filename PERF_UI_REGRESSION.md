@@ -1,14 +1,14 @@
 # Performance and UI Regression Suite
 
-Purpose: keep CPU, tooltip, inventory, chat, minimap/map, movement-mode, tree-resource, save/load, and Profession Atlas fixes from regressing while the internal alpha gameplay and visual-reference passes expand.
+Purpose: keep CPU, tooltip, inventory, chat, minimap/map, movement-mode, frame-rate cap, tree-resource, save/load, and Profession Atlas fixes from regressing while the internal alpha gameplay and visual-reference passes expand.
 
 Last updated: 2026-05-20.
 
 Current verification on 2026-05-20:
 
 - `npm run lint`: passed (`tsc --noEmit`).
-- `npm test`: passed, 77 files / 357 tests.
-- `npm run test:perf-ui`: passed, 12 files / 69 tests.
+- `npm test`: passed, 77 files / 361 tests.
+- `npm run test:perf-ui`: passed, 12 files / 72 tests.
 - `npm run content:validate`: passed, 0 errors / 18 known warnings.
 - `npm run build`: passed with the known large chunk warning.
 - Browser smoke from prompt 117 covered R1-R9 HUD screenshot parity across desktop viewports and UI scales; dev overlay counters remain the source of truth for live render/DOM budget reads.
@@ -29,12 +29,12 @@ npm run build
 
 | Area | Automated coverage |
 | --- | --- |
-| Performance counters and budgets | `src/game/perf-monitor.test.ts`, `src/game/loop-governor.test.ts`, `src/ui/performance-budget.test.ts` |
+| Performance counters, loop governor, and FPS cap | `src/game/perf-monitor.test.ts`, `src/game/loop-governor.test.ts`, `src/ui/performance-budget.test.ts` |
 | DOM render containment | `src/ui/dom-rendering-budget.test.ts`, `src/ui/window-manager.test.ts` |
 | Tooltip stability and viewport clamp | `src/ui/TooltipManager.test.ts` |
 | Chat panel modes and virtualization | `src/ui/chat-panel.test.ts` |
 | Minimap compact/standard/expanded behavior | `src/ui/map-navigation.test.ts` |
-| Movement modes and persistence | `src/game/movement-mode.test.ts`, `src/game/save-load.test.ts` |
+| Movement/FPS settings and persistence | `src/game/movement-mode.test.ts`, `src/game/save-load.test.ts`, `src/ui/ui-customization.test.ts` |
 | Tree harvestability and protected trees | `src/systems/tree-harvestability.test.ts` |
 | Profession Atlas layout, node details, search, pinning | `src/ui/profession-ui.test.ts` |
 
@@ -68,6 +68,7 @@ Use a production preview (`npm run build && npm run preview -- --host 127.0.0.1`
 | Minimap modes | Switch compact, standard, expanded, hidden. Compact stays HUD-only; expanded opens Map panel and layer toggles. |
 | Movement modes | Keyboard Only blocks ground click movement; Mouse Only blocks WASD movement; Keyboard + Mouse allows both and WASD cancels click path. |
 | Movement persistence | Change movement mode, save/reload. Selected mode survives. |
+| FPS cap selection | Switch Help -> FPS Cap between 60, 120, and Custom. Active/combat loop cadence follows the selection, simulation stays 60 Hz, and planning/pause/background modes stay reduced. |
 | Atlas pan/zoom/search/pin | Open Skills Atlas, pan graph, zoom -, Fit, Reset, +, search "map", select Lockpicking, pin node. Journal shows pinned node. |
 | Tooltip stability during world updates | Hover an inventory or skill tooltip while the world idles for 20 seconds. Tooltip remount count must not increase unless the hovered content version changes. |
 | All windows at small viewport | At 390x720 or similar, open inventory, spellbook, skills, journal, market, chat, map, help. Windows remain reachable and hotbar-safe. |
@@ -83,6 +84,7 @@ Critical thresholds:
 | Minimap compact redraw cadence | Must not redraw every frame while idle. Compact mode should remain cadence-driven and dirty-state-driven. |
 | Inventory rerender on unrelated animation ticks | Inventory window render count should not advance every frame when inventory state and layout are unchanged. |
 | Paused/menu CPU | Paused or menu/planning mode should use substantially lower simulation/render cadence than active gameplay. |
+| FPS cap contract | 120/custom may increase only active/combat render cadence. It must not alter simulation cadence or disable lower planning/background caps. |
 | DOM node budget | Stay under `renderPerformanceBudget.domNodeCount`; failures are blocking. |
 | Tooltip viewport clamp | Tooltip bounds must remain inside the viewport at corners. |
 | Movement mode contract | Direct actions and real input must both obey selected movement mode. |

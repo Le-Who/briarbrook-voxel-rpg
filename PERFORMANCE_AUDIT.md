@@ -119,7 +119,8 @@ CPU estimate is main-thread measured work per second: `(simulation avg ms + rend
 
 ## Budget Targets
 
-- Main gameplay: cap to 60 FPS unless a platform setting says otherwise; renderer average under 8ms; frame budget under 16.7ms.
+- Main gameplay: default to 60 FPS, with Help-panel choices for 120 or Custom 30-240; renderer average should stay under 8ms at the default cap and frame budget under 16.7ms.
+- FPS cap setting changes active/combat render cadence only. Simulation stays fixed at 60 Hz, and planning/pause/background cadences remain reduced.
 - UI-only/menu state: near-idle CPU, no full-rate simulation, no full HUD rebuild every frame. Target UI renders under 5/s when static.
 - Inventory, Skills, Spellbook, Atlas: update on state changes, input, scroll, drag, or tooltip mode changes, not on every RAF.
 - Idle town/forest/crypt: simulation may keep a low fixed rate, but static UI/minimap/labels should sleep. Rendering can continue only for visible world animation.
