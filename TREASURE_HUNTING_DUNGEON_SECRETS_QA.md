@@ -84,7 +84,7 @@ Smoke performance evidence:
 
 Observed non-blocking automation warnings:
 
-- Existing `tool:torch` MagicaVoxel `sourcePath` content warning.
+- Content validation is currently clean with 0 warnings.
 - Browser AudioContext autoplay warning before user gesture.
 - Chromium `ReadPixels` performance warnings during automated WebGL capture.
 
@@ -97,7 +97,7 @@ Red/green:
 
 Focused checks:
 
-- `npm test -- src/systems/treasure-system.test.ts` passed: 9 tests.
+- `npm test -- src/systems/treasure-system.test.ts` passed: 10 tests, including exact opened-container reward summaries.
 - `npm test -- src/ui/treasure-map-panel.test.ts` passed: 1 test.
 - `npm test -- src/tools/production-tools.test.ts src/systems/treasure-system.test.ts src/ui/treasure-map-panel.test.ts src/systems/magic-utility.test.ts src/game/save-load-regression.test.ts` passed: 5 files, 27 tests.
 - `npm run build` passed with the existing Vite large chunk warning.
@@ -123,10 +123,11 @@ Final full gate:
 - No authored external 3D asset pack was added for treasure props.
 - No full 30-minute manual wall-clock playtest was recorded in this prompt; the acceptance is covered by deterministic unit and browser smoke paths.
 - No economy rebalance pass beyond modest reward composition was attempted.
+- No new treasure values or loot tables were added during the 2026-05-20 reward-clarity pass; only opened-container summary wording changed.
 
 ## Remaining Risks
 
 - Longer playtesting may require tuning treasure-map reward rates, lock/trap difficulty, and how often maps/fragments enter the economy.
 - The shared `rough_treasure_map` item may need tier-specific inventory affordances if players accumulate many active map objectives later.
-- The existing torch `sourcePath` and Vite large chunk warnings remain non-blocking cleanup items outside prompt 93.
+- The Vite large chunk warning remains a non-blocking cleanup item outside prompt 93; content validation is currently clean.
 - The existing 5173 dev server was stale during smoke debugging; final browser evidence for prompt 93 uses a fresh 4173 preview server.

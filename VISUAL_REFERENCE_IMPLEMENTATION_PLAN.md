@@ -361,7 +361,7 @@ Not done:
 - No new runtime asset pipeline or external model dependency was added.
 
 Remaining risks:
-- The existing `tool:torch` MagicaVoxel sourcePath warning remains a content-pipeline cleanup item.
+- The `tool:torch` prefab is documented as procedural-only; future authored torch source work should add a real `.vox` path before changing its source tool.
 - Browser automation still emits AudioContext autoplay and `ReadPixels` screenshot warnings.
 - R4 transitions from the short tree affordance prompt to live gathering progress once simulation ticks, which is intentional for an interactive state.
 
@@ -378,7 +378,7 @@ Not done:
 - No new authored external assets were introduced.
 
 Remaining risks:
-- `tool:torch` still has a content-pipeline sourcePath warning.
+- `tool:torch` no longer has a content-pipeline sourcePath warning because its registry entry is procedural-only.
 - AudioContext autoplay and `ReadPixels` warnings remain automation-only noise.
 
 ## Prompt 109 Closure

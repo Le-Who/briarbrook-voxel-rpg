@@ -57,7 +57,7 @@ Final full gate:
 - `node artifacts/playwright-runner/111-briarbrook-town-smoke.mjs` passed at 1366x768 and 390x844 with no console errors.
 
 Warnings observed during browser smoke:
-- Existing content warning: `visual prefab tool:torch declares magicavoxel but has no sourcePath yet`.
+- Content validation is currently clean with 0 warnings.
 - Browser autoplay warning for `AudioContext` before user gesture.
 - Desktop Chromium emitted transient WebGL `ReadPixels` performance warnings during screenshot capture.
 
@@ -73,4 +73,4 @@ Warnings observed during browser smoke:
 - The R1 desktop draw-call planning budget is intentionally tight at 358 / 360; future town dressing should replace or batch before adding more unique props.
 - Prompt 91's broader many-window layering risk still needs retest in later bank/smithy/map prompts.
 - The existing Vite large chunk warning remains outside this prompt.
-- The existing torch `sourcePath` warning should be resolved before asset-pipeline release hardening.
+- The torch prefab is documented as procedural-only; future authored torch source work should add a real `.vox` path before changing its source tool.

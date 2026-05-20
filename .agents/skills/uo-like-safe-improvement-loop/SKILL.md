@@ -1,6 +1,6 @@
 ---
 name: uo-like-safe-improvement-loop
-description: Use when improving the UO-like project through bounded or indefinite evidence-first loops across performance, UX, gameplay depth, content quality, visual budget, save/load health, release-candidate stability, docs, or internal-alpha polish without weakening tests, budgets, player-facing semantics, or current validation gates.
+description: Use when improving the UO-like project through bounded or indefinite evidence-first loops across performance, UX, gameplay depth, content quality, visual budget, save/load health, release-candidate stability, docs, or internal-alpha polish, including Yellow-risk targets with extra proof, without weakening tests, budgets, player-facing semantics, or current validation gates.
 ---
 
 # UO-like Safe Improvement Loop
@@ -43,7 +43,7 @@ Known accepted non-blockers must not be misreported as new failures unless they 
 1. Check `git status --short --branch`; never overwrite user changes or stage unrelated artifacts.
 2. Read `package.json`, the relevant docs, and the tests around the target surface before editing.
 3. Read `.agents/uo-like-safe-improvement-loop.md`; create it only if a loop needs reusable project-specific learnings.
-4. Choose one target from objective evidence: failing gate, known issue, budget pressure, release blocker, Golden Path gap, QA checklist gap, user-facing friction, or the current pillar matrix.
+4. Choose one target from objective evidence: failing gate, known issue, budget pressure, release blocker, Golden Path gap, QA checklist gap, user-facing friction, or the current pillar matrix. Prefer Green when it is valuable, but do not skip Yellow solely because it is Yellow.
 5. State the hypothesis, touched files, expected improvement, risk class, objective gates, browser smoke plan if needed, and rollback plan.
 6. Make one small change.
 7. Run the smallest correctness check first.
@@ -109,6 +109,8 @@ Classify every target before editing.
 
 ### Yellow: allowed with extra proof
 
+Yellow is a normal working class for this loop, not an automatic skip class. Execute a Yellow target when the safety statement is credible, the change can stay narrow, and the extra proof can be run in the current session. Ask for user scope only when the target needs manual wall-clock playtesting, a major product decision, unavailable credentials/devices, or a protected semantic change.
+
 - Input routing, pointer capture, hotbar, window manager, scroll, or modal behavior.
 - Save/load, snapshot, transition, or reconciliation changes.
 - Loop governor, RAF cadence, tooltip/minimap/HUD dirty-state, or browser scheduling.
@@ -129,7 +131,7 @@ Safety Statement:
 - Rollback plan:
 ```
 
-### Red: skip unless explicitly requested
+### Red: proposal only unless explicitly requested
 
 - Broad architecture rewrite or framework replacement.
 - New dependency, package manager, TypeScript/Vite semantics, or build-pipeline replacement.
@@ -137,6 +139,8 @@ Safety Statement:
 - Save schema migration or multiplayer/network authority contract changes.
 - Removing Golden Path, Stability Gate, content validation, visual budget, or release-candidate requirements.
 - Second region, multiplayer gameplay, pets/taming, or large new pillar work when the current request is an open-ended improvement loop.
+
+Do not silently discard Red targets. Record them as proposals with the protected invariant, the reason they are outside autonomous scope, and the smallest explicit approval that would make one target actionable. Then continue searching for Green or feasible Yellow work.
 
 ## Improvement Surface Map
 
@@ -167,26 +171,28 @@ After each confirmed improvement:
 
 An epoch plateaus when five consecutive attempts are reverted, noisy, risky, mixed, or not objectively useful. Plateau means retarget, not stop.
 
+If the known backlog is Yellow-only or Red-only, do not stop immediately. First promote any feasible Yellow target into an active attempt with a Safety Statement and extra proof. For Red targets, record approval-ready proposals instead of editing them. Then expand discovery across current gates, docs, QA checklists, known issues, TODO-like test gaps, browser-visible friction, and the current pillar plan. Stop only if fresh discovery still finds no Green or feasible Yellow candidate inside the current autonomous scope.
+
 Final reporting is allowed only when:
 
 - the user asks to stop;
 - a user-provided time, attempt, token, or cost budget is reached;
 - the environment prevents reliable validation after retry and retargeting;
-- the Exhaustion Protocol shows no remaining Green candidates;
-- only Yellow candidates remain and require explicit user scope;
-- only Red candidates remain.
+- a fresh discovery pass plus the Exhaustion Protocol finds no remaining Green or feasible Yellow candidates inside the current autonomous scope;
+- all remaining known candidates require explicit user scope, because they are Yellow without runnable proof in this session or Red protected-surface work.
 
 ## Exhaustion Protocol
 
 Before saying there is nothing safe left to improve:
 
-1. Show the target map grouped by surface.
-2. List at least 10 candidates considered, or all candidates if fewer exist.
-3. Mark each Green, Yellow, or Red.
-4. For every Green candidate, give one objective reason it is unavailable now.
-5. For every Yellow candidate, state the extra proof or user scope needed.
-6. For every Red candidate, state the protected invariant it would touch.
-7. If any Green candidate remains, start a new epoch.
+1. Run fresh discovery from current evidence: failing or skipped gates, changed docs, QA unchecked boxes, `KNOWN_ISSUES.md`, current budget docs, current pillar matrix, browser-visible friction, and nearby missing regression tests.
+2. Show the target map grouped by surface.
+3. List at least 10 candidates considered, or all candidates if fewer exist.
+4. Mark each Green, Yellow, or Red.
+5. For every Green candidate, give one objective reason it is unavailable now.
+6. For every Yellow candidate, state whether it is feasible now. If feasible, start a Yellow attempt instead of finalizing. If not feasible, state the missing proof or user scope.
+7. For every Red candidate, state the protected invariant it would touch.
+8. If any Green or feasible Yellow candidate remains, start a new epoch.
 
 ## Learning Journal
 
@@ -216,7 +222,7 @@ After each attempt, report compactly:
 ```md
 ### Attempt N - target
 - Surface: stability | performance | UX | gameplay | content | visual | docs | release
-- Risk class: Green | Yellow | Red skipped
+- Risk class: Green | Yellow | Red proposal
 - Hypothesis: ...
 - Changed files: ...
 - Objective gates: ...
@@ -246,4 +252,5 @@ After each attempt, report compactly:
 - Chasing a metric by hiding content, reducing coverage, or weakening a budget.
 - Introducing normal-mode debug controls, unreachable UI, unbounded DOM, or dense scene props without budget capture.
 - Treating accepted warnings as fixed, or new warnings as accepted, without updating the relevant docs.
-- Ending an open-ended improvement loop on the first plateau when safe Green targets remain.
+- Skipping Yellow targets merely because they are Yellow when a narrow change and extra proof are available.
+- Ending an open-ended improvement loop on the first plateau when safe Green or feasible Yellow targets remain.

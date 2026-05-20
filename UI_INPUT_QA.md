@@ -107,6 +107,7 @@ This checklist is the production gate for browser input, window layout, and majo
 
 | Browser | Result | Notes |
 | --- | --- | --- |
+| Chromium / Playwright | Pass | Tested on 2026-05-20 with `npm run test:ui-smoke`; React inventory item drag to hotbar is hit-tested and validated at 1366x768 and 1600x900. |
 | Chromium / Codex Browser | Pass | Tested on 2026-05-18 with the in-app Browser against `http://localhost:5173/`. |
 | Firefox | Not run | No Firefox executable or browser target was available in this workspace session. |
 | Safari | Not run | Safari is not available on this Windows workspace. |
@@ -147,7 +148,8 @@ This checklist is the production gate for browser input, window layout, and majo
   - overflowing windows without an internal scroll region;
   - duplicate z-index ownership.
 - Dev overlay instrumentation covers the live input/debug state needed to investigate regressions.
-- Browser smoke is currently semi-automated through the Codex Browser session. A committed Playwright/Cypress runner is intentionally deferred until the project adds that dependency.
+- Later React UI work added project-local Playwright gates (`test:ui-smoke`, `test:ui-visual`, and `test:ui-alpha`). This older Codex Browser smoke remains useful as historical input evidence, but the current committed browser runner is Playwright.
+- `test:ui-smoke` now asserts that the center of a React inventory item source and hotbar target are the active hit-test elements before dragging, then verifies the hotbar binding in the React UI snapshot.
 
 ## Known Limitations
 

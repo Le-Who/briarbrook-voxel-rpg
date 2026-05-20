@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialGameState } from '../game/GameState';
 import type { WorldEventType } from '../game/types';
+import { validateContent } from '../tools/ContentValidation';
 import { AreaManager } from '../world/AreaManager';
 import { livingWorldEventDefinitions, registerResourceHarvest, triggerWorldEvent, updateLivingWorld } from './LivingWorldSystem';
 
@@ -66,6 +67,12 @@ describe('living world simulation', () => {
       expect(def.economyImpact.length).toBeGreaterThan(0);
       expect(def.cleanup.length).toBeGreaterThan(0);
     }
+  });
+
+  it('keeps event economy metadata aligned with known categories or item ids', () => {
+    const economyWarnings = validateContent().warnings.filter((warning) => warning.includes('.economyImpact'));
+
+    expect(economyWarnings).toEqual([]);
   });
 
   it('starts patrol and service request events with visible hooks, map rumors, and demand signals', () => {

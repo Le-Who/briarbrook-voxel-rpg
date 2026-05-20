@@ -91,6 +91,6 @@ Cut or defer from first-hour defaults:
 
 ## Remaining Release Risks
 
-1. Help is now the correct home for recovery controls but is long. A future release polish pass should split it into tabs or collapsible sections without moving Reset Layout.
-2. Tool targeting and housing prerequisites remain the biggest first-hour comprehension risks from the usability pass.
+1. Help is now the correct home for recovery controls and is sectioned into first-hour, spell/tool/housing, panel, and current-UI groups. A future polish pass should split it only if settings grow a dedicated persisted route.
+2. Tool targeting and housing prerequisites now have explicit Help rows; the remaining proof gap is the no-dev Golden Path route through housing, not basic Help comprehension copy.
 3. Full HUD string remounting is guarded for user interactions, but a future architecture pass should split high-frequency HUD regions from stable windows.

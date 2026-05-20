@@ -60,4 +60,17 @@ describe('React common UI surfaces', () => {
     expect(html).toContain('data-keybinding-view="true"');
     expect(html).not.toContain('class="help-body"');
   });
+
+  it('groups first-hour spell, tool, and housing guidance into scannable help sections', () => {
+    const state = createInitialGameState();
+    state.ui.panels.help = true;
+
+    const html = renderToStaticMarkup(<CommonSurfaces snapshot={createGameUISnapshot(state)} dispatchAction={() => ({ accepted: true })} />);
+
+    expect(html).toContain('data-help-section="first-hour"');
+    expect(html).toContain('data-help-section="spell-tool-housing"');
+    expect(html).toContain('data-help-item="spell-targeting"');
+    expect(html).toContain('data-help-item="tool-targeting"');
+    expect(html).toContain('data-help-item="housing-build"');
+  });
 });

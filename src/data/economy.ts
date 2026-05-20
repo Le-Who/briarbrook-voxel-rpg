@@ -63,6 +63,28 @@ export const vendorProfiles: Record<
 
 export const workOrderTemplates: WorkOrderState[] = [
   {
+    id: 'wo_mira_road_logs',
+    issuerNpcId: 'npc_mira_town',
+    requester: 'Mira',
+    category: 'carpenter',
+    title: 'Road Kit Timber',
+    description: 'Mira needs a small bundle of logs for road signs, handles, and beginner repairs.',
+    itemId: 'logs',
+    quantity: 6,
+    requiredItems: [{ itemId: 'logs', quantity: 6 }],
+    delivered: 0,
+    rewardGold: 48,
+    rewardItems: [{ itemId: 'trail_rations', quantity: 1 }],
+    rewardSkillHints: ['Lumberjacking', 'Carpentry'],
+    reputationGain: 1,
+    skill: 'Lumberjacking',
+    expiresAt: 96,
+    expiresAtWorldTime: 96,
+    repeatPolicy: 'daily',
+    difficultyTier: 0,
+    status: 'open'
+  },
+  {
     id: 'wo_brom_iron_bars',
     issuerNpcId: 'npc_brom_town',
     requester: 'Brom',

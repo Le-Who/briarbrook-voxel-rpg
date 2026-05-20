@@ -45,7 +45,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'An ambush bandit appears near the road bend.',
     rumorSources: ['chat', 'npc', 'town_board', 'journal'],
     gameplayHooks: ['protect road', 'combat encounter', 'guard supply demand'],
-    economyImpact: ['guard', 'combat', 'arrows', 'bandages'],
+    economyImpact: ['guard', 'combat', 'arrow', 'bandage'],
     cleanup: 'Remove ambush spawns when defeated or when the event expires.'
   },
   merchant_caravan: {
@@ -61,7 +61,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'A caravan trader appears with temporary stock.',
     rumorSources: ['chat', 'npc', 'town_board', 'market_board'],
     gameplayHooks: ['buy supplies', 'sell valuables', 'restock before travel'],
-    economyImpact: ['banking', 'food', 'treasure', 'vendor contracts'],
+    economyImpact: ['banking', 'food', 'treasure', 'vendor_contract'],
     cleanup: 'Remove caravan trader and end temporary demand after duration.'
   },
   crypt_spill: {
@@ -77,7 +77,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'A restless skeleton appears near the crypt approach.',
     rumorSources: ['chat', 'npc', 'journal'],
     gameplayHooks: ['clear crypt pressure', 'loot undead', 'prepare magic and healing'],
-    economyImpact: ['healer', 'mage', 'reagents', 'cure supplies'],
+    economyImpact: ['healer', 'mage', 'reagents', 'cure_potion'],
     cleanup: 'Remove skeleton pressure when defeated or when the event expires.'
   },
   lost_traveler: {
@@ -125,7 +125,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'Town vendors get deeper working gold for the day.',
     rumorSources: ['chat', 'npc', 'town_board', 'market_board'],
     gameplayHooks: ['sell gathered goods', 'complete work orders', 'buy supplies'],
-    economyImpact: ['all local service categories', 'food', 'wood', 'metal'],
+    economyImpact: ['smithy', 'healer', 'mage', 'guard', 'carpenter', 'tavern', 'banker', 'food', 'wood', 'metal'],
     cleanup: 'Demand signal expires and vendor state returns to normal refresh rules.'
   },
   storm: {
@@ -141,7 +141,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'Visibility drops and night danger rises while the storm is active.',
     rumorSources: ['chat', 'npc', 'journal'],
     gameplayHooks: ['prepare torches', 'avoid road danger', 'profit from fish demand'],
-    economyImpact: ['torches', 'repair kits', 'raw fish', 'guard supplies'],
+    economyImpact: ['torch', 'repair_kit', 'raw_fish', 'guard'],
     cleanup: 'Restore normal time modifiers after the storm expires.'
   },
   guard_patrol: {
@@ -157,7 +157,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'A patrol guard appears on the road with supply dialogue.',
     rumorSources: ['chat', 'npc', 'town_board', 'journal', 'market_board'],
     gameplayHooks: ['protect road', 'deliver arrows or rations', 'travel with lower risk'],
-    economyImpact: ['guard', 'arrows', 'bandages', 'rations'],
+    economyImpact: ['guard', 'arrow', 'bandage', 'fresh_bread'],
     cleanup: 'Remove patrol NPC when the route window ends.'
   },
   healer_shortage: {
@@ -173,7 +173,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'A clinic runner appears near town services asking for supplies.',
     rumorSources: ['chat', 'npc', 'town_board', 'journal', 'market_board'],
     gameplayHooks: ['profit from healing demand', 'prepare potions', 'support patrols'],
-    economyImpact: ['healer', 'healing', 'bandages', 'potions', 'ginseng'],
+    economyImpact: ['healer', 'healing', 'bandage', 'health_potion', 'cure_potion', 'ginseng'],
     cleanup: 'Remove clinic runner and let healing demand expire.'
   },
   mage_reagent_request: {
@@ -189,7 +189,7 @@ export const livingWorldEventDefinitions: Record<WorldEventType, EventDefinition
     visibleChange: 'A mage apprentice appears near Orrens shop with reagent requests.',
     rumorSources: ['chat', 'npc', 'town_board', 'journal', 'market_board'],
     gameplayHooks: ['gather reagents', 'sell bundles', 'prepare utility magery'],
-    economyImpact: ['mage', 'reagents', 'ash', 'black pearl', 'mandrake'],
+    economyImpact: ['mage', 'reagents', 'sulfurous_ash', 'black_pearl', 'mandrake_root'],
     cleanup: 'Remove apprentice and let reagent demand expire.'
   }
 };

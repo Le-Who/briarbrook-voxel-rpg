@@ -2,9 +2,9 @@
 
 This file is the release-candidate issue ledger for the small external playtest.
 
-| Issue | Severity | Workaround | Blocks Playtest |
-| --- | --- | --- | --- |
-| 60-minute crash-free session has not yet been recorded for the final candidate build. | P0 | Run the soak gate or an approved equivalent before sending the build to external testers. | Yes |
+| Issue | Severity | Owner | Reproduction / evidence note | Workaround | Blocks Playtest |
+| --- | --- | --- | --- | --- | --- |
+| 60-minute crash-free session has not yet been recorded for the final candidate build. | P0 | Release director / QA operator | No final-candidate 60-minute wall-clock log is attached as of 2026-05-20. | Run the soak gate or an approved equivalent before sending the build to external testers. | Yes |
 
 ## Severity Policy
 

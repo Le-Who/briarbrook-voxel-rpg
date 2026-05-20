@@ -33,7 +33,7 @@ Legacy frameworkless panel modules remain in the repository only as direct-test/
 - `npm run lint` passed.
 - `npm test` passed.
 - `npm run test:perf-ui` passed.
-- `npm run content:validate` passed with 0 errors and the existing 18 warnings.
+- `npm run content:validate` passed with 0 errors and 0 current warnings.
 - `npm run build` passed with the documented Vite chunk warning.
 
 ## Manual QA Coverage

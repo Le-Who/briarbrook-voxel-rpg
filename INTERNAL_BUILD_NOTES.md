@@ -103,9 +103,9 @@ Manual internal smoke:
 | Issue | Severity | Workaround / decision |
 | --- | --- | --- |
 | Main JS chunk is still over 500 kB after minification. | Low | Accepted for internal build; revisit code splitting later. |
-| `tool:torch` content warning reports missing MagicaVoxel source path. | Low | Runtime fallback works; fix source metadata in asset pass. |
+| `tool:torch` source metadata now matches its procedural-only runtime fallback. | Resolved | Keep future authored torch assets on a real `assets/source/**/*.vox` path if the source tool changes back to MagicaVoxel. |
 | Browser AudioContext warning appears before user gesture. | Low | Expected browser policy; audio resumes after interaction. |
-| Missing favicon can produce a 404 in browser smoke. | Low | Cosmetic; add favicon during release polish. |
+| Favicon is linked through `public/favicon.svg`. | Resolved | Keep a static icon path in `index.html` so browser smoke does not add favicon 404 noise. |
 | 45-60 minute human play session not yet recorded for this exact cut. | Medium | Required before external release; not blocking internal build. |
 | Crypt/treasure pacing still needs human feedback. | Medium | Keep in internal build, but do not broaden dungeon scope yet. |
 

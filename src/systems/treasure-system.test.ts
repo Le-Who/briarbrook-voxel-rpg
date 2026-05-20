@@ -174,6 +174,27 @@ describe('treasure hunting pillar', () => {
     random.mockRestore();
   });
 
+  it('summarizes opened dungeon rewards with exact gold and item names', () => {
+    const state = createInitialGameState();
+    state.player.currentArea = 'crypt';
+
+    const chest = state.entities.chest_crypt_secret_room;
+    expect(chest?.kind).toBe('container');
+    if (!chest || chest.kind !== 'container') return;
+    chest.hidden = false;
+    chest.locked = false;
+    if (chest.trap) {
+      chest.trap.detected = true;
+      chest.trap.armed = false;
+    }
+
+    interactContainer(state, chest);
+
+    const rewardSummary = state.chat.map((message) => message.text).find((text) => text.includes('Ancient Treasure Chest opens.'));
+    expect(rewardSummary).toBe('Ancient Treasure Chest opens. Reward: 70g, Rough Treasure Map x1, Vendor Contract x1, Repair Kit x1, Treasure Display Kit x1.');
+    expect(state.ui.prompt).toBe('Ancient Treasure Chest opened. Reward: 70g, Rough Treasure Map x1, Vendor Contract x1, Repair Kit x1, Treasure Display Kit x1.');
+  });
+
   it('lets magery utility reveal secrets and trap warnings without disarming them', () => {
     const state = createInitialGameState();
     state.player.currentArea = 'crypt';

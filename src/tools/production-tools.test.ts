@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import indexHtml from '../../index.html?raw';
+import faviconSvg from '../../public/favicon.svg?raw';
 import { createInitialGameState } from '../game/GameState';
 import { SnapshotSerializer } from '../net/SnapshotSerializer';
 import { interactContainer, revealMagicalContainers, unlockContainerWithSpell } from '../systems/ContainerSystem';
@@ -17,6 +19,13 @@ describe('production content tools', () => {
 
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('links a static favicon so browser smoke does not add 404 noise', () => {
+    expect(indexHtml).toContain('rel="icon"');
+    expect(indexHtml).toContain('href="/favicon.svg"');
+    expect(faviconSvg).toContain('<svg');
   });
 
   it('catches missing item references in recipes', () => {

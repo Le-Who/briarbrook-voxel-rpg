@@ -88,7 +88,7 @@ Smoke performance evidence:
 
 Observed non-blocking automation warnings:
 
-- Existing `tool:torch` MagicaVoxel `sourcePath` content warning.
+- Content validation is currently clean with 0 warnings.
 - Browser AudioContext autoplay warning before user gesture.
 - Chromium `ReadPixels` performance warnings during automated WebGL capture.
 
@@ -131,4 +131,4 @@ Final full gate:
 - Recall may need a richer rune UI once multiple marks or crafted rune books exist.
 - Magic Lock should be revisited before multiplayer because remote locking has griefing implications.
 - Night Sight clue radius and reward value may need tuning after longer dungeon playtests.
-- The existing torch `sourcePath` and Vite large chunk warnings remain non-blocking cleanup items outside prompt 94.
+- The Vite large chunk warning remains a non-blocking cleanup item outside prompt 94; content validation is currently clean.

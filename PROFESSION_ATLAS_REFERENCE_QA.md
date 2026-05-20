@@ -70,7 +70,7 @@ Browser smoke stats:
 | 390x844 | 239 / 450 hard | 400 / 1200 hard | 39612 / 140000 hard | 34 / 160 hard | 184 / 900 hard | 436 / 1800 | 150 / 900 | 2 / 6 | 9.5 ms / 16.7 ms |
 
 Warnings observed during browser smoke:
-- Existing content warning: `visual prefab tool:torch declares magicavoxel but has no sourcePath yet`.
+- Content validation is currently clean with 0 warnings.
 - Browser autoplay warning for `AudioContext` before user gesture.
 - Chromium can emit transient WebGL `ReadPixels` performance warnings during screenshot capture.
 
@@ -83,7 +83,7 @@ Warnings observed during browser smoke:
 
 ## Remaining Risks
 
-- The existing torch `sourcePath` warning remains an asset-pipeline cleanup item.
+- The torch prefab is documented as procedural-only; future authored torch source work should add a real `.vox` path before changing its source tool.
 - The existing Vite large chunk warning remains outside this prompt.
 - The graph is authored, not automatic. Adding many future professions later will need a data/layout pass.
 - Broader profession-contract gameplay remains a later gameplay/depth prompt, not prompt 115.

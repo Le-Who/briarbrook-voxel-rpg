@@ -98,6 +98,6 @@ No cut required:
 
 ## Known Non-Blocking Warnings
 
-- `tool:torch` still declares a MagicaVoxel source without `sourcePath`; this is a content-pipeline cleanup item and does not block runtime.
+- `tool:torch` is marked procedural-only, and content validation is currently clean with 0 warnings.
 - AudioContext autoplay warnings appear in automation until a user gesture starts audio.
 - Chromium `ReadPixels` warnings appear during screenshot capture and are tied to browser automation, not normal gameplay.

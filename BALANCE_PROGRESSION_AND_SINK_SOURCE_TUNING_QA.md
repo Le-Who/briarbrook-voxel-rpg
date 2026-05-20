@@ -42,7 +42,7 @@ Date: 2026-05-20
 - GREEN focused: `npm test -- src\systems\balance-system.test.ts src\systems\economy.test.ts src\systems\telemetry-health.test.ts src\game\save-load.test.ts` passed, 4 files / 31 tests.
 - Full tests: `npm test` passed, 75 files / 350 tests.
 - Perf/UI: `npm run test:perf-ui` passed, 12 files / 69 tests.
-- Content validation: `npm run content:validate` passed, 0 errors / 18 existing warnings.
+- Content validation: `npm run content:validate` passed, 0 errors / 0 warnings.
 - Build: `npm run build` passed with the existing large chunk warning.
 
 ## Done
@@ -56,7 +56,7 @@ Date: 2026-05-20
 
 - No exhaustive automated 3-hour playthrough simulator was added.
 - Loot table structure was not changed; current gold flow is measured through gold/hour and anti-inflation checks.
-- Existing content validation warnings from prior prompts remain unchanged.
+- Content validation is currently clean with 0 warnings.
 
 ## Remaining Risks
 

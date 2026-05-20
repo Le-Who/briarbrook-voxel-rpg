@@ -37,9 +37,9 @@ Browser smoke highlights:
 
 Console findings:
 
-- Existing content warning: `tool:torch` declares MagicaVoxel without `sourcePath`.
+- Content validation is currently clean with 0 warnings.
 - Expected browser autoplay warning for AudioContext before user gesture.
-- Missing `favicon.ico` 404.
+- Favicon is linked through `public/favicon.svg`; no favicon 404 is expected.
 
 ## Scope Gate
 
@@ -88,8 +88,8 @@ Console findings:
 4. P1: Hotbar assignment is functionally covered, but browser UI assignment should be retested after window layering cleanup.
 5. P2: Literal first-hour play was not run for 60 real minutes in this audit; evidence is automated plus accelerated browser smoke.
 6. P2: Vite emits the known over-500 kB main chunk warning.
-7. P2: `tool:torch` content warning indicates an asset source-contract gap, even though fallback runtime visuals work.
-8. P3: Missing favicon creates a browser 404.
+7. Resolved: `tool:torch` source metadata now matches its procedural-only runtime fallback.
+8. Resolved: favicon is linked through `public/favicon.svg`, removing the browser 404 from QA noise.
 9. P3: AudioContext autoplay warning appears before user gesture; expected, but release notes should call it out if audio QA sees silence before input.
 10. P3: Ambient chat/social lines add density and may obscure first-step clarity in long sessions.
 
@@ -102,8 +102,8 @@ Console findings:
 5. Add one first-hour route checklist row for actual browser crafting completion, not only crafting-panel visibility.
 6. Add one browser housing placement check after the plot ferry route.
 7. Add route-copy polish for failed gather/cast rolls so players understand normal failure versus blocked action.
-8. Add a low-risk favicon and remove the browser 404 from QA noise.
-9. Resolve or document the `tool:torch` sourcePath warning in the asset pipeline ledger.
+8. Keep the linked favicon path stable so browser smoke stays free of favicon 404 noise.
+9. Keep future authored torch source work on a real `.vox` path before changing the prefab source tool back to MagicaVoxel.
 10. Keep visual reference work focused on readability, batching, and HUD hierarchy rather than adding more systems.
 
 ## Top 10 Things To Hide Or Cut

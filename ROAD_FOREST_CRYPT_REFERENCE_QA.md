@@ -70,7 +70,7 @@ Browser smoke stats:
 | R4 | 390x844 | 122 / 330 | 278 / 900 | 20804 / 105000 | 45 / 80 | 189 / 600 | 402 / 1300 | 2 / 6 | 7.3 ms / 16.7 ms |
 
 Warnings observed during browser smoke:
-- Existing content warning: `visual prefab tool:torch declares magicavoxel but has no sourcePath yet`.
+- Content validation is currently clean with 0 warnings.
 - Browser autoplay warning for `AudioContext` before user gesture.
 - Desktop Chromium emitted transient WebGL `ReadPixels` performance warnings during screenshot capture.
 
@@ -84,6 +84,6 @@ Warnings observed during browser smoke:
 ## Remaining Risks
 
 - The current screenshots are stack-realistic and readable but still less dense than the target references; future density should continue through batching/shared materials.
-- The existing torch `sourcePath` warning remains an asset-pipeline cleanup item.
+- The torch prefab is documented as procedural-only; future authored torch source work should add a real `.vox` path before changing its source tool.
 - The existing Vite large chunk warning remains outside this prompt.
 - Broader save/load and long-session stability remain later release-candidate gates.

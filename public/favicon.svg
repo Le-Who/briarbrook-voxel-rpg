@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Briarbrook">
+  <rect width="64" height="64" rx="12" fill="#1d2a24"/>
+  <path d="M32 8 50 18v15c0 12-7.7 20.2-18 23-10.3-2.8-18-11-18-23V18z" fill="#2f6f4f"/>
+  <path d="M22 42h20v8H22z" fill="#c28a43"/>
+  <path d="M32 15 45 38H19z" fill="#7fbd6b"/>
+  <path d="M32 21 42 39H22z" fill="#e0c36a" opacity=".88"/>
+  <path d="M30 31h4v19h-4z" fill="#6b3b1d"/>
+</svg>

@@ -401,6 +401,7 @@ button:hover {
 
 .bb-game-window__body {
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -410,6 +411,8 @@ button:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   min-height: var(--bb-min-target);
   padding: 8px 12px;
   border-color: var(--line-soft);
@@ -535,6 +538,34 @@ button:hover {
 
 .bb-react-slot-scroll {
   padding: 10px;
+}
+
+.bb-react-inventory .bb-slot-grid,
+.bb-react-bank .bb-slot-grid {
+  grid-template-columns: repeat(auto-fill, minmax(var(--bb-slot-size), var(--bb-slot-size)));
+  gap: 6px;
+}
+
+.bb-react-inventory .bb-action-footer,
+.bb-react-bank .bb-action-footer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, auto));
+  justify-content: stretch;
+  align-items: center;
+  row-gap: 6px;
+}
+
+.bb-react-inventory .bb-action-footer .bb-text,
+.bb-react-bank .bb-action-footer .bb-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bb-react-inventory .bb-action-footer .bb-react-footer-spacer,
+.bb-react-bank .bb-action-footer .bb-react-footer-spacer {
+  display: none;
 }
 
 .bb-react-footer-spacer {
@@ -1461,6 +1492,22 @@ button:hover {
 
 .bb-react-help-panel {
   border-right: 1px solid var(--line-soft);
+}
+
+.bb-help-section {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--bb-control-radius);
+}
+
+.bb-help-section__rows {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
 .bb-settings-section {

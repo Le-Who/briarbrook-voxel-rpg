@@ -1,7 +1,7 @@
 # Performance Audit
 
 Current status update: 2026-05-20
-Current validation: `npm run lint`, `npm test`, `npm run test:perf-ui`, `npm run content:validate`, and `npm run build` all pass on the post-foundation/internal-alpha branch. `content:validate` still reports 18 known warnings, and `npm run build` still reports the accepted Vite large-chunk warning for the main JavaScript bundle.
+Current validation: `npm run lint`, `npm test`, `npm run test:perf-ui`, `npm run content:validate`, and `npm run build` all pass on the post-foundation/internal-alpha branch. `content:validate` reports 0 warnings, and `npm run build` still reports the accepted Vite large-chunk warning for the main JavaScript bundle.
 
 This document keeps the original Phase 10 browser profiling table as the baseline that motivated loop-governor, dirty UI, minimap, tooltip, and DOM containment work. The current R1-R9 visual-reference budget captures and worst-observed render stats live in `VISUAL_BUDGET.md`.
 
@@ -138,7 +138,6 @@ CPU estimate is main-thread measured work per second: `(simulation avg ms + rend
 Known accepted warnings:
 
 - Vite reports the main JavaScript chunk over 500 kB after minification.
-- Content validation reports 18 low-severity warnings for event economy-impact text labels and `tool:torch` source metadata.
 
 ## Optimization Plan
 

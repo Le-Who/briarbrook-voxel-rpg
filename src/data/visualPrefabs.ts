@@ -190,7 +190,7 @@ export const visualPrefabs: VisualPrefabDefinition[] = [
   },
   {
     id: 'tool:torch',
-    sourceTool: 'magicavoxel',
+    sourceTool: 'procedural',
     sourcePath: null,
     runtimePath: null,
     fallbackProceduralFactory: 'torchBox',

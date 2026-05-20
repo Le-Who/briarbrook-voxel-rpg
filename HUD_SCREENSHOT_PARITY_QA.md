@@ -104,7 +104,7 @@ Worst observed values across the 117 smoke matrix stayed below the shared hard b
 
 - No pixel-perfect copy work was attempted.
 - No new external art pipeline dependency was added.
-- The `tool:torch` prefab still declares a MagicaVoxel source without a sourcePath; this predates prompt 117 and remains a content-pipeline cleanup item.
+- The `tool:torch` prefab is now marked procedural-only, so content-pipeline warnings are limited to living-world `economyImpact` labels.
 
 ## Remaining Risks
 

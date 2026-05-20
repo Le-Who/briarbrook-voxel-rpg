@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent, type HTMLAttributes, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react';
 import { buildPieces, itemDefs } from '../../../data/items';
 import { bindingSummary } from '../../../game/InputActionMap';
 import type { GameAction } from '../../../game/Actions';
@@ -281,23 +281,29 @@ function HelpSettingsWindow({ snapshot, dispatchAction }: { snapshot: GameUISnap
       <div className="bb-game-window__body">
         <div className="bb-help-settings-grid">
           <ScrollArea className="bb-react-help-panel">
-            <Text as="strong" tone="accent">Help</Text>
-            <HelpRow label="Move" value={movementHelp(snapshot.settings.movementMode)} />
-            <HelpRow label="Interact" value={snapshot.settings.movementMode === 'mouse' ? 'Click target' : 'E or click target'} />
-            <HelpRow label="Hotbar" value="1-0" />
-            <HelpRow label="Inventory" value="I" />
-            <HelpRow label="Skills" value="K" />
-            <HelpRow label="Spellbook" value="M" />
-            <HelpRow label="Journal" value="J" />
-            <HelpRow label="Pause / Help" value="Esc" />
-            <Text as="strong" tone="accent">Current UI</Text>
-            <HelpRow label="Tooltips" value={`${snapshot.settings.tooltipMode}, ${snapshot.settings.tooltipDelayMs}ms delay`} />
-            <HelpRow label="Frame cap" value={frameRateLabel(snapshot.settings.frameRateCapMode, snapshot.settings.customFrameRateCap)} />
-            <HelpRow label="Camera" value={`${snapshot.settings.cameraSmoothing} smoothing${snapshot.settings.cameraRelativeMovement ? ', relative movement' : ''}`} />
-            <Text as="strong" tone="accent">Systems</Text>
-            <HelpRow label="Skills" value="Skills rise by use and are planned in Profession Atlas." />
-            <HelpRow label="Housing" value="Travel to your plot before entering Build Mode." />
-            <HelpRow label="Bank" value="Use the bank for spare goods before long trips." />
+            <HelpSection title="First Ten Minutes" id="first-hour">
+              <HelpRow label="Route" value="Mira, kit, Skills, tools, bank, road, crypt clue, work order, housing." />
+              <HelpRow label="Move" value={movementHelp(snapshot.settings.movementMode)} />
+              <HelpRow label="Interact" value={snapshot.settings.movementMode === 'mouse' ? 'Click target' : 'E or click target'} />
+              <HelpRow label="Hotbar" value="1-0" />
+            </HelpSection>
+            <HelpSection title="Spell / Tool / Housing" id="spell-tool-housing">
+              <HelpRow label="Spells" value="Select a known spell, then Target/Cast or drag it to the hotbar." data-help-item="spell-targeting" />
+              <HelpRow label="Tools" value="Use axe or pickaxe, then click a matching tree or rock face." data-help-item="tool-targeting" />
+              <HelpRow label="Housing" value="Take the ferry, enter Build Mode, keep the ghost inside the plot, then Place." data-help-item="housing-build" />
+            </HelpSection>
+            <HelpSection title="Panels" id="panels">
+              <HelpRow label="Inventory" value="I" />
+              <HelpRow label="Skills" value="K" />
+              <HelpRow label="Spellbook" value="M" />
+              <HelpRow label="Journal" value="J" />
+              <HelpRow label="Pause / Help" value="Esc" />
+            </HelpSection>
+            <HelpSection title="Current UI" id="current-ui">
+              <HelpRow label="Tooltips" value={`${snapshot.settings.tooltipMode}, ${snapshot.settings.tooltipDelayMs}ms delay`} />
+              <HelpRow label="Frame cap" value={frameRateLabel(snapshot.settings.frameRateCapMode, snapshot.settings.customFrameRateCap)} />
+              <HelpRow label="Camera" value={`${snapshot.settings.cameraSmoothing} smoothing${snapshot.settings.cameraRelativeMovement ? ', relative movement' : ''}`} />
+            </HelpSection>
           </ScrollArea>
           <ScrollArea className="bb-react-settings-panel" data-react-panel="settings" data-settings-persist="simulation-ui-state">
             <Text as="strong" tone="accent">Settings</Text>
@@ -363,8 +369,17 @@ function ChatLine({ message }: { message: ChatMessage }): ReactElement {
   );
 }
 
-function HelpRow({ label, value }: { label: string; value: string }): ReactElement {
-  return <StatusRow label={label} value={value} />;
+function HelpRow({ label, value, ...props }: { label: string; value: string } & HTMLAttributes<HTMLDivElement>): ReactElement {
+  return <StatusRow label={label} value={value} {...props} />;
+}
+
+function HelpSection({ title, id, children }: { title: string; id: string; children: ReactNode }): ReactElement {
+  return (
+    <section className="bb-help-section" data-help-section={id}>
+      <Text as="strong" tone="accent">{title}</Text>
+      <div className="bb-help-section__rows">{children}</div>
+    </section>
+  );
 }
 
 function SettingsSection({ title, id, children }: { title: string; id: string; children: ReactNode }): ReactElement {

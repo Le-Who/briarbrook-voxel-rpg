@@ -45,7 +45,7 @@ Positioning: this is not public marketing, not a public demo, and not a feature-
 4. Cast one valid spell and one spell with missing requirements.
 5. Take the Old River Road and fight at least one bandit.
 6. Visit Greymont Forest, find the mine/crypt route, and open or inspect one secret/loot object.
-7. Complete one work order or market transaction.
+7. Complete Mira's log work order or another matching market transaction.
 8. Visit the housing plot, place one Tier 0 object, then check Tier 1 requirements.
 9. Open Profession Atlas, select a profession node, and pin or inspect a goal.
 10. Save, reload, and verify inventory, equipment, movement mode, map state, quest state, and UI layout.
@@ -104,7 +104,6 @@ Ask testers to export telemetry after the session when possible. Useful counters
 ## Known Issues
 
 - The app still emits the existing Vite large chunk warning during build.
-- Content validation has non-blocking event economy wording warnings and a visual prefab source-path warning.
 - Localization is certified for critical prompts/new systems, but legacy UI labels are still mostly English.
 - The balance targets are practical slice targets and need real tester telemetry before final tuning.
 - This build is browser-only and controlled-test focused; it should not be treated as a public alpha.

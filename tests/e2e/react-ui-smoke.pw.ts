@@ -5,6 +5,11 @@ declare global {
     briarbrookGame?: {
       getReactUIBridge(): {
         dispatchAction(action: unknown): unknown;
+        getSnapshot(): {
+          hotbar: {
+            slots: Array<{ slot: number; binding: { kind: string; id: string } | null }>;
+          };
+        };
       };
     };
   }
@@ -63,6 +68,39 @@ async function openPanel(page: Page, panel: (typeof migratedPanels)[number], key
   await expect(page.locator(`[data-react-panel="${panel}"]`)).toBeVisible();
   await expect(page.locator(legacyPanelSelectors[panel])).toHaveCount(0);
   await expect(page.locator('.react-ui-error-panel')).toHaveCount(0);
+}
+
+async function dragInventoryItemToHotbar(page: Page): Promise<void> {
+  const source = page.locator('[data-react-panel="inventory"] [data-hotbar-source="item:mana_potion"]').first();
+  const target = page.locator('[data-react-panel="hotbar"] [data-hotbar-drop="8"]');
+  await expect(source).toBeVisible();
+  await expect(target).toBeVisible();
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error('drag source or target is missing a bounding box');
+  const hitTest = await page.evaluate(
+    ({ sourceX, sourceY, targetX, targetY }) => ({
+      source: document.elementFromPoint(sourceX, sourceY)?.closest('[data-hotbar-source]')?.getAttribute('data-hotbar-source') ?? null,
+      target: document.elementFromPoint(targetX, targetY)?.closest('[data-hotbar-drop]')?.getAttribute('data-hotbar-drop') ?? null
+    }),
+    {
+      sourceX: sourceBox.x + sourceBox.width / 2,
+      sourceY: sourceBox.y + sourceBox.height / 2,
+      targetX: targetBox.x + targetBox.width / 2,
+      targetY: targetBox.y + targetBox.height / 2
+    }
+  );
+  expect(hitTest).toEqual({ source: 'item:mana_potion', target: '8' });
+
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+  await page.mouse.up();
+
+  await page.waitForFunction(() => {
+    const binding = window.briarbrookGame?.getReactUIBridge().getSnapshot().hotbar.slots[8]?.binding;
+    return binding?.kind === 'item' && binding.id === 'mana_potion';
+  });
 }
 
 async function expectReadableKnowledgeLayout(page: Page): Promise<void> {
@@ -152,6 +190,7 @@ for (const viewport of viewports) {
     await expect(page.locator(legacyPanelSelectors.hotbar)).toHaveCount(0);
 
     await openPanel(page, 'inventory', 'i');
+    await dragInventoryItemToHotbar(page);
     await openPanel(page, 'spellbook', 'm');
     await openPanel(page, 'crafting', 'f');
     await openPanel(page, 'journal', 'j');

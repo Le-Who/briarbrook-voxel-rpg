@@ -148,10 +148,19 @@ function openContainer(state: GameState, container: ContainerEntity): void {
     addSystemMessage(state, `You recover ${itemDefs[reward.itemId]?.name ?? reward.itemId} x${reward.quantity}.`);
   });
   recordQuestEvent(state, { type: 'open_container', containerId: container.id });
-  addSystemMessage(state, `${container.name} opens. You take ${container.gold}g and the contents.`);
+  const rewardSummary = containerRewardSummary(container);
+  addSystemMessage(state, `${container.name} opens. Reward: ${rewardSummary}.`);
   addFloatingText(state, 'Opened', container.position, '#f0c957');
-  state.ui.prompt = `${container.name} opened.`;
+  state.ui.prompt = `${container.name} opened. Reward: ${rewardSummary}.`;
   emitAudioHook('chest_open', { id: container.id, area: container.area, position: container.position });
+}
+
+function containerRewardSummary(container: ContainerEntity): string {
+  const parts = [
+    ...(container.gold > 0 ? [`${container.gold}g`] : []),
+    ...container.loot.filter((reward) => reward.quantity > 0).map((reward) => `${itemDefs[reward.itemId]?.name ?? reward.itemId} x${reward.quantity}`)
+  ];
+  return parts.length ? parts.join(', ') : 'empty';
 }
 
 export function triggerContainerTrap(state: GameState, container: ContainerEntity): void {

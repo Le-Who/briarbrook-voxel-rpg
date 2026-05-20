@@ -25,15 +25,14 @@ Date: 2026-05-20
 
 - RED: `npm test -- src\tools\content-authoring.test.ts` failed before `ContentAuthoringTools` and new registry domains existed.
 - GREEN: `npm test -- src\tools\content-authoring.test.ts` passed.
-- Content command: `npm run content:validate` passed with 0 errors and 18 warnings.
+- Content command: `npm run content:validate` passed with 0 errors and 0 warnings.
 
 ## Known Warnings
 
-- `tool:torch` visual prefab declares a Magicavoxel source tool without a source asset path.
-- Some living-world `economyImpact` labels are broad human-authored labels rather than exact economy categories or item IDs.
+- No current content-validation warnings.
 
 ## Risks
 
 - Localization key export is an authoring contract list, not a runtime translation catalog yet.
 - The validation command uses Vite SSR to load TypeScript directly; this avoids a new dependency but means the command depends on the Vite toolchain being installed.
-- Event `economyImpact` warnings are intentionally noncritical until the living-world economy taxonomy is stricter.
+- Event `economyImpact` entries should stay exact economy categories or item IDs so content validation remains clean.

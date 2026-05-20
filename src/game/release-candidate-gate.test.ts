@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import externalPlaytestGate from '../../EXTERNAL_PLAYTEST_GATE.md?raw';
 import internalAlphaNotes from '../../INTERNAL_ALPHA_NOTES.md?raw';
+import knownIssues from '../../KNOWN_ISSUES.md?raw';
+import playtestFeedback from '../../PLAYTEST_FEEDBACK.md?raw';
 import type { ReleaseCandidateGateInput } from './ReleaseCandidateGate';
 import { evaluateReleaseCandidateGate, formatReleaseCandidateGateSummary } from './ReleaseCandidateGate';
 
@@ -113,5 +116,29 @@ describe('release candidate gate', () => {
     expect(notes).toContain('Telemetry Summary');
     expect(notes).toContain('one region');
     expect(notes).toContain('not public marketing');
+  });
+
+  it('keeps the known-issues ledger actionable for external playtest decisions', () => {
+    expect(knownIssues).toContain('| Issue | Severity | Owner | Reproduction / evidence note | Workaround | Blocks Playtest |');
+    expect(knownIssues).toContain('60-minute crash-free session');
+    expect(knownIssues).toContain('Release director / QA operator');
+    expect(knownIssues).toContain('Blocks Playtest');
+  });
+
+  it('keeps the playtest feedback form ready for tester reports', () => {
+    expect(playtestFeedback).toContain('Post-Play Survey');
+    expect(playtestFeedback).toContain('Bug Report Template');
+    expect(playtestFeedback).toContain('Debug Info To Attach');
+    expect(playtestFeedback).toContain('Build label:');
+    expect(playtestFeedback).toContain('Debug export attached:');
+  });
+
+  it('keeps the external playtest gate explicit about blockers and exit criteria', () => {
+    expect(externalPlaytestGate).toContain('Required Checks');
+    expect(externalPlaytestGate).toContain('A 60-minute session is crash-free');
+    expect(externalPlaytestGate).toContain('Known issues are triaged in `KNOWN_ISSUES.md`');
+    expect(externalPlaytestGate).toContain('Feedback collection is ready through `PLAYTEST_FEEDBACK.md`');
+    expect(externalPlaytestGate).toContain('P0: crashes');
+    expect(externalPlaytestGate).toContain('No P0/P1 issues are open');
   });
 });

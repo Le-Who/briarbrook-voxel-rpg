@@ -47,4 +47,4 @@ Date: 2026-05-20
 
 - `INTERNAL_ALPHA_NOTES.md` known issues should be refreshed after any tester-blocking discovery.
 - The build still has the existing Vite large chunk warning.
-- Content validation warnings from previous prompts remain non-blocking but visible.
+- Content validation is currently clean with 0 warnings.

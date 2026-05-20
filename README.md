@@ -122,7 +122,7 @@ npm run build
 
 `npm run test:ui-smoke`, `npm run test:ui-visual`, and `npm run test:ui-alpha` are project-local Playwright gates for the React UI migration. They use the managed Vite server in `playwright.config.ts` and do not depend on the Codex in-app browser.
 
-`npm run content:validate` validates content registries, ids, dead references, and representative spawn/test data. It currently passes with 18 known warnings for event economy-impact labels and the `tool:torch` MagicaVoxel source metadata.
+`npm run content:validate` validates content registries, ids, dead references, and representative spawn/test data. It currently passes with 0 warnings.
 
 `npm run build` currently passes with the known Vite warning that the app entry and Three vendor chunks are over 500 kB after minification. That warning is accepted for the internal alpha branch and tracked in `docs/UI_BUNDLE_AUDIT.md`.
 
@@ -196,6 +196,5 @@ Recommended manual smoke:
 - The voxel engine is procedural runtime geometry, not an imported `.vox` or Blockbench asset pipeline.
 - Trade partner inventories are lightweight simulated snapshots, not persistent NPC economy ledgers.
 - Main JS chunk is still over the default Vite warning threshold.
-- Content validation still reports known low-severity warnings for event economy-impact labels and `tool:torch` source metadata.
-- Browser console can show expected low-severity warnings for AudioContext autoplay and missing favicon.
+- Browser console can show the expected low-severity AudioContext autoplay warning before the first user gesture.
 - No shipped multiplayer, server backend, second region, pets/taming, or full asset authoring pipeline yet.

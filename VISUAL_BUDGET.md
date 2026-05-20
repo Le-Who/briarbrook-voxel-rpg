@@ -185,7 +185,7 @@ Budget decisions:
 - The 117 smoke treats `[ui-window-qa]` warnings as failures so hotbar/window overlap and missing scroll containment do not silently regress.
 - The build panel now has managed-window scroll containment to keep action controls reachable at higher UI scales.
 - R4 accepts the live gathering progress prompt after simulation advances, while unit coverage verifies the initial short affordance prompt.
-- Remaining warnings are non-blocking automation/content-pipeline warnings: `tool:torch` missing `sourcePath`, AudioContext autoplay, and Chromium `ReadPixels` during screenshot capture.
+- Remaining warnings are non-blocking browser automation warnings: AudioContext autoplay and Chromium `ReadPixels` during screenshot capture.
 
 ## Verification Gates
 
@@ -203,16 +203,16 @@ Required after each implementation prompt in the visual block:
 Current full-project publish gate on 2026-05-20:
 
 - `npm run lint`: passed (`tsc --noEmit`).
-- `npm test`: passed, 77 files / 357 tests.
-- `npm run test:perf-ui`: passed, 12 files / 69 tests.
-- `npm run content:validate`: passed, 0 errors / 18 known warnings.
+- `npm test`: passed, 88 files / 402 tests.
+- `npm run test:perf-ui`: passed, 12 files / 72 tests.
+- `npm run content:validate`: passed, 0 errors / 0 warnings.
 - `npm run build`: passed with the accepted Vite large-chunk warning.
 
 Remaining budget risks:
 
 - Future Treasure Hunting expansion must reuse the R1-R9 budget counters for clue markers, secret containers, traps, map updates, floating text, and reward VFX.
 - Current Vite bundle size warning is not a frame-budget failure, but it remains a release polish/code-splitting item.
-- Event economy-impact warning labels are documentation/content taxonomy debt; they should not be treated as render-budget failures.
+- Content validation is currently clean; future content taxonomy warnings should not be treated as render-budget failures unless they change runtime visual scope.
 
 ## Visual Budget Checklist
 

@@ -84,6 +84,32 @@ describe('modern economy and item sinks', () => {
     expect(state.world.economy.transactionLog.at(-1)?.kind).toBe('market');
   });
 
+  it('guarantees one first-hour work order after the first tree harvest', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const state = createInitialGameState();
+    const tree = state.entities.res_tree_1;
+    if (!tree || tree.kind !== 'resource') throw new Error('starter tree missing');
+    state.player.currentArea = tree.area;
+    state.player.position = { ...tree.position };
+    gatherResource(state, tree.id);
+    updateGathering(state, 10);
+
+    const order = state.world.economy.workOrders.find((candidate) => candidate.id === 'wo_mira_road_logs');
+    expect(order).toBeDefined();
+    expect(order?.difficultyTier).toBe(0);
+    expect(order?.requiredItems).toEqual([{ itemId: 'logs', quantity: 6 }]);
+    expect(order?.rewardGold).toBeLessThanOrEqual(70);
+
+    const logsBefore = getItemCount(state.player.inventory, 'logs');
+    const goldBefore = state.player.gold;
+    state.player.currentArea = 'town';
+
+    expect(completeWorkOrder(state, order!.id)).toBe(true);
+    expect(getItemCount(state.player.inventory, 'logs')).toBe(logsBefore - 6);
+    expect(state.player.gold).toBeGreaterThan(goldBefore);
+    expect(state.world.economy.transactionLog.at(-1)?.kind).toBe('work_order');
+  });
+
   it('ships at least five fulfillable work orders that remove resources from the economy', () => {
     const fulfillableOrderIds = ['wo_sela_bandages', 'wo_guard_arrows', 'wo_corrin_boards', 'wo_builder_stone', 'wo_explorer_maps'];
 

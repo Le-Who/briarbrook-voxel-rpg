@@ -7,9 +7,9 @@ Last updated: 2026-05-20.
 Current verification on 2026-05-20:
 
 - `npm run lint`: passed (`tsc --noEmit`).
-- `npm test`: passed, 77 files / 361 tests.
+- `npm test`: passed, 88 files / 402 tests.
 - `npm run test:perf-ui`: passed, 12 files / 72 tests.
-- `npm run content:validate`: passed, 0 errors / 18 known warnings.
+- `npm run content:validate`: passed, 0 errors / 0 warnings.
 - `npm run build`: passed with the known large chunk warning.
 - Browser smoke from prompt 117 covered R1-R9 HUD screenshot parity across desktop viewports and UI scales; dev overlay counters remain the source of truth for live render/DOM budget reads.
 
@@ -96,13 +96,11 @@ Severity rules:
 | Blocker | Crash, save corruption, stuck movement mode, broken inventory, broken tree harvesting, or Atlas pin cannot update Journal. |
 | High | Sustained idle redraw every frame, tooltip flicker/remount loop, click moves in Keyboard Only, WASD moves in Mouse Only. |
 | Medium | Layout clipping at common desktop/mobile sizes, minimap wrong mode, chat scroll jumps, Atlas search/detail stale. |
-| Low | Cosmetic spacing issue, known browser autoplay warning, missing favicon, known content warning without gameplay impact. |
+| Low | Cosmetic spacing issue or known browser autoplay warning. |
 
 ## Known Remaining Issues
 
 | Issue | Severity | Workaround |
 | --- | --- | --- |
 | Vite build warns that the main JS chunk is over 500 kB. | Low | Track for future code-splitting; not a functional regression. |
-| Content validation reports 18 known warnings for event economy-impact labels and `tool:torch` source metadata. | Low | Existing content-validation warnings; runtime content remains valid with 0 errors and 0 dead references. |
 | Headless/first-load browser warns that AudioContext needs a user gesture. | Low | Expected browser autoplay policy; first user gesture resumes audio. |
-| Browser requests a missing favicon on first load. | Low | Cosmetic browser request; add favicon asset during release polish if desired. |

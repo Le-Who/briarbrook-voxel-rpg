@@ -37,7 +37,7 @@ Prompt 110 creates shared systems for the reference implementation block. It doe
   - Applied and validated Screenshot Parity presets for R1 town, R5 smithy crafting, R7 housing build, R8 profession atlas, and R9 adventure map.
   - Confirmed parity mode opens expected panels, locks camera zoom, disables dev travel, and hides the dev overlay.
   - Screenshot evidence: `artifacts/playwright/110-screenshot-parity-smoke.png`.
-  - Console warnings observed: existing missing `tool:torch` sourcePath warning, browser AudioContext autoplay warning, and WebGL `ReadPixels` stall warnings. No console errors.
+  - Console warnings observed during the original pass: missing `tool:torch` sourcePath warning, browser AudioContext autoplay warning, and WebGL `ReadPixels` stall warnings. The torch source warning was later resolved by marking the runtime fallback procedural-only. No console errors.
 
 ## Not Done In Prompt 110
 

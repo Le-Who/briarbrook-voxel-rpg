@@ -27,6 +27,15 @@ describe('voxel asset pipeline registry', () => {
     });
   });
 
+  it('keeps the torch registry entry honest about its procedural runtime source', () => {
+    expect(visualPrefabById['tool:torch']).toMatchObject({
+      sourceTool: 'procedural',
+      sourcePath: null,
+      fallbackProceduralFactory: 'torchBox',
+      lodPolicy: 'procedural-only'
+    });
+  });
+
   it('fails gracefully when exported runtime models are not present yet', async () => {
     const manager = new AssetManager();
 

@@ -26,7 +26,7 @@ Date: 2026-05-20
 - Related focused: `npm test -- src\tools\accessibility-certification.test.ts src\ui\ui-customization.test.ts src\ui\onboarding-ui.test.ts src\content\strings.test.ts src\game\input-action-map.test.ts src\audio\audio-manager.test.ts src\systems\InteractionAffordanceSystem.test.ts` passed, 7 files / 32 tests.
 - Full tests: `npm test` passed, 76 files / 353 tests.
 - Perf/UI: `npm run test:perf-ui` passed, 12 files / 69 tests.
-- Content validation: `npm run content:validate` passed, 0 errors / 18 existing warnings.
+- Content validation: `npm run content:validate` passed, 0 errors / 0 warnings.
 - Build: `npm run build` passed with the existing large chunk warning.
 
 ## Done
@@ -45,4 +45,4 @@ Date: 2026-05-20
 
 - The localization registry is ready for critical prompts and new systems, but legacy UI panels still contain hardcoded English labels.
 - Contrast checks are token-based, not a full pixel-level browser audit.
-- Existing content validation warnings and Vite large chunk warning remain unchanged.
+- Content validation is currently clean with 0 warnings; the Vite large chunk warning remains unchanged.

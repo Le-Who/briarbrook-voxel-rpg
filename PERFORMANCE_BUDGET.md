@@ -53,4 +53,3 @@ npm run build
 Current accepted non-blockers:
 
 - Main Vite JavaScript chunk remains over the default 500 kB warning threshold.
-- Content validation has 18 known warnings for event economy-impact labels and `tool:torch` source metadata.
