@@ -225,7 +225,7 @@ export interface EquipmentState {
   helmet?: ItemStack;
 }
 
-export type ZoneType = 'guarded_town' | 'private_interior' | 'public_interior' | 'wilderness' | 'dungeon' | 'player_plot' | 'safe_area' | 'future_risk';
+export type ZoneType = 'guarded_town' | 'private_interior' | 'public_interior' | 'wilderness' | 'dungeon' | 'player_plot' | 'event_zone' | 'safe_area' | 'future_risk';
 
 export type ReputationStatus = 'lawful' | 'neutral' | 'suspicious' | 'criminal' | 'outlaw';
 
@@ -240,6 +240,12 @@ export interface ReputationState {
   aggressionCount: number;
   murderCount: number;
   finesOwed: number;
+  merchantTrust: number;
+  guardTrust: number;
+  mageTrust: number;
+  healerTrust: number;
+  smithTrust: number;
+  guardAttention: number;
   warningAcknowledged: Partial<Record<CriminalActionType, boolean>>;
   lastCrimeAt: number;
 }
@@ -332,10 +338,33 @@ export interface BaseEntity {
   actionState?: ActionState;
 }
 
+export type CompanionRole = 'guard' | 'archer' | 'healer' | 'scout';
+export type CompanionCommand = 'follow' | 'hold' | 'assist' | 'passive';
+
+export interface CompanionState {
+  role: CompanionRole;
+  command: CompanionCommand;
+  temporary: boolean;
+  hiredAt: number;
+  expiresAt: number;
+  health: number;
+  maxHealth: number;
+  mana: number;
+  maxMana: number;
+  lastAssistAt: number;
+  lastHealAt: number;
+  lastScoutAt: number;
+  lastStuckCheckAt: number;
+  stuckSeconds: number;
+  lastPosition: Vec3;
+  downedUntil: number;
+}
+
 export interface NpcEntity extends BaseEntity {
   kind: 'npc' | 'social';
   role: 'banker' | 'blacksmith' | 'merchant' | 'guard' | 'player' | 'quest';
   dialogue: string[];
+  companion?: CompanionState;
   tradeInventory?: InventoryState;
   tradeGold?: number;
   craftStation?: StationType;
@@ -362,7 +391,7 @@ export interface EnemyEntity extends BaseEntity {
   weaponSkill: number;
   defenseSkill: number;
   aiStyle: 'melee' | 'archer' | 'mage' | 'beast';
-  combatRole: 'grunt' | 'archer' | 'caster' | 'brute' | 'skirmisher' | 'summoner' | 'support';
+  combatRole: 'grunt' | 'archer' | 'caster' | 'brute' | 'skirmisher' | 'guard' | 'support' | 'trapkeeper' | 'summoner';
   aggroRadius: number;
   attackRange: number;
   attackCooldown: number;
@@ -888,9 +917,20 @@ export interface WorldTimeState {
   phase: WorldPhase;
   visibilityModifier: number;
   stealthModifier: number;
+  dangerModifier: number;
 }
 
-export type WorldEventType = 'bandit_ambush' | 'merchant_caravan' | 'crypt_spill' | 'lost_traveler' | 'rare_ore' | 'market_day' | 'storm';
+export type WorldEventType =
+  | 'bandit_ambush'
+  | 'merchant_caravan'
+  | 'crypt_spill'
+  | 'lost_traveler'
+  | 'rare_ore'
+  | 'market_day'
+  | 'storm'
+  | 'guard_patrol'
+  | 'healer_shortage'
+  | 'mage_reagent_request';
 
 export interface WorldEventState {
   id: string;
@@ -911,7 +951,43 @@ export interface ResourcePressureState {
   yieldModifier: number;
 }
 
-export type EconomyOrderCategory = 'metal' | 'wood' | 'healing' | 'reagents' | 'food' | 'combat' | 'banking' | 'building' | 'treasure' | 'housing' | 'misc';
+export type EconomyOrderCategory =
+  | 'smithy'
+  | 'healer'
+  | 'mage'
+  | 'guard'
+  | 'carpenter'
+  | 'tavern'
+  | 'banker'
+  | 'metal'
+  | 'wood'
+  | 'healing'
+  | 'reagents'
+  | 'food'
+  | 'combat'
+  | 'banking'
+  | 'building'
+  | 'treasure'
+  | 'housing'
+  | 'misc';
+
+export interface EconomyDiscountState {
+  id: string;
+  label: string;
+  category?: EconomyOrderCategory;
+  percent: number;
+  startedAt: number;
+  expiresAt: number;
+}
+
+export interface EconomyDemandSignalState {
+  id: string;
+  eventType: WorldEventType;
+  label: string;
+  startedAt: number;
+  endsAt: number;
+  affected: Array<EconomyOrderCategory | string>;
+}
 
 export interface WorkOrderState {
   id: string;
@@ -925,6 +1001,14 @@ export interface WorkOrderState {
   requiredItems?: RecipeRequirement[];
   requiredQuality?: ItemStack['quality'];
   rewardItems?: RecipeRequirement[];
+  rewardVoucherItems?: RecipeRequirement[];
+  rewardRecipeIds?: string[];
+  rewardDiscount?: {
+    label: string;
+    category?: EconomyOrderCategory;
+    percent: number;
+    duration: number;
+  };
   rewardSkillHints?: SkillId[];
   reputationGain?: number;
   delivered: number;
@@ -972,6 +1056,9 @@ export interface EconomyState {
   lastDailySeed: number;
   localDemand: Partial<Record<EconomyOrderCategory | string, number>>;
   priceTrends: Record<string, number[]>;
+  demandSignals: EconomyDemandSignalState[];
+  unlockedRecipeIds: string[];
+  activeDiscounts: EconomyDiscountState[];
 }
 
 export interface TreasureMapRuntimeState {
@@ -1012,12 +1099,14 @@ export interface TelemetryState {
   skillGains: Record<SkillId, number>;
   resourceYields: Record<string, number>;
   resourceOutflow: Record<string, number>;
+  durabilityLossByItem: Record<string, number>;
   itemsSold: Record<string, number>;
   itemsConsumed: Record<string, number>;
   bandagesApplied: number;
   combatBandagesApplied: number;
   repairsCompleted: number;
   workOrdersCompleted: number;
+  workOrderCompletionSeconds: Record<string, number>;
   marketTransactions: number;
   goldEarned: number;
   goldSpent: number;
@@ -1030,6 +1119,8 @@ export interface TelemetryState {
   actionCancellations: Record<string, number>;
   questCompletionTime: Record<string, number>;
   priceTrends: Record<string, number[]>;
+  combatEngagementStartedAt: Record<string, number>;
+  combatTimeToKillSeconds: Record<string, number>;
 }
 
 export interface PlaytestTelemetryState {
@@ -1178,9 +1269,24 @@ export interface DevStabilityState {
   safeSpawnFallbackCount: number;
 }
 
+export interface ScreenshotParityState {
+  active: boolean;
+  presetId: string | null;
+  referenceId: string | null;
+  label: string;
+  captureName: string;
+  camera: {
+    zoom: number;
+    offset: Vec3;
+    focus: Vec3 | null;
+  };
+  lastAppliedAt: number;
+}
+
 export interface DevToolState {
   overlay: boolean;
   selectedSceneId: string;
+  screenshotParity: ScreenshotParityState;
   contentValidation: ContentValidationState;
   telemetry: TelemetryState;
   telemetryExportJson: string;
@@ -1235,9 +1341,12 @@ export interface UIState {
   skillProfessionFilter: ProfessionLensFilter;
   professionAtlasZoom: number;
   professionAtlasSearch: string;
+  professionAtlasShowFuture: boolean;
   selectedProfessionNodeId: string | null;
+  activeProfessionContractId: string | null;
   pinnedProfessionGoalId: string | null;
   pinnedRumorId: string | null;
+  pinnedWorkOrderId: string | null;
   mapWaypoint: MapWaypointState | null;
   minimapMode: MinimapMode;
   mapHiddenLayers: MapLayerId[];
@@ -1304,7 +1413,7 @@ export type MinimapMode = 'compact' | 'standard' | 'expanded' | 'hidden';
 export type MapLayerId = 'terrain' | 'player' | 'companions' | 'services' | 'objective' | 'pinned' | 'danger' | 'entrances' | 'housing';
 export type SpellbookKnowledgeFilter = 'known' | 'all' | 'unknown';
 export type SpellbookViewMode = 'grid' | 'list' | 'circle';
-export type SpellbookRoleFilter = 'all' | 'Damage' | 'Healing' | 'Utility' | 'Control' | 'Travel' | 'Buff' | 'Debuff';
+export type SpellbookRoleFilter = 'all' | 'Damage' | 'Healing' | 'Utility' | 'Control' | 'Travel' | 'Buff' | 'Debuff' | 'Support';
 export type MarketViewMode = 'work' | 'trade' | 'all';
 export type SkillsViewMode = 'ledger' | 'atlas' | 'milestones';
 export type SkillTrainableFilter = 'all' | 'trainable' | 'not_trainable';
@@ -1317,6 +1426,7 @@ export type ProfessionLensFilter =
   | 'field_medic'
   | 'town_smith'
   | 'builder'
+  | 'trader'
   | 'bard'
   | 'rogue'
   | 'provisioner'
@@ -1334,12 +1444,14 @@ export interface WorldState {
   placedBuildings: BuildingEntity[];
   housing: HousingState;
   discoveredAreas: AreaId[];
+  partyMemberIds: string[];
   resourceTiles: Record<string, ResourceTile>;
   magicFields: MagicField[];
   recallMark: { area: AreaId; position: Vec3; markedAt: number } | null;
   time: WorldTimeState;
   activeEvents: WorldEventState[];
   discoveredRumorIds: string[];
+  resolvedEventLog: string[];
   resourcePressure: Partial<Record<AreaId, ResourcePressureState>>;
   economy: EconomyState;
   treasure: TreasureState;

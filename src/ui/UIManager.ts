@@ -1,7 +1,7 @@
 import { buildPieces, itemDefs } from '../data/items';
 import { spellDefs } from '../data/spells';
 import type { GameAction } from '../game/Actions';
-import type { AudioVolumeCategory, EquipmentSlot, GameState, HotbarBinding, InputActionId, InputBindingContext, MapWaypointSource, MovementMode, Vec3 } from '../game/types';
+import type { AudioVolumeCategory, CompanionCommand, EquipmentSlot, GameState, HotbarBinding, InputActionId, InputBindingContext, MapWaypointSource, MovementMode, Vec3 } from '../game/types';
 import { inputActionDefinitions } from '../game/InputActionMap';
 import type { LoopDirtyFlags } from '../game/LoopGovernor';
 import { worldLabelForEntity } from '../game/WorldFeedback';
@@ -28,6 +28,7 @@ import { MapPanel } from './MapPanel';
 import { MarketBoardPanel } from './MarketBoardPanel';
 import { MerchantPanel } from './MerchantPanel';
 import { Minimap } from './Minimap';
+import { PartyFrame } from './PartyFrame';
 import { QuestTracker } from './QuestTracker';
 import { SkillsPanel } from './SkillsPanel';
 import { SpellbookPanel } from './SpellbookPanel';
@@ -49,6 +50,10 @@ import { captureManagedScrollPositions, isEditableTarget, isScrollableTarget, re
 import { shouldDeferHudReplacement, shouldThrottleHudReplacement } from './UIRenderGuards';
 
 type Dispatch = (action: GameAction) => void;
+
+function isCompanionCommand(value: string): value is CompanionCommand {
+  return value === 'follow' || value === 'hold' || value === 'assist' || value === 'passive';
+}
 
 declare global {
   interface Window {
@@ -459,6 +464,7 @@ export class UIManager {
 
   private renderHud(state: GameState): string {
     return `${this.renderTrackedFragment('playerStatus', () => this.playerStatus(state))}
+      ${this.renderTrackedFragment('partyFrame', () => PartyFrame(state), this.fragmentDirty('entitiesDirty', 'worldDirty'))}
       ${this.renderTrackedFragment('targetFrame', () => TargetFrame(state))}
       ${this.renderMinimapFragment(state)}
       ${this.renderTrackedFragment('mapPanel', () => MapPanel(state), this.fragmentDirty('minimapDirty', 'journalDirty', 'windowLayoutDirty'))}
@@ -1038,6 +1044,17 @@ export class UIManager {
         else this.dispatch({ type: 'SET_PROFESSION_ATLAS_ZOOM', zoom: (this.currentState?.ui.professionAtlasZoom ?? 1) + Number(atlasZoom) });
         return;
       }
+      const atlasFuture = button.dataset.atlasFuture;
+      if (atlasFuture === 'show' || atlasFuture === 'hide') {
+        const show = atlasFuture === 'show';
+        this.dispatch({ type: 'SET_PROFESSION_ATLAS_SHOW_FUTURE', show });
+        if (this.currentState) {
+          this.currentState.ui.professionAtlasShowFuture = show;
+          this.lastFragmentHtml.delete('skills');
+          this.replaceHud(this.renderHud(this.currentState));
+        }
+        return;
+      }
       const atlasNode = button.dataset.atlasNode;
       if (atlasNode) {
         this.dispatch({ type: 'SET_PROFESSION_ATLAS_NODE', nodeId: atlasNode });
@@ -1078,6 +1095,11 @@ export class UIManager {
         this.dispatch({ type: 'TOGGLE_MAP_LAYER', layerId: mapLayerToggle as GameState['ui']['mapHiddenLayers'][number] });
         return;
       }
+      const treasureMapId = button.dataset.treasureMapId;
+      if (treasureMapId) {
+        this.dispatch({ type: 'SET_TREASURE_MAP', mapId: treasureMapId });
+        return;
+      }
       const waypointArea = button.dataset.mapWaypointArea;
       if (waypointArea) {
         this.dispatch({
@@ -1114,6 +1136,10 @@ export class UIManager {
       }
       if (button.dataset.pinRumor !== undefined) {
         this.dispatch({ type: 'PIN_RUMOR', eventId: button.dataset.pinRumor || null });
+        return;
+      }
+      if (button.dataset.pinWorkOrder !== undefined) {
+        this.dispatch({ type: 'PIN_WORK_ORDER', orderId: button.dataset.pinWorkOrder || null });
         return;
       }
       const recipe = button.dataset.recipe;
@@ -1221,6 +1247,16 @@ export class UIManager {
         this.dispatch({ type: 'SET_SKILL_MODE', skillId: skillMode, mode: (button.dataset.mode ?? 'lock') as GameState['player']['skills'][string]['mode'] });
         return;
       }
+      const professionContract = button.dataset.professionContract;
+      if (professionContract) {
+        this.dispatch({ type: 'ACCEPT_PROFESSION_CONTRACT', contractId: professionContract });
+        return;
+      }
+      const abandonProfessionContract = button.dataset.abandonProfessionContract;
+      if (abandonProfessionContract) {
+        this.dispatch({ type: 'ABANDON_PROFESSION_CONTRACT', contractId: abandonProfessionContract });
+        return;
+      }
       const bardSkill = button.dataset.bardSkill;
       if (bardSkill === 'Peacemaking' || bardSkill === 'Provocation' || bardSkill === 'Discordance') {
         this.dispatch({ type: 'USE_BARD_SKILL', skillId: bardSkill });
@@ -1254,6 +1290,15 @@ export class UIManager {
       const devScene = button.dataset.devScene;
       if (devScene) {
         this.dispatch({ type: 'DEV_TELEPORT_SCENE', sceneId: devScene });
+        return;
+      }
+      const screenshotParity = button.dataset.devScreenshotParity;
+      if (screenshotParity) {
+        this.dispatch({ type: 'DEV_APPLY_SCREENSHOT_PARITY', presetId: screenshotParity });
+        return;
+      }
+      if (button.dataset.devScreenshotParityClear) {
+        this.dispatch({ type: 'DEV_CLEAR_SCREENSHOT_PARITY' });
         return;
       }
       const devArea = button.dataset.devArea;
@@ -1348,6 +1393,12 @@ export class UIManager {
       if (target.dataset.action === 'chat-retention') {
         this.dispatch({ type: 'SET_CHAT_RETENTION', limit: Number(target.value) });
       }
+      if (target.dataset.action === 'companion-command') {
+        const entityId = target.dataset.companionCommand;
+        if (entityId && isCompanionCommand(target.value)) {
+          this.dispatch({ type: 'SET_COMPANION_COMMAND', entityId, command: target.value });
+        }
+      }
     });
 
     this.root.addEventListener('input', (event) => {
@@ -1358,6 +1409,8 @@ export class UIManager {
       if (target.dataset.action === 'skill-search') {
         this.dispatch({ type: 'SET_SKILL_SEARCH', search: target.value });
         if (this.currentState) {
+          this.currentState.ui.skillSearch = target.value;
+          this.lastFragmentHtml.delete('skills');
           this.replaceHud(this.renderHud(this.currentState));
           const search = this.root.querySelector<HTMLInputElement>('.skill-search');
           if (search) {
@@ -1369,6 +1422,8 @@ export class UIManager {
       if (target.dataset.action === 'atlas-search') {
         this.dispatch({ type: 'SET_PROFESSION_ATLAS_SEARCH', search: target.value });
         if (this.currentState) {
+          this.currentState.ui.professionAtlasSearch = target.value;
+          this.lastFragmentHtml.delete('skills');
           this.replaceHud(this.renderHud(this.currentState));
           const search = this.root.querySelector<HTMLInputElement>('.atlas-search');
           if (search) {
@@ -1847,6 +1902,9 @@ export class UIManager {
       case 'respawn':
         this.dispatch({ type: 'RESPAWN' });
         break;
+      case 'dismiss-companion':
+        if (element.dataset.companionId) this.dispatch({ type: 'DISMISS_COMPANION', entityId: element.dataset.companionId });
+        break;
       case 'toggle-dev-overlay':
         this.dispatch({ type: 'TOGGLE_DEV_OVERLAY' });
         break;
@@ -1913,6 +1971,12 @@ export class UIManager {
         break;
       case 'place-building':
         this.dispatch({ type: 'PLACE_BUILDING' });
+        break;
+      case 'rotate-building':
+        this.dispatch({ type: 'ROTATE_BUILDING', delta: 90 });
+        break;
+      case 'cancel-build-placement':
+        this.dispatch({ type: 'TOGGLE_BUILD_MODE', active: false });
         break;
       case 'claim-plot':
         this.dispatch({ type: 'CLAIM_STARTER_PLOT' });

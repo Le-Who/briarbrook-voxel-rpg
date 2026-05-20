@@ -14,8 +14,10 @@ export function CraftingPanel(state: GameState): string {
   const selectedDef = itemDefs[selected.outputItemId];
   const stations = Object.entries(stationLabels) as Array<[keyof typeof stationLabels, string]>;
   const marketUnlocked = hasMarketAccess(state);
-  return `<section class="panel crafting-panel">
-    <header><span>Crafting Network</span><button data-action="toggle-panel" data-panel="crafting">x</button></header>
+  const title = station === 'forge' ? 'Blacksmithing' : 'Crafting Network';
+  const canCraft = selected.inputs.every((req) => getItemCount(state.player.inventory, req.itemId) >= req.quantity * quantity);
+  return `<section class="panel crafting-panel" data-service-panel="smithy">
+    <header><span>${title}</span><button data-action="toggle-panel" data-panel="crafting">x</button></header>
     <div class="craft-stations">
       <button class="${station === 'all' ? 'active' : ''}" data-craft-station="all">All</button>
       ${stations.map(([id, label]) => `<button class="${station === id ? 'active' : ''}" data-craft-station="${id}">${label}</button>`).join('')}
@@ -60,7 +62,8 @@ export function CraftingPanel(state: GameState): string {
             <b>${quantity}</b>
             <button data-action="craft-qty-up">+</button>
           </div>
-          <button class="primary" data-action="craft-selected">Craft x${quantity}</button>
+          <span class="craft-readiness ${canCraft ? 'ready' : 'blocked'}">${canCraft ? 'Ready' : 'Missing Materials'}</span>
+          <button class="primary" data-action="craft-selected"${canCraft ? '' : ' disabled'}>Craft x${quantity}</button>
         </div>
         <h4>Crafting Queue</h4>
         <div class="queue">

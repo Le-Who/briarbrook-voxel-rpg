@@ -61,4 +61,27 @@ describe('SpellbookPanel information architecture', () => {
     expect(html).not.toContain('A fast blue-white projectile for light damage.');
     expect(html).not.toContain('Assign to Hotbar');
   });
+
+  it('separates utility, travel, support, and damage spell roles for world interaction planning', () => {
+    const state = createInitialGameState();
+    state.ui.panels.spellbook = true;
+    state.player.spellbook.knownSpellIds = ['magic_arrow', 'telekinesis', 'recall', 'heal', 'protection', 'create_food'];
+
+    const allHtml = SpellbookPanel(state);
+
+    expect(allHtml).toContain('data-spellbook-role="Damage"');
+    expect(allHtml).toContain('data-spellbook-role="Utility"');
+    expect(allHtml).toContain('data-spellbook-role="Travel"');
+    expect(allHtml).toContain('data-spellbook-role="Support"');
+
+    state.ui.spellbookRoleFilter = 'Support' as never;
+    state.ui.selectedSpellId = 'heal';
+    const supportHtml = SpellbookPanel(state);
+
+    expect(supportHtml).toContain('Heal');
+    expect(supportHtml).toContain('Protection');
+    expect(supportHtml).toContain('Create Food');
+    expect(supportHtml).not.toContain('Magic Arrow</span>');
+    expect(supportHtml).not.toContain('Telekinesis</span>');
+  });
 });

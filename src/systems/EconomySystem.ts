@@ -2,12 +2,146 @@ import { itemDefs } from '../data/items';
 import { createInitialEconomyState, localDemandDefaults, marketOrderTemplates, vendorProfiles, workOrderTemplates } from '../data/economy';
 import { emitAudioHook } from '../audio/AudioHooks';
 import { createId, createStack } from '../game/GameState';
-import type { EconomyOrderCategory, EconomyTransactionState, EquipmentSlot, GameState, InventoryState, ItemStack, RecipeRequirement, StationType } from '../game/types';
+import type { EconomyOrderCategory, EconomyTransactionState, EquipmentSlot, GameState, InventoryState, ItemStack, RecipeRequirement, StationType, WorldEventType } from '../game/types';
 import { addSystemMessage } from './ChatSystem';
 import { adjustTownStanding } from './CrimeSystem';
 import { addItem, getItemCount, hasItems, removeItems } from './InventorySystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
-import { recordGoldDelta, recordItemConsumed, recordItemSold, recordMarketTransaction, recordPriceTrend, recordRepairCompleted, recordResourceOutflow, recordWorkOrderCompleted } from './TelemetrySystem';
+import { recordDurabilityLoss, recordGoldDelta, recordItemConsumed, recordItemSold, recordMarketTransaction, recordPriceTrend, recordRepairCompleted, recordResourceOutflow, recordWorkOrderCompleted, recordWorkOrderCompletionTime } from './TelemetrySystem';
+
+interface EconomyDemandCycle {
+  label: string;
+  duration: number;
+  affected: Array<EconomyOrderCategory | string>;
+  multipliers: Record<string, number>;
+}
+
+const economyDemandCycles: Partial<Record<WorldEventType, EconomyDemandCycle>> = {
+  bandit_ambush: {
+    label: 'Bandit raids',
+    duration: 72,
+    affected: ['guard', 'combat', 'arrow', 'shield', 'bandage', 'fresh_bread', 'torch'],
+    multipliers: {
+      guard: 1.24,
+      combat: 1.22,
+      arrow: 1.38,
+      shield: 1.18,
+      bandage: 1.16,
+      fresh_bread: 1.1,
+      torch: 1.14
+    }
+  },
+  crypt_spill: {
+    label: 'Crypt activity',
+    duration: 80,
+    affected: ['mage', 'healer', 'reagents', 'sulfurous_ash', 'garlic', 'ginseng', 'mana_potion', 'cure_potion'],
+    multipliers: {
+      mage: 1.18,
+      healer: 1.12,
+      reagents: 1.18,
+      sulfurous_ash: 1.32,
+      garlic: 1.24,
+      ginseng: 1.2,
+      mana_potion: 1.16,
+      cure_potion: 1.18
+    }
+  },
+  storm: {
+    label: 'River storm',
+    duration: 64,
+    affected: ['guard', 'banker', 'combat', 'building', 'torch', 'repair_kit', 'raw_fish'],
+    multipliers: {
+      guard: 1.1,
+      banker: 1.08,
+      combat: 1.12,
+      building: 1.1,
+      torch: 1.34,
+      repair_kit: 1.24,
+      raw_fish: 1.16
+    }
+  },
+  merchant_caravan: {
+    label: 'Caravan arrived',
+    duration: 70,
+    affected: ['banker', 'banking', 'food', 'treasure', 'sealed_crate', 'vendor_contract'],
+    multipliers: {
+      banker: 1.18,
+      banking: 1.16,
+      food: 1.1,
+      treasure: 1.12,
+      sealed_crate: 1.24,
+      vendor_contract: 1.2
+    }
+  },
+  rare_ore: {
+    label: 'Rare ore rumor',
+    duration: 90,
+    affected: ['smithy', 'metal', 'iron_ore', 'copper_ore', 'glimmer_gem'],
+    multipliers: {
+      smithy: 1.12,
+      metal: 1.16,
+      iron_ore: 1.14,
+      copper_ore: 1.12,
+      glimmer_gem: 1.18
+    }
+  },
+  market_day: {
+    label: 'Market day',
+    duration: 96,
+    affected: ['smithy', 'healer', 'mage', 'guard', 'carpenter', 'tavern', 'banker', 'food', 'wood', 'metal'],
+    multipliers: {
+      smithy: 1.1,
+      healer: 1.1,
+      mage: 1.1,
+      guard: 1.08,
+      carpenter: 1.1,
+      tavern: 1.12,
+      banker: 1.1,
+      food: 1.12,
+      wood: 1.08,
+      metal: 1.08
+    }
+  },
+  guard_patrol: {
+    label: 'Guard patrol',
+    duration: 72,
+    affected: ['guard', 'combat', 'arrow', 'fresh_bread', 'bandage', 'torch'],
+    multipliers: {
+      guard: 1.16,
+      combat: 1.1,
+      arrow: 1.18,
+      fresh_bread: 1.08,
+      bandage: 1.08,
+      torch: 1.08
+    }
+  },
+  healer_shortage: {
+    label: 'Healer shortage',
+    duration: 84,
+    affected: ['healer', 'healing', 'bandage', 'health_potion', 'cure_potion', 'ginseng'],
+    multipliers: {
+      healer: 1.22,
+      healing: 1.2,
+      bandage: 1.24,
+      health_potion: 1.18,
+      cure_potion: 1.14,
+      ginseng: 1.14
+    }
+  },
+  mage_reagent_request: {
+    label: 'Mage reagent request',
+    duration: 84,
+    affected: ['mage', 'reagents', 'sulfurous_ash', 'black_pearl', 'mandrake_root', 'ginseng'],
+    multipliers: {
+      mage: 1.2,
+      reagents: 1.22,
+      sulfurous_ash: 1.24,
+      black_pearl: 1.18,
+      mandrake_root: 1.14,
+      ginseng: 1.1
+    }
+  }
+};
 
 export function isBroken(stack: ItemStack | null | undefined): boolean {
   return Boolean(stack?.maxDurability && (stack.durability ?? stack.maxDurability) <= 0);
@@ -49,14 +183,22 @@ export function calculateLocalPrice(
   const def = itemDefs[itemId];
   const quantity = Math.max(1, Math.floor(options.quantity ?? 1));
   const category = economyCategoryForItem(itemId);
-  const demand = options.demandMultiplier ?? state.world.economy.localDemand[itemId] ?? state.world.economy.localDemand[category] ?? localDemandDefaults[category] ?? 1;
+  const categoryDemand = state.world.economy.localDemand[category] ?? localDemandDefaults[category] ?? 1;
+  const itemDemand = state.world.economy.localDemand[itemId];
+  const categoryBaseline = localDemandDefaults[category] ?? 1;
+  const categoryShift = options.demandMultiplier != null ? categoryDemand / categoryBaseline : 1;
+  const itemShift = itemDemand != null ? itemDemand : 1;
+  const demand = options.demandMultiplier != null ? options.demandMultiplier * categoryShift * itemShift : itemDemand ?? categoryDemand;
   const scarcity = scarcityMultiplier(state, itemId);
   const quality = qualityMultiplier(options.quality ?? options.stack?.quality);
   const condition = options.condition ?? durabilityScale(options.stack);
   const vendor = vendorModifier(options.vendorId, category, options.mode ?? 'market');
   const reputation = reputationPriceModifier(state, options.mode ?? 'market');
   const margin = options.mode === 'vendor_buy' ? 1.18 : options.mode === 'vendor_sell' ? 0.55 : 1;
-  const unit = Math.max(1, Math.round((def?.value ?? 1) * demand * scarcity * quality * condition * vendor * reputation * margin));
+  const rawUnit = (def?.value ?? 1) * demand * scarcity * quality * condition * vendor * reputation * margin;
+  if (options.mode === 'vendor_buy') return Math.max(quantity, Math.ceil(rawUnit * quantity));
+  if (options.mode === 'vendor_sell') return Math.max(1, Math.floor(rawUnit * quantity));
+  const unit = Math.max(1, Math.round(rawUnit));
   return unit * quantity;
 }
 
@@ -99,7 +241,9 @@ export function degradeItemStack(stack: ItemStack | null | undefined, amount: nu
 export function degradeEquippedItem(state: GameState, slot: EquipmentSlot, amount: number): void {
   const stack = state.player.equipment[slot];
   if (!stack) return;
+  const before = stack.durability ?? stack.maxDurability ?? 0;
   const broke = degradeItemStack(stack, amount);
+  recordDurabilityLoss(state, stack.itemId, before - (stack.durability ?? 0));
   if (broke) addSystemMessage(state, `${itemDefs[stack.itemId]?.name ?? stack.itemId} is broken and needs repair.`);
 }
 
@@ -119,7 +263,9 @@ export function findUsableTool(state: GameState, toolItemId: string): ItemStack 
 export function degradeToolForGathering(state: GameState, toolItemId: string): void {
   const tool = findUsableTool(state, toolItemId);
   if (!tool) return;
+  const before = tool.durability ?? tool.maxDurability ?? 0;
   const broke = degradeItemStack(tool, 1);
+  recordDurabilityLoss(state, tool.itemId, before - (tool.durability ?? 0));
   if (broke) addSystemMessage(state, `${itemDefs[tool.itemId]?.name ?? tool.itemId} breaks from heavy use.`);
 }
 
@@ -167,33 +313,57 @@ export function repairEquippedItem(state: GameState, slot: EquipmentSlot): boole
   return !failure;
 }
 
+export function hasBankOrderAccess(state: GameState): boolean {
+  return state.player.currentArea === 'bank' || state.player.currentArea === 'town' || state.ui.panels.bank;
+}
+
+export function getAccessibleItemCount(state: GameState, itemId: string): number {
+  return getItemCount(state.player.inventory, itemId) + (hasBankOrderAccess(state) ? getItemCount(state.player.bank, itemId) : 0);
+}
+
 export function completeWorkOrder(state: GameState, orderId: string): boolean {
+  ensureEconomyRuntimeState(state);
   const order = state.world.economy.workOrders.find((candidate) => candidate.id === orderId);
   if (!order || order.status !== 'open') return false;
   const requiredItems = order.requiredItems?.length ? order.requiredItems : [{ itemId: order.itemId, quantity: order.quantity }];
-  if (!hasItems(state.player.inventory, requiredItems)) {
+  if (!hasAccessibleItems(state, requiredItems)) {
     state.ui.prompt = `${order.requester} needs ${formatRequirements(requiredItems)}.`;
     return false;
   }
-  if (order.requiredQuality && !hasQualityItems(state.player.inventory, requiredItems, order.requiredQuality)) {
+  if (order.requiredQuality && !hasAccessibleQualityItems(state, requiredItems, order.requiredQuality)) {
     state.ui.prompt = `${order.title ?? order.requester} requires ${order.requiredQuality} quality.`;
     return false;
   }
-  if (order.rewardItems?.length && !canAddRewards(state, order.rewardItems)) {
+  const rewards = [...(order.rewardItems ?? []), ...(order.rewardVoucherItems ?? [])];
+  if (rewards.length && !canAddRewards(state, rewards)) {
     state.ui.prompt = 'Make room in your pack before claiming this order.';
     return false;
   }
-  requiredItems.forEach((requirement) => removeItems(state.player.inventory, requirement.itemId, requirement.quantity));
-  order.rewardItems?.forEach((reward) => addItem(state.player.inventory, reward.itemId, reward.quantity));
+  requiredItems.forEach((requirement) => removeAccessibleItems(state, requirement.itemId, requirement.quantity));
+  rewards.forEach((reward) => addItem(state.player.inventory, reward.itemId, reward.quantity));
   order.delivered = order.quantity;
   order.status = 'complete';
   state.player.gold += order.rewardGold;
+  if (order.rewardRecipeIds?.length) {
+    state.world.economy.unlockedRecipeIds = Array.from(new Set([...state.world.economy.unlockedRecipeIds, ...order.rewardRecipeIds]));
+  }
+  if (order.rewardDiscount) {
+    state.world.economy.activeDiscounts.push({
+      id: `${order.id}_discount_${Math.floor(state.clock)}`,
+      label: order.rewardDiscount.label,
+      category: order.rewardDiscount.category,
+      percent: order.rewardDiscount.percent,
+      startedAt: state.clock,
+      expiresAt: state.clock + order.rewardDiscount.duration
+    });
+  }
   recordGoldDelta(state, order.rewardGold);
   requiredItems.forEach((requirement) => {
     recordItemConsumed(state, requirement.itemId, requirement.quantity);
     recordResourceOutflow(state, requirement.itemId, requirement.quantity);
   });
   recordWorkOrderCompleted(state);
+  recordWorkOrderCompletionTime(state, order.id);
   adjustTownStanding(state, order.reputationGain ?? 1);
   attemptSkillUse(state, order.skill, { verb: 'work-order', difficulty: 24, success: true, itemId: order.itemId });
   pushTransaction(state, { kind: 'work_order', category: order.category, itemId: order.itemId, quantity: order.quantity, gold: order.rewardGold, actor: order.requester });
@@ -203,6 +373,7 @@ export function completeWorkOrder(state: GameState, orderId: string): boolean {
 }
 
 export function fulfillMarketOrder(state: GameState, orderId: string): boolean {
+  ensureEconomyRuntimeState(state);
   const order = state.world.economy.marketOrders.find((candidate) => candidate.id === orderId);
   if (!order || order.status !== 'open') return false;
   order.unitPrice = calculateLocalPrice(state, order.itemId, {
@@ -213,11 +384,11 @@ export function fulfillMarketOrder(state: GameState, orderId: string): boolean {
   });
   const total = order.quantity * order.unitPrice;
   if (order.kind === 'buy') {
-    if (getItemCount(state.player.inventory, order.itemId) < order.quantity) {
+    if (getAccessibleItemCount(state, order.itemId) < order.quantity) {
       state.ui.prompt = `${order.poster} is buying ${itemDefs[order.itemId]?.name ?? order.itemId} x${order.quantity}.`;
       return false;
     }
-    removeItems(state.player.inventory, order.itemId, order.quantity);
+    removeAccessibleItems(state, order.itemId, order.quantity);
     state.player.gold += total;
     recordGoldDelta(state, total);
     recordItemSold(state, order.itemId, order.quantity);
@@ -244,17 +415,47 @@ export function fulfillMarketOrder(state: GameState, orderId: string): boolean {
   return true;
 }
 
+export function applyEconomyEventDemand(state: GameState, type: WorldEventType): void {
+  ensureEconomyRuntimeState(state);
+  const cycle = economyDemandCycles[type];
+  if (!cycle) return;
+  for (const [key, multiplier] of Object.entries(cycle.multipliers)) {
+    const current = state.world.economy.localDemand[key] ?? 1;
+    state.world.economy.localDemand[key] = Math.max(current, multiplier);
+  }
+  const id = `demand_${type}`;
+  const signal = {
+    id,
+    eventType: type,
+    label: cycle.label,
+    startedAt: state.clock,
+    endsAt: state.clock + cycle.duration,
+    affected: [...cycle.affected]
+  };
+  const index = state.world.economy.demandSignals.findIndex((candidate) => candidate.id === id);
+  if (index >= 0) state.world.economy.demandSignals[index] = signal;
+  else state.world.economy.demandSignals.push(signal);
+  refreshOpenMarketPrices(state);
+  addSystemMessage(state, `Market demand shifts: ${cycle.label}.`);
+}
+
 export function updateEconomy(state: GameState): void {
   const day = state.world.time?.day ?? 0;
   if (!state.world.economy) state.world.economy = createInitialEconomyState();
-  state.world.economy.localDemand ??= { ...localDemandDefaults };
-  state.world.economy.priceTrends ??= {};
+  ensureEconomyRuntimeState(state);
+  const signalCountBefore = state.world.economy.demandSignals.length;
+  state.world.economy.demandSignals = state.world.economy.demandSignals.filter((signal) => signal.endsAt > state.clock);
+  state.world.economy.activeDiscounts = state.world.economy.activeDiscounts.filter((discount) => discount.expiresAt > state.clock);
+  if (state.world.economy.demandSignals.length || state.world.economy.demandSignals.length !== signalCountBefore) rebuildLocalDemandFromSignals(state);
   if (state.world.economy.lastDailySeed !== day) {
     state.world.economy.workOrders = workOrderTemplates.map((order, index) => ({
       ...order,
       id: `${order.id}_d${day}`,
       requiredItems: order.requiredItems?.map((item) => ({ ...item })),
       rewardItems: order.rewardItems?.map((item) => ({ ...item })),
+      rewardVoucherItems: order.rewardVoucherItems?.map((item) => ({ ...item })),
+      rewardRecipeIds: order.rewardRecipeIds ? [...order.rewardRecipeIds] : undefined,
+      rewardDiscount: order.rewardDiscount ? { ...order.rewardDiscount } : undefined,
       expiresAt: state.clock + 96 + index
     }));
     state.world.economy.marketOrders = marketOrderTemplates.map((order, index) => ({
@@ -299,13 +500,35 @@ function formatRequirements(requirements: RecipeRequirement[]): string {
   return requirements.map((requirement) => `${itemDefs[requirement.itemId]?.name ?? requirement.itemId} x${requirement.quantity}`).join(', ');
 }
 
-function hasQualityItems(inventory: InventoryState, requirements: RecipeRequirement[], quality: ItemStack['quality']): boolean {
-  return requirements.every((requirement) => {
-    const matching = inventory.slots
-      .filter((stack) => stack?.itemId === requirement.itemId && stack.quality === quality)
-      .reduce((sum, stack) => sum + (stack?.quantity ?? 0), 0);
-    return matching >= requirement.quantity;
-  });
+function hasAccessibleItems(state: GameState, requirements: RecipeRequirement[]): boolean {
+  return requirements.every((requirement) => getAccessibleItemCount(state, requirement.itemId) >= requirement.quantity);
+}
+
+function hasAccessibleQualityItems(state: GameState, requirements: RecipeRequirement[], quality: ItemStack['quality']): boolean {
+  return requirements.every((requirement) => qualityItemCount(state.player.inventory, requirement.itemId, quality) + (hasBankOrderAccess(state) ? qualityItemCount(state.player.bank, requirement.itemId, quality) : 0) >= requirement.quantity);
+}
+
+function qualityItemCount(inventory: InventoryState, itemId: string, quality: ItemStack['quality']): number {
+  return inventory.slots
+    .filter((stack) => stack?.itemId === itemId && stack.quality === quality)
+    .reduce((sum, stack) => sum + (stack?.quantity ?? 0), 0);
+}
+
+function removeAccessibleItems(state: GameState, itemId: string, quantity: number): boolean {
+  let remaining = quantity;
+  if (hasBankOrderAccess(state)) {
+    const fromBank = Math.min(getItemCount(state.player.bank, itemId), remaining);
+    if (fromBank > 0) {
+      removeItems(state.player.bank, itemId, fromBank);
+      remaining -= fromBank;
+    }
+  }
+  const fromInventory = Math.min(getItemCount(state.player.inventory, itemId), remaining);
+  if (fromInventory > 0) {
+    removeItems(state.player.inventory, itemId, fromInventory);
+    remaining -= fromInventory;
+  }
+  return remaining <= 0;
 }
 
 function canAddRewards(state: GameState, rewards: RecipeRequirement[]): boolean {
@@ -317,8 +540,42 @@ function canAddRewards(state: GameState, rewards: RecipeRequirement[]): boolean 
 }
 
 function pushTransaction(state: GameState, entry: Omit<EconomyTransactionState, 'id' | 'createdAt'>): void {
+  ensureEconomyRuntimeState(state);
   state.world.economy.transactionLog.push({ id: createId('txn'), createdAt: state.clock, ...entry });
   state.world.economy.transactionLog = state.world.economy.transactionLog.slice(-40);
+}
+
+function refreshOpenMarketPrices(state: GameState): void {
+  for (const order of state.world.economy.marketOrders) {
+    if (order.status !== 'open') continue;
+    order.unitPrice = calculateLocalPrice(state, order.itemId, {
+      mode: 'market',
+      demandMultiplier: order.demandMultiplier,
+      quality: order.quality,
+      condition: order.condition
+    });
+  }
+}
+
+function ensureEconomyRuntimeState(state: GameState): void {
+  if (!state.world.economy) state.world.economy = createInitialEconomyState();
+  state.world.economy.localDemand ??= { ...localDemandDefaults };
+  state.world.economy.priceTrends ??= {};
+  state.world.economy.demandSignals ??= [];
+  state.world.economy.unlockedRecipeIds ??= [];
+  state.world.economy.activeDiscounts ??= [];
+}
+
+function rebuildLocalDemandFromSignals(state: GameState): void {
+  state.world.economy.localDemand = { ...localDemandDefaults };
+  for (const signal of state.world.economy.demandSignals) {
+    const cycle = economyDemandCycles[signal.eventType];
+    if (!cycle) continue;
+    for (const [key, multiplier] of Object.entries(cycle.multipliers)) {
+      state.world.economy.localDemand[key] = Math.max(state.world.economy.localDemand[key] ?? 1, multiplier);
+    }
+  }
+  refreshOpenMarketPrices(state);
 }
 
 export function createExceptionalTrait(stack: ItemStack): void {

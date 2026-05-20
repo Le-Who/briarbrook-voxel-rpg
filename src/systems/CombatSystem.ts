@@ -1,5 +1,6 @@
 import { createId } from '../game/GameState';
 import { itemDefs } from '../data/items';
+import { combatRoleContracts, type CombatRoleId } from '../data/combatEncounters';
 import { emitAudioHook } from '../audio/AudioHooks';
 import type { CombatTelegraph, EnemyEntity, GameState, ItemDef, ItemStack, Projectile, Vec3 } from '../game/types';
 import { AreaManager } from '../world/AreaManager';
@@ -12,7 +13,7 @@ import { addFloatingText, spawnLootFromEnemy } from './LootSystem';
 import { recordKill } from './QuestSystem';
 import { attemptSkillUse, gainPlayerXp, getSkillValue } from './SkillSystem';
 import { removeItems } from './InventorySystem';
-import { recordDamageDealt, recordDamageTaken, recordDeath } from './TelemetrySystem';
+import { recordCombatEngagementStart, recordCombatTimeToKill, recordDamageDealt, recordDamageTaken, recordDeath, recordDurabilityLoss } from './TelemetrySystem';
 import { pruneVisualEffects, queueBlockEffect, queueMissEffect, queueSpellRoleEffect, queueWeaponImpactEffect, queueWeaponSwingEffect } from './VfxSystem';
 
 function distance(a: Vec3, b: Vec3): number {
@@ -21,6 +22,63 @@ function distance(a: Vec3, b: Vec3): number {
 
 function rollDamage(min: number, max: number): number {
   return Math.round(min + Math.random() * (max - min));
+}
+
+function combatRole(enemy: EnemyEntity): CombatRoleId {
+  return enemy.combatRole in combatRoleContracts ? (enemy.combatRole as CombatRoleId) : 'grunt';
+}
+
+function combatRoleTuning(enemy: EnemyEntity) {
+  return combatRoleContracts[combatRole(enemy)];
+}
+
+function warningColorHex(role: CombatRoleId): string {
+  const color = combatRoleContracts[role].warningColor;
+  if (color === 'red') return '#ff4f3f';
+  if (color === 'violet') return '#b66dff';
+  return '#ffb966';
+}
+
+function angleDelta(a: number, b: number): number {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+}
+
+function yawToAttacker(target: EnemyEntity, attacker: Vec3): number {
+  return Math.atan2(attacker.x - target.position.x, attacker.z - target.position.z);
+}
+
+function attackerInFront(target: EnemyEntity, attacker: Vec3): boolean {
+  const facingYaw = target.facing?.facingYaw ?? 0;
+  return Math.abs(angleDelta(facingYaw, yawToAttacker(target, attacker))) <= Math.PI * 0.42;
+}
+
+function hasActiveCastTelegraph(state: GameState, enemy: EnemyEntity): boolean {
+  return state.combat.telegraphs.some((telegraph) => telegraph.sourceId === enemy.id && telegraph.kind === 'cast');
+}
+
+function interruptEnemyCast(state: GameState, enemy: EnemyEntity): boolean {
+  if (!hasActiveCastTelegraph(state, enemy)) return false;
+  state.combat.telegraphs = state.combat.telegraphs.filter((telegraph) => !(telegraph.sourceId === enemy.id && telegraph.kind === 'cast'));
+  enemy.attackTimer = Math.max(enemy.attackTimer, enemy.attackCooldown * 0.55, 1);
+  addFloatingText(state, 'Interrupted', enemy.position, '#bce6ff');
+  queueSpellRoleEffect(state, 'fizzle', enemy.position, undefined, '#bce6ff');
+  emitAudioHook('spell_fizzle', { id: enemy.id, area: enemy.area, position: enemy.position });
+  return true;
+}
+
+function preferredRetreatTarget(enemy: EnemyEntity, playerPosition: Vec3): Vec3 {
+  const dx = enemy.position.x - playerPosition.x;
+  const dz = enemy.position.z - playerPosition.z;
+  const len = Math.hypot(dx, dz) || 1;
+  return {
+    x: enemy.position.x + (dx / len) * 2,
+    y: 0,
+    z: enemy.position.z + (dz / len) * 2
+  };
+}
+
+function shouldKeepDistance(enemy: EnemyEntity): boolean {
+  return combatRoleTuning(enemy).preferredDistance > 2.25;
 }
 
 function equippedWeapon(state: GameState): { stack: ItemStack | null; def: ItemDef; skill: string; support: string } {
@@ -79,8 +137,9 @@ export function weaponCooldown(state: GameState): number {
 }
 
 function defenderScore(target: EnemyEntity): number {
+  const shieldLike = target.combatRole === 'guard' ? target.defenseSkill * 0.55 : 0;
   const parryLike = target.aiStyle === 'melee' ? target.defenseSkill * 0.45 : 0;
-  return target.defenseSkill + parryLike + target.level * 2;
+  return target.defenseSkill + parryLike + shieldLike + target.level * 2;
 }
 
 function hitChance(attackerSkill: number, defender: number, dexterity: number, rangePenalty = 0): number {
@@ -125,6 +184,7 @@ export function meleeAttack(state: GameState, entityId?: string): void {
     state.ui.prompt = 'Move closer to strike.';
     return;
   }
+  recordCombatEngagementStart(state, target.id);
   facePlayerTowardEntity(state, target.id, 'target', 0.5);
   setPlayerActionState(state, 'attacking', 0.38, target.id);
   queueWeaponSwingEffect(state, def.weaponClass, target.position);
@@ -190,6 +250,7 @@ export function rangedAttack(state: GameState, entityId?: string): void {
     state.ui.prompt = 'Target is out of bow range.';
     return;
   }
+  recordCombatEngagementStart(state, target.id);
   facePlayerTowardEntity(state, target.id, 'target', 0.45);
   setPlayerActionState(state, 'attacking', 0.34, target.id);
   queueWeaponSwingEffect(state, 'bow', target.position);
@@ -207,7 +268,9 @@ export function rangedAttack(state: GameState, entityId?: string): void {
   emitAudioHook('bow_release', { id: target.id, area: target.area, position: target.position });
   if (Math.random() * 100 > hit) {
     if (stack) {
+      const before = stack.durability ?? stack.maxDurability ?? 0;
       const broke = degradeItemStack(stack, 1);
+      recordDurabilityLoss(state, stack.itemId, before - (stack.durability ?? 0));
       if (broke) addSystemMessage(state, `${def.name} is broken and needs repair.`);
     }
     addFloatingText(state, 'Miss', target.position, '#d8d8d8');
@@ -220,8 +283,11 @@ export function rangedAttack(state: GameState, entityId?: string): void {
   const damage = Math.max(1, Math.round((base + state.player.attributes.Dexterity * 0.26 + archery * 0.11) * tacticsMultiplier * weaponConditionScale - target.armor * 0.25));
   target.health = Math.max(0, target.health - damage);
   recordDamageDealt(state, 'ranged', damage);
+  interruptEnemyCast(state, target);
   if (stack) {
+    const before = stack.durability ?? stack.maxDurability ?? 0;
     const broke = degradeItemStack(stack, 1);
+    recordDurabilityLoss(state, stack.itemId, before - (stack.durability ?? 0));
     if (broke) addSystemMessage(state, `${def.name} is broken and needs repair.`);
   }
   state.combat.hitFlashes[target.id] = state.clock + 0.2;
@@ -264,15 +330,26 @@ export function updateEnemyCombat(state: GameState, areaManager: AreaManager, dt
     entity.attackTimer = Math.max(0, entity.attackTimer - dt);
     entity.patrolTimer += dt;
     const visibility = state.world.time?.visibilityModifier ?? 1;
+    const dangerModifier = state.world.time?.dangerModifier ?? 1;
+    const effectiveAggroRadius = entity.aggroRadius * dangerModifier;
     const hiddenDetectionPenalty = state.player.combatProfile.hidden ? (getSkillValue(state, 'Hiding') * 0.04 + getSkillValue(state, 'Stealth') * 0.03) / Math.max(0.55, visibility) : 0;
     const canDetectHidden = !state.player.combatProfile.hidden || dist < Math.max(1.1, 3.2 - hiddenDetectionPenalty) || entity.aiStyle === 'mage';
 
     if (leashDist > 10.5) {
       entity.state = 'return';
-    } else if ((canDetectHidden && dist <= entity.aggroRadius) || entity.health < entity.maxHealth) {
+    } else if ((canDetectHidden && dist <= effectiveAggroRadius) || entity.health < entity.maxHealth) {
       entity.state = dist <= entity.attackRange ? 'attack' : 'chase';
     } else if (entity.state !== 'patrol' && entity.state !== 'return') {
       entity.state = Math.sin(entity.patrolTimer) > 0.72 ? 'patrol' : 'idle';
+    }
+
+    if (tryEnemyRoleUtility(state, entity, dist)) continue;
+    if (tryEnemyMageUtility(state, entity, dist)) continue;
+
+    const tuning = combatRoleTuning(entity);
+    if ((entity.state === 'attack' || entity.state === 'chase') && shouldKeepDistance(entity) && dist < tuning.preferredDistance * 0.72) {
+      moveEnemyToward(state, areaManager, entity, preferredRetreatTarget(entity, state.player.position), dt, entity.combatRole === 'skirmisher' ? 2.35 : 1.85);
+      continue;
     }
 
     if (entity.state === 'return') {
@@ -295,14 +372,76 @@ export function updateEnemyCombat(state: GameState, areaManager: AreaManager, dt
     }
 
     if (entity.state === 'chase') {
-      moveEnemyToward(state, areaManager, entity, state.player.position, dt, 2.1);
+      const targetDistance = shouldKeepDistance(entity) ? Math.max(1.2, tuning.preferredDistance - 0.35) : 0;
+      if (!targetDistance || dist > targetDistance) moveEnemyToward(state, areaManager, entity, state.player.position, dt, 2.1);
     }
-    if (tryEnemyMageUtility(state, entity, dist)) continue;
     if (entity.state === 'attack' && entity.attackTimer <= 0) {
       entity.attackTimer = entity.attackCooldown;
       startEnemyTelegraph(state, entity);
     }
   }
+}
+
+function tryEnemyRoleUtility(state: GameState, enemy: EnemyEntity, dist: number): boolean {
+  if (enemy.attackTimer > 0) return false;
+  if (enemy.combatRole === 'support') return tryEnemySupportUtility(state, enemy, dist);
+  if (enemy.combatRole === 'trapkeeper') return tryEnemyTrapkeeperUtility(state, enemy, dist);
+  return false;
+}
+
+function tryEnemySupportUtility(state: GameState, enemy: EnemyEntity, dist: number): boolean {
+  if (dist > enemy.aggroRadius + 2) return false;
+  let target: EnemyEntity | null = null;
+  let lowestRatio = 1;
+  for (const entity of Object.values(state.entities)) {
+    if (entity.kind !== 'enemy' || entity.id === enemy.id || entity.area !== enemy.area || entity.state === 'dead') continue;
+    const allyDist = distance(enemy.position, entity.position);
+    if (allyDist > 7) continue;
+    const ratio = entity.health / Math.max(1, entity.maxHealth);
+    if (ratio < lowestRatio && ratio < 0.72) {
+      target = entity;
+      lowestRatio = ratio;
+    }
+  }
+  if (!target) return false;
+  const amount = Math.min(target.maxHealth - target.health, 7 + enemy.level);
+  if (amount <= 0) return false;
+  target.health += amount;
+  enemy.attackTimer = Math.max(enemy.attackCooldown, 2.4);
+  faceEntityTowardPosition(enemy, target.position, 'cast', state.clock, 0.55);
+  addFloatingText(state, `+${Math.round(amount)}`, target.position, '#55e676');
+  queueSpellRoleEffect(state, 'heal', enemy.position, target.position, '#69e681');
+  emitAudioHook('spell_impact', { id: enemy.id, area: enemy.area, position: target.position, intensity: 1 });
+  return true;
+}
+
+function tryEnemyTrapkeeperUtility(state: GameState, enemy: EnemyEntity, dist: number): boolean {
+  if (dist > enemy.aggroRadius + 1.5) return false;
+  const existing = state.world.magicFields.some((field) => field.area === enemy.area && field.kind === 'trap' && field.remaining > 0 && distance(field.position, state.player.position) < 3.5);
+  if (existing) return false;
+  const dx = state.player.position.x - enemy.position.x;
+  const dz = state.player.position.z - enemy.position.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const step = Math.max(1.1, Math.min(2.5, dist * 0.45));
+  const position = {
+    x: Math.round(enemy.position.x + (dx / len) * step),
+    y: 0,
+    z: Math.round(enemy.position.z + (dz / len) * step)
+  };
+  state.world.magicFields.push({
+    id: createId('enemy_trap'),
+    kind: 'trap',
+    area: enemy.area,
+    position,
+    createdAt: state.clock,
+    remaining: 8,
+    power: Math.min(7, 4 + Math.floor(enemy.level / 2))
+  });
+  enemy.attackTimer = Math.max(enemy.attackCooldown, 2.2);
+  faceEntityTowardPosition(enemy, position, 'target', state.clock, 0.45);
+  addFloatingText(state, 'Trap Set', position, '#ffb966');
+  emitAudioHook('danger_warning', { id: enemy.id, area: enemy.area, position });
+  return true;
 }
 
 function tryEnemyMageUtility(state: GameState, enemy: EnemyEntity, dist: number): boolean {
@@ -329,9 +468,11 @@ function tryEnemyMageUtility(state: GameState, enemy: EnemyEntity, dist: number)
 
 function enemyParries(state: GameState, target: EnemyEntity, attackerSkill: number): boolean {
   if (target.aiStyle !== 'melee' || target.enemyType === 'Beast') return false;
-  const chance = Math.max(3, Math.min(22, 4 + (target.defenseSkill - attackerSkill) * 0.12 + target.level));
+  const isShieldGuard = target.combatRole === 'guard';
+  if (isShieldGuard && !attackerInFront(target, state.player.position)) return false;
+  const chance = isShieldGuard ? Math.max(45, Math.min(82, 36 + (target.defenseSkill - attackerSkill) * 0.16 + target.level * 2)) : Math.max(3, Math.min(22, 4 + (target.defenseSkill - attackerSkill) * 0.12 + target.level));
   if (Math.random() * 100 > chance) return false;
-  addFloatingText(state, 'Blocked', target.position, '#8bd9ff');
+  addFloatingText(state, isShieldGuard ? 'Shielded' : 'Blocked', target.position, '#8bd9ff');
   state.combat.hitFlashes[target.id] = state.clock + 0.1;
   queueBlockEffect(state, target.position, target.facing?.facingYaw);
   emitAudioHook('weapon_block', { id: target.id, area: target.area, position: target.position });
@@ -350,7 +491,9 @@ function playerParries(state: GameState, enemy: EnemyEntity): boolean {
   const success = Math.random() * 100 < chance;
   attemptSkillUse(state, 'Parrying', { verb: 'parry', difficulty: 18 + enemy.level * 5, success, targetId: enemy.id, relatedSkills: ['Focus'] });
   if (!success) return false;
+  const before = shield.durability ?? itemDefs[shield.itemId]?.durability ?? 20;
   shield.durability = Math.max(0, (shield.durability ?? itemDefs[shield.itemId]?.durability ?? 20) - 1);
+  recordDurabilityLoss(state, shield.itemId, before - shield.durability);
   addFloatingText(state, 'Block', state.player.position, '#8bd9ff');
   queueBlockEffect(state, state.player.position, state.player.facing.facingYaw);
   addSystemMessage(state, `You block with ${itemDefs[shield.itemId]?.name ?? 'shield'}.`);
@@ -362,8 +505,10 @@ function playerParries(state: GameState, enemy: EnemyEntity): boolean {
 function startEnemyTelegraph(state: GameState, enemy: EnemyEntity): void {
   if (state.combat.telegraphs.some((telegraph) => telegraph.sourceId === enemy.id)) return;
   faceEntityTowardPosition(enemy, state.player.position, 'target', state.clock, 0.6);
-  const kind: CombatTelegraph['kind'] = enemy.aiStyle === 'archer' ? 'shot' : enemy.aiStyle === 'mage' ? 'cast' : enemy.aiStyle === 'beast' ? 'leap' : enemy.combatRole === 'brute' ? 'cone' : 'slash';
-  const duration = enemy.aiStyle === 'beast' ? 0.42 : enemy.aiStyle === 'mage' ? 0.95 : enemy.combatRole === 'brute' ? 0.82 : 0.55;
+  const role = combatRole(enemy);
+  const roleTuning = combatRoleContracts[role];
+  const kind: CombatTelegraph['kind'] = roleTuning.telegraphKind;
+  const duration = roleTuning.windupSeconds;
   state.combat.telegraphs.push({
     id: createId('telegraph'),
     sourceId: enemy.id,
@@ -375,7 +520,7 @@ function startEnemyTelegraph(state: GameState, enemy: EnemyEntity): void {
     duration,
     remaining: duration,
     radius: enemy.aiStyle === 'archer' || enemy.aiStyle === 'mage' ? enemy.attackRange : Math.max(1.15, enemy.attackRange + 0.35),
-    color: kind === 'cast' ? '#b66dff' : kind === 'shot' ? '#d9bf77' : '#ff6a3a'
+    color: warningColorHex(role)
   });
   emitAudioHook('danger_warning', { id: enemy.id, area: enemy.area, position: enemy.position });
   addFloatingText(state, kind === 'cast' ? 'Casting' : kind === 'shot' ? 'Aiming' : 'Wind-up', enemy.position, kind === 'cast' ? '#b66dff' : '#ffb966');
@@ -434,6 +579,7 @@ function resolveTelegraph(state: GameState, telegraph: CombatTelegraph): void {
 function damageEnemyByWeapon(state: GameState, target: EnemyEntity, damage: number, weaponStack: ItemStack | null): void {
   target.health = Math.max(0, target.health - damage);
   recordDamageDealt(state, 'melee', damage);
+  interruptEnemyCast(state, target);
   if (!weaponStack || !weaponStack.poisonCharges || !weaponStack.poisonPotency) return;
   weaponStack.poisonCharges -= 1;
   const resist = target.poisonResist + (target.enemyType === 'Undead' ? 30 : 0);
@@ -516,11 +662,25 @@ function moveEnemyToward(state: GameState, areaManager: AreaManager, enemy: Enem
   const len = Math.hypot(dx, dz) || 1;
   const nx = enemy.position.x + (dx / len) * dt * speed;
   const nz = enemy.position.z + (dz / len) * dt * speed;
-  if (!areaManager.isBlocked(state, nx, nz, enemy.id)) {
-    faceEntityFromDelta(enemy, nx - enemy.position.x, nz - enemy.position.z, 'movement', state.clock);
-    enemy.position.x = nx;
-    enemy.position.z = nz;
+  const step = chooseEnemyStep(state, areaManager, enemy, nx, nz, dx, dz, len, dt, speed);
+  if (step) {
+    faceEntityFromDelta(enemy, step.x - enemy.position.x, step.z - enemy.position.z, 'movement', state.clock);
+    enemy.position.x = step.x;
+    enemy.position.z = step.z;
   }
+}
+
+function chooseEnemyStep(state: GameState, areaManager: AreaManager, enemy: EnemyEntity, nx: number, nz: number, dx: number, dz: number, len: number, dt: number, speed: number): { x: number; z: number } | null {
+  const candidates = [
+    { x: nx, z: nz },
+    { x: enemy.position.x + (-dz / len) * dt * speed, z: enemy.position.z + (dx / len) * dt * speed },
+    { x: enemy.position.x + (dz / len) * dt * speed, z: enemy.position.z + (-dx / len) * dt * speed }
+  ];
+  return candidates.find((candidate) => !areaManager.isBlocked(state, candidate.x, candidate.z, enemy.id) && !isHazardStep(state, enemy, candidate.x, candidate.z)) ?? null;
+}
+
+function isHazardStep(state: GameState, enemy: EnemyEntity, x: number, z: number): boolean {
+  return state.world.magicFields.some((field) => field.area === enemy.area && field.kind === 'trap' && field.remaining > 0 && Math.hypot(field.position.x - x, field.position.z - z) < 0.85);
 }
 
 function launchProjectile(state: GameState, kind: Projectile['kind'], from: Vec3, to: Vec3, color: string): void {
@@ -536,6 +696,7 @@ function launchProjectile(state: GameState, kind: Projectile['kind'], from: Vec3
 }
 
 function killEnemy(state: GameState, enemy: EnemyEntity): void {
+  recordCombatTimeToKill(state, enemy.id);
   enemy.state = 'dead';
   enemy.blocksMovement = false;
   enemy.health = 0;

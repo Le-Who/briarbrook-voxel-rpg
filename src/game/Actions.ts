@@ -1,4 +1,4 @@
-import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, ChatPanelMode, CombatApproachMode, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapLayerId, MapWaypointSource, MarketViewMode, MinimapMode, MovementMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldPhase } from './types';
+import type { AdvancedTooltipModifier, AreaId, AudioVolumeCategory, BuildPieceDef, CameraSmoothingMode, ChatMessage, ChatPanelMode, CombatApproachMode, CompanionCommand, DevToolState, EconomyOrderCategory, EnemyEntity, EquipmentSlot, HotbarBinding, HudDensityMode, InputActionId, InputBindingContext, InputDebugState, ManagedWindowId, MapLayerId, MapWaypointSource, MarketViewMode, MinimapMode, MovementMode, ProfessionLensFilter, SkillGainMode, SkillRecentFilter, SkillsViewMode, SkillTrainableFilter, SpellbookKnowledgeFilter, SpellbookRoleFilter, SpellbookViewMode, StationType, TargetRef, TooltipDetailMode, UILayoutPreset, UIWindowLayout, Vec3, WorldEventType, WorldPhase } from './types';
 import type { InteractionCommand } from '../systems/InteractionAffordanceSystem';
 
 export type GameAction =
@@ -36,6 +36,9 @@ export type GameAction =
   | { type: 'MOVE_ITEM'; from: 'inventory' | 'bank' | 'trade-player'; to: 'inventory' | 'bank' | 'trade-player'; slot: number; targetSlot?: number }
   | { type: 'OPEN_BANK' }
   | { type: 'OPEN_TRADE'; partnerId: string }
+  | { type: 'HIRE_COMPANION'; entityId: string }
+  | { type: 'SET_COMPANION_COMMAND'; entityId: string; command: CompanionCommand }
+  | { type: 'DISMISS_COMPANION'; entityId: string }
   | { type: 'BUY_MERCHANT_ITEM'; slot: number }
   | { type: 'SELL_MERCHANT_ITEM'; slot: number }
   | { type: 'TRAIN_SKILL'; skillId: string }
@@ -90,6 +93,7 @@ export type GameAction =
   | { type: 'SET_SPELLBOOK_VIEW'; view: 'grid' | 'list' }
   | { type: 'SET_JOURNAL_TAB'; tab: 'quests' | 'rumors' | 'skills' | 'spells' | 'locations' | 'tutorials' | 'workOrders' }
   | { type: 'PIN_RUMOR'; eventId: string | null }
+  | { type: 'PIN_WORK_ORDER'; orderId: string | null }
   | { type: 'SET_SPELLBOOK_SEARCH'; search: string }
   | { type: 'SET_SPELLBOOK_KNOWLEDGE_FILTER'; filter: SpellbookKnowledgeFilter }
   | { type: 'SET_SPELLBOOK_CIRCLE_FILTER'; circle: number | 'all' }
@@ -109,11 +113,16 @@ export type GameAction =
   | { type: 'SET_SKILL_PROFESSION_FILTER'; filter: ProfessionLensFilter }
   | { type: 'SET_PROFESSION_ATLAS_ZOOM'; zoom: number }
   | { type: 'SET_PROFESSION_ATLAS_SEARCH'; search: string }
+  | { type: 'SET_PROFESSION_ATLAS_SHOW_FUTURE'; show: boolean }
   | { type: 'SET_PROFESSION_ATLAS_NODE'; nodeId: string | null }
+  | { type: 'ACCEPT_PROFESSION_CONTRACT'; contractId: string }
+  | { type: 'ABANDON_PROFESSION_CONTRACT'; contractId: string }
   | { type: 'PIN_PROFESSION_GOAL'; goalId: string | null }
   | { type: 'TOGGLE_DEV_TRAVEL' }
   | { type: 'TOGGLE_DEV_OVERLAY' }
   | { type: 'DEV_TELEPORT_SCENE'; sceneId: string }
+  | { type: 'DEV_APPLY_SCREENSHOT_PARITY'; presetId: string }
+  | { type: 'DEV_CLEAR_SCREENSHOT_PARITY' }
   | { type: 'DEV_TELEPORT_AREA'; areaId: AreaId }
   | { type: 'DEV_SPAWN_ITEM'; itemId?: string; quantity?: number }
   | { type: 'DEV_SPAWN_ENEMY'; enemyType?: EnemyEntity['enemyType'] }
@@ -123,6 +132,7 @@ export type GameAction =
   | { type: 'DEV_COMPLETE_QUEST_STEP' }
   | { type: 'DEV_GIVE_SPELL'; spellId?: string }
   | { type: 'DEV_SIMULATE_TIME'; phase: WorldPhase }
+  | { type: 'DEV_TRIGGER_WORLD_EVENT'; eventType: WorldEventType }
   | { type: 'DEV_EXPORT_TELEMETRY' }
   | { type: 'UPDATE_INPUT_DEBUG'; patch: Partial<InputDebugState> }
   | { type: 'TOGGLE_FACING_DEBUG'; key: keyof DevToolState['facingDebug'] }

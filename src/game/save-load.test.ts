@@ -6,6 +6,7 @@ import { AreaManager } from '../world/AreaManager';
 import { placeBuilding, updateBuildGhost } from '../systems/BuildingSystem';
 import { claimStarterPlot, depositSelectedToHousingStorage, selectedHousingStorage } from '../systems/HousingSystem';
 import { addItem } from '../systems/InventorySystem';
+import { hireCompanion, setCompanionCommand } from '../systems/CompanionSystem';
 import { createContentRegistry } from '../tools/ContentRegistry';
 import { validateContent } from '../tools/ContentValidation';
 
@@ -92,5 +93,27 @@ describe('save/load migrations', () => {
     const migrated = loadGame();
     expect(migrated.ui.movementMode).toBe('keyboard');
     expect(migrated.ui.cameraRelativeMovement).toBe(true);
+  });
+
+  it('preserves active companion-lite state and migrates saves with no party list', () => {
+    const state = createInitialGameState();
+    hireCompanion(state, 'npc_liora_town', { role: 'guard' });
+    setCompanionCommand(state, 'npc_liora_town', 'assist');
+
+    saveGame(state);
+    const loaded = loadGame();
+    const loadedLiora = loaded.entities.npc_liora_town;
+
+    expect(loaded.world.partyMemberIds).toEqual(['npc_liora_town']);
+    expect(loadedLiora.kind).toBe('social');
+    if (loadedLiora.kind !== 'social') throw new Error('Liora did not load as social NPC');
+    expect(loadedLiora.blocksMovement).toBe(false);
+    expect(loadedLiora.companion).toMatchObject({ role: 'guard', command: 'assist' });
+
+    const legacy = createInitialGameState() as unknown as { world: { partyMemberIds?: unknown } };
+    delete legacy.world.partyMemberIds;
+    saveGame(legacy as unknown as ReturnType<typeof createInitialGameState>);
+
+    expect(loadGame().world.partyMemberIds).toEqual([]);
   });
 });

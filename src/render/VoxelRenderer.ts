@@ -10,12 +10,32 @@ import { MODEL_FORWARD_OFFSET } from '../systems/FacingSystem';
 import { areaAmbient, MaterialLibrary } from './Materials';
 import { estimateRenderFrameMs, renderPerformanceBudget } from './RenderBudgets';
 import { RenderMotionTracker, type RenderMotionSample } from './RenderMotion';
+import { proceduralDensityProps, type ProceduralDensityProp } from './AreaDensityArtKit';
+import { adventureReferencePlan } from './AdventureReferencePlan';
+import { briarbrookTownSquareReference } from './TownSquareVisualPlan';
 import { VoxelKit } from './VoxelKit';
 import { characterAttachPoints, resolveEquipmentVisuals, type EquipmentVisualContract } from './EquipmentVisuals';
 
 interface EntityRecord {
   group: THREE.Group;
   kind: string;
+}
+
+interface BoxInstance {
+  x: number;
+  y: number;
+  z: number;
+  rx?: number;
+  ry?: number;
+  rz?: number;
+}
+
+interface BoxInstanceBatch {
+  material: THREE.Material;
+  sx: number;
+  sy: number;
+  sz: number;
+  instances: BoxInstance[];
 }
 
 export class VoxelRenderer {
@@ -131,7 +151,7 @@ export class VoxelRenderer {
         if (entity.kind === 'enemy' && entity.state === 'dead') return false;
         if (entity.kind === 'resource' && entity.depleted && entity.resourceType !== 'tree') return false;
         if (entity.kind === 'container' && (entity.hidden || entity.opened)) return false;
-        return entity.kind !== 'building';
+        return entity.kind !== 'building' && this.shouldRenderEntity(state, entity);
       }).length +
       state.world.placedBuildings.filter((building) => building.area === state.player.currentArea).length;
     const objectStats = this.collectObjectStats();
@@ -203,6 +223,8 @@ export class VoxelRenderer {
     if (areaId === 'crypt') this.buildCrypt();
     if (areaId === 'road') this.buildRoad();
     if (areaId === 'housing') this.buildHousingPlot();
+    this.applyProceduralDensityPass(areaId);
+    this.batchStaticMeshes();
   }
 
   private applyLighting(areaId: AreaId, phase: GameState['world']['time']['phase']): void {
@@ -222,7 +244,7 @@ export class VoxelRenderer {
     const sun = new THREE.DirectionalLight(ambient.sun, ambient.intensity);
     sun.intensity *= intensityScale;
     sun.position.set(-5, 12, 4);
-    sun.castShadow = true;
+    sun.castShadow = areaId !== 'town';
     sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.camera.left = -22;
     sun.shadow.camera.right = 22;
@@ -259,9 +281,7 @@ export class VoxelRenderer {
       ],
       crypt: [
         [-8, 1.8, -4, '#ff8e39', 1.5, 8],
-        [-5, 1.8, 6, '#ff8e39', 1.4, 8],
         [5, 1.8, -6, '#ff8e39', 1.5, 8],
-        [8, 1.8, 4, '#ff8e39', 1.4, 8],
         [0, 1.5, 10, '#ff8e39', 1.0, 7]
       ],
       road: [
@@ -296,6 +316,7 @@ export class VoxelRenderer {
       if (entity.kind === 'resource' && entity.depleted && entity.resourceType !== 'tree') continue;
       if (entity.kind === 'container' && (entity.hidden || entity.opened)) continue;
       if (entity.kind === 'building') continue;
+      if (!this.shouldRenderEntity(state, entity)) continue;
       const visualKind =
         entity.kind === 'resource'
           ? `${entity.kind}:${entity.resourceType}:${entity.depleted ? 'depleted' : 'active'}:${entity.protected ? 'protected' : 'normal'}:${entity.visualVariant ?? 0}`
@@ -333,6 +354,22 @@ export class VoxelRenderer {
     this.motion.forgetMissing(visible);
 
     this.updateTargetRing(state);
+  }
+
+  private shouldRenderEntity(state: GameState, entity: Entity): boolean {
+    if (entity.area !== state.player.currentArea) return false;
+    if (state.player.currentArea === 'bank' || state.player.currentArea === 'blacksmith') return true;
+    const distanceToPlayer = Math.hypot(entity.position.x - state.player.position.x, entity.position.z - state.player.position.z);
+    if (entity.kind === 'enemy') return entity.id === state.player.activeTargetId || distanceToPlayer <= 30;
+    if (entity.kind === 'portal') return distanceToPlayer <= 24;
+    if (entity.kind === 'resource') return state.gathering?.entityId === entity.id || distanceToPlayer <= 22;
+    if (entity.kind === 'loot') return distanceToPlayer <= 16;
+    if (entity.kind === 'container') return distanceToPlayer <= 19;
+    if (entity.kind === 'npc' || entity.kind === 'social') {
+      const actorRadius = state.player.currentArea === 'town' ? 6.9 : 15;
+      return state.ui.merchant?.partnerId === entity.id || state.ui.trade?.partnerId === entity.id || distanceToPlayer <= actorRadius;
+    }
+    return distanceToPlayer <= 24;
   }
 
   private visualPlayerSample(state: GameState): RenderMotionSample {
@@ -560,11 +597,18 @@ export class VoxelRenderer {
   private updateBuildGhost(state: GameState): void {
     this.clearGroup(this.ghostGroup);
     if (!state.buildMode.active || state.player.currentArea !== 'housing') return;
-    const ghost = this.makeBuildPiece(state.buildMode.selectedPieceId, true, state.buildMode.valid ? '#60d871' : '#e84a4a');
+    const ghostColor = this.buildGhostColor(state);
+    const ghost = this.makeBuildPiece(state.buildMode.selectedPieceId, true, ghostColor);
     ghost.position.set(state.buildMode.ghostPosition.x, 0.08, state.buildMode.ghostPosition.z);
     ghost.rotation.y = THREE.MathUtils.degToRad(state.buildMode.rotation);
     this.ghostGroup.add(ghost);
-    const grid = new THREE.GridHelper(12, 12, state.buildMode.valid ? '#9af4a4' : '#ff7777', '#d7ffe0');
+    const selectedPiece = buildPieces.find((piece) => piece.id === state.buildMode.selectedPieceId) ?? buildPieces[0];
+    const footprintMat = this.mats.get(`build-footprint-${ghostColor}`, ghostColor, { transparent: true, opacity: 0.24, emissive: ghostColor, emissiveIntensity: 0.18 });
+    this.box(this.ghostGroup, state.buildMode.ghostPosition.x, 0.075, state.buildMode.ghostPosition.z, selectedPiece.size.x, 0.035, selectedPiece.size.z, footprintMat);
+    const yaw = THREE.MathUtils.degToRad(state.buildMode.rotation);
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize(), new THREE.Vector3(state.buildMode.ghostPosition.x, 0.45, state.buildMode.ghostPosition.z), 0.9, ghostColor, 0.22, 0.14);
+    this.ghostGroup.add(arrow);
+    const grid = new THREE.GridHelper(12, 12, state.buildMode.valid ? '#9af4a4' : ghostColor, '#d7ffe0');
     grid.position.y = 0.06;
     grid.position.x = 0;
     grid.position.z = 0.5;
@@ -588,20 +632,28 @@ export class VoxelRenderer {
     this.box(this.ghostGroup, plot.maxX + 0.5, 0.09, centerZ, 0.08, 0.05, depth, boundaryMat);
   }
 
+  private buildGhostColor(state: GameState): string {
+    if (state.buildMode.valid) return '#60d871';
+    if (/need|higher plot tier|materials/i.test(state.buildMode.message)) return '#f0b84d';
+    return '#e84a4a';
+  }
+
   private buildTerrain(areaId: AreaId): void {
     const bounds = this.areaManager.getAreaBounds(areaId);
     const palette = areas[areaId].palette;
+    const groundBatches = new Map<string, BoxInstanceBatch>();
     for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
       for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
         const height = this.areaManager.getHeight(areaId, x, z);
         const material = this.getGroundMaterial(areaId, x, z);
-        this.box(this.staticGroup, x, height - 0.08, z, 1, 0.16, 1, material);
+        this.queueInstancedBox(groundBatches, material, 1, 0.16, 1, { x, y: height - 0.08, z });
         this.decorateTerrainTile(areaId, x, z, height);
         if (palette === 'forest' && height > 0) {
-          this.box(this.staticGroup, x, height - 0.7, z, 1, 1.2, 1, this.mats.get('dirt', '#5c4227'));
+          this.queueInstancedBox(groundBatches, this.mats.get('dirt', '#5c4227'), 1, 1.2, 1, { x, y: height - 0.7, z });
         }
       }
     }
+    this.flushInstancedBoxBatches(this.staticGroup, groundBatches);
   }
 
   private getGroundMaterial(areaId: AreaId, x: number, z: number): THREE.Material {
@@ -673,6 +725,109 @@ export class VoxelRenderer {
     }
   }
 
+  private applyProceduralDensityPass(areaId: AreaId): void {
+    const props = proceduralDensityProps.filter((prop) => prop.area === areaId);
+    if (!props.length) return;
+    const batches = new Map<string, BoxInstanceBatch>();
+    props.forEach((prop) => this.queueDensityProp(batches, prop));
+    this.flushInstancedBoxBatches(this.staticGroup, batches);
+  }
+
+  private queueDensityProp(batches: Map<string, BoxInstanceBatch>, prop: ProceduralDensityProp): void {
+    const groundY = this.areaManager.getHeight(prop.area, Math.round(prop.x), Math.round(prop.z));
+    const enqueue = (
+      suffix: string,
+      color: string,
+      sx: number,
+      sy: number,
+      sz: number,
+      ox: number,
+      oy: number,
+      oz: number,
+      ry = 0,
+      options: Partial<THREE.MeshStandardMaterialParameters> = {}
+    ) => {
+      const cos = Math.cos(prop.rotation);
+      const sin = Math.sin(prop.rotation);
+      const rx = ox * cos - oz * sin;
+      const rz = ox * sin + oz * cos;
+      this.queueInstancedBox(
+        batches,
+        this.mats.get(`density-${prop.materialVariant}-${suffix}`, color, options),
+        sx,
+        sy,
+        sz,
+        { x: prop.x + rx, y: groundY + oy, z: prop.z + rz, ry: prop.rotation + ry }
+      );
+    };
+    const base = this.densityRenderColor(prop.kind, prop.area);
+
+    if (prop.kind === 'grass_tuft') {
+      enqueue('blade', base, 0.11, 0.26, 0.1, 0, 0.15, 0, 0.12);
+      return;
+    }
+    if (prop.kind === 'flower') {
+      enqueue('bloom', base, 0.14, 0.18, 0.14, 0, 0.17, 0, 0.12);
+      return;
+    }
+    if (prop.kind === 'stone_chip') {
+      enqueue('chip', base, 0.34, 0.08, 0.22, 0, 0.055, 0, 0.1);
+      return;
+    }
+    if (prop.kind === 'crate') {
+      enqueue('crate', base, 0.52, 0.46, 0.52, 0, 0.25, 0, 0.04);
+      return;
+    }
+    if (prop.kind === 'barrel') {
+      enqueue('barrel', base, 0.44, 0.58, 0.44, 0, 0.31, 0, 0);
+      return;
+    }
+    if (prop.kind === 'sign_stake') {
+      enqueue('post', '#5b351b', 0.12, 0.92, 0.12, 0, 0.47, 0, 0);
+      enqueue('board', base, 0.78, 0.36, 0.08, 0, 0.93, -0.05, 0);
+      return;
+    }
+    if (prop.kind === 'wood_plank') {
+      enqueue('plank', base, 0.88, 0.08, 0.18, 0, 0.07, 0, 0);
+      return;
+    }
+    if (prop.kind === 'rubble') {
+      enqueue('rubble', base, 0.28, 0.14, 0.22, 0, 0.08, 0, 0);
+      return;
+    }
+    if (prop.kind === 'bone_chip') {
+      enqueue('bone', base, 0.1, 0.08, 0.48, 0, 0.06, 0, 0.45);
+      return;
+    }
+    if (prop.kind === 'mushroom') {
+      enqueue('cap', base, 0.22, 0.18, 0.22, 0, 0.17, 0, 0);
+      return;
+    }
+    if (prop.kind === 'ore_chip') {
+      enqueue('ore', base, 0.22, 0.16, 0.18, 0, 0.1, 0, 0.1, { emissive: base, emissiveIntensity: 0.08 });
+      return;
+    }
+    if (prop.kind === 'plot_stake') {
+      enqueue('stake', base, 0.12, 0.82, 0.12, 0, 0.42, 0, 0);
+    }
+  }
+
+  private densityRenderColor(kind: ProceduralDensityProp['kind'], area: AreaId): string {
+    if (kind === 'grass_tuft') return area === 'road' ? '#5f7d43' : '#52763c';
+    if (kind === 'flower') return area === 'housing' ? '#8ee0a1' : '#dfd8b1';
+    if (kind === 'stone_chip') return area === 'crypt' ? '#5f5b55' : area === 'road' ? '#868073' : '#8a8375';
+    if (kind === 'crate') return '#7a4d27';
+    if (kind === 'barrel') return '#6b421f';
+    if (kind === 'sign_stake') return area === 'road' ? '#9a6430' : '#2b5f92';
+    if (kind === 'wood_plank') return '#6a421f';
+    if (kind === 'rubble') return '#57534e';
+    if (kind === 'bone_chip') return '#d8d0bd';
+    if (kind === 'mushroom') return '#d4664b';
+    if (kind === 'ore_chip') return '#3e8bda';
+    if (kind === 'plot_stake') return '#8ee0a1';
+    return '#77746d';
+  }
+
   private buildTown(): void {
     this.house(-9, -5, 4, 3, true);
     this.house(5, -7, 5, 3, false);
@@ -692,20 +847,20 @@ export class VoxelRenderer {
     this.dock(-17, 15);
     this.boat(-18, 16);
     this.sign(2, 8, 'Briarbrook');
-    this.sign(-8, -2, 'Bank');
-    this.sign(6, -3, 'Smithy');
-    this.sign(0, 15, 'North Gate');
-    this.sign(14, 5, 'Old Road');
-    this.sign(-15, 13, 'Ferry');
+    for (const service of briarbrookTownSquareReference.serviceEntrances) {
+      this.sign(service.signPosition.x, service.signPosition.z, service.label);
+      this.servicePlaque(service.servicePosition.x, service.servicePosition.z, service.accent);
+    }
+    for (const exit of briarbrookTownSquareReference.exitSigns) {
+      this.sign(exit.position.x, exit.position.z, exit.label);
+      this.routeStone(exit.position.x, exit.position.z, exit.accent);
+    }
     this.forgeSmokeMarker(6, -3);
     this.wallLine(-21, -13, -21, 15);
     this.wallLine(-21, 15, -15, 15);
     this.wallLine(21, -12, 21, 13);
     this.wallLine(13, 15, 21, 15);
-    this.lantern(-8, -2);
-    this.lantern(6, -3);
-    this.lantern(0, 12);
-    this.lantern(13, 4);
+    for (const lamp of briarbrookTownSquareReference.dressing.lamps) this.lantern(lamp.position.x, lamp.position.z);
     this.gardenPatch(-3, -10);
     this.gardenPatch(12, 10);
     this.cookingFire(-18, -5);
@@ -722,8 +877,8 @@ export class VoxelRenderer {
     this.well(-6, 8);
     this.cart(10, 8, '#7f4a24');
     this.cart(-14, -6, '#7f4a24');
-    this.bench(-3, 2);
-    this.bench(3, -2);
+    for (const bench of briarbrookTownSquareReference.dressing.benches) this.bench(bench.position.x, bench.position.z);
+    this.townSquareReferenceDressing();
     for (const [x, z] of [
       [-9, -2],
       [5, -4],
@@ -748,6 +903,7 @@ export class VoxelRenderer {
   private buildBankInterior(): void {
     this.interiorShell('#49301d', '#796c5b');
     this.counter(-2, -1, 5);
+    this.bankServiceDressing();
     this.chest(2, -1);
     this.banner(3, -4);
     this.rug(0, 2, '#1e486e');
@@ -762,6 +918,7 @@ export class VoxelRenderer {
   private buildSmithy(): void {
     this.interiorShell('#4c2f1d', '#75695e');
     this.forge(2, -2);
+    this.smithyServiceDressing();
     this.anvil(0, 1);
     this.oreBins(-5, -2);
     this.toolRack(-4, -4);
@@ -776,6 +933,7 @@ export class VoxelRenderer {
 
   private buildForest(): void {
     this.mineEntrance(7, -8);
+    this.mineTrack(6.2, -5.8);
     this.oreCluster(5, -2, '#9ba5a3');
     this.oreCluster(-7, 3, '#b77745');
     this.oreCluster(8, -3, '#9ba5a3');
@@ -810,6 +968,7 @@ export class VoxelRenderer {
     this.fallenBranch(6, 5);
     this.bushPatch(-12, 10);
     this.bushPatch(11, 8);
+    for (const clue of adventureReferencePlan.forest.dressing.forageClues) this.forageClue(clue.x, clue.z);
     this.flowers();
   }
 
@@ -862,10 +1021,12 @@ export class VoxelRenderer {
     this.brokenWeapon(1, 6);
     this.brokenWeapon(-8, -2);
     this.cryptDoorMarker(-9, 4);
+    this.cryptReferenceDressing();
   }
 
   private buildRoad(): void {
     this.house(-11, -5, 4, 3, true);
+    this.checkpointGate(-8, 1);
     this.wallLine(-12, 6, 12, 6);
     this.wallLine(-12, 9, 12, 9);
     this.torchPost(1, 2);
@@ -886,6 +1047,7 @@ export class VoxelRenderer {
     this.streamTile(6, 8);
     this.bridge(6, 8);
     this.waterEdge(9);
+    this.roadReferenceDressing();
   }
 
   private buildHousingPlot(): void {
@@ -893,6 +1055,7 @@ export class VoxelRenderer {
     this.wallLine(-8, 7, 8, 7);
     this.wallLine(-8, -7, -8, 7);
     this.wallLine(8, -7, 8, 7);
+    this.plotBoundaryFence();
     this.dock(-9, 8);
     this.boat(-5, 9);
     this.house(10, -6, 4, 3, false);
@@ -904,6 +1067,33 @@ export class VoxelRenderer {
     this.crates(6, -6);
     this.flowerBox(9, -7);
     this.plotMarker(0, 0);
+  }
+
+  private plotBoundaryFence(): void {
+    for (let x = -5; x <= 5; x += 1) {
+      if (x !== -1 && x !== 0) this.plotFencePost(x, -4.5);
+      this.plotFencePost(x, 5.5);
+    }
+    for (let z = -4; z <= 5; z += 1) {
+      this.plotFencePost(-5.5, z);
+      this.plotFencePost(5.5, z);
+    }
+    this.plotFenceRail(-4, -4.5, 3.5, true);
+    this.plotFenceRail(2.5, -4.5, 2.5, true);
+    this.plotFenceRail(0, 5.5, 10.8, true);
+    this.plotFenceRail(-5.5, 0.5, 9.5, false);
+    this.plotFenceRail(5.5, 0.5, 9.5, false);
+  }
+
+  private plotFencePost(x: number, z: number): void {
+    const wood = this.mats.get('plot-fence-post', '#6b421f');
+    this.box(this.staticGroup, x, 0.36, z, 0.16, 0.72, 0.16, wood);
+  }
+
+  private plotFenceRail(x: number, z: number, length: number, horizontal: boolean): void {
+    const rail = this.mats.get('plot-fence-rail', '#7b4d2b');
+    this.box(this.staticGroup, x, 0.45, z, horizontal ? length : 0.12, 0.12, horizontal ? 0.12 : length, rail);
+    this.box(this.staticGroup, x, 0.24, z, horizontal ? length : 0.12, 0.1, horizontal ? 0.1 : length, rail);
   }
 
   private makeEntity(entity: Entity): THREE.Group {
@@ -1496,6 +1686,64 @@ export class VoxelRenderer {
     return mesh;
   }
 
+  private instancedBoxes(
+    parent: THREE.Group,
+    materialName: string,
+    color: string,
+    sx: number,
+    sy: number,
+    sz: number,
+    instances: Array<{ x: number; y: number; z: number; ry?: number }>
+  ): THREE.InstancedMesh | null {
+    return this.instancedBoxMaterial(parent, this.mats.get(materialName, color), sx, sy, sz, instances);
+  }
+
+  private instancedBoxMaterial(
+    parent: THREE.Group,
+    material: THREE.Material,
+    sx: number,
+    sy: number,
+    sz: number,
+    instances: BoxInstance[]
+  ): THREE.InstancedMesh | null {
+    if (!instances.length) return null;
+    const mesh = new THREE.InstancedMesh(this.boxGeometry(sx, sy, sz), material, instances.length);
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const rotation = new THREE.Euler();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    instances.forEach((instance, index) => {
+      position.set(instance.x, instance.y, instance.z);
+      rotation.set(instance.rx ?? 0, instance.ry ?? 0, instance.rz ?? 0);
+      quaternion.setFromEuler(rotation);
+      matrix.compose(position, quaternion, scale);
+      mesh.setMatrixAt(index, matrix);
+    });
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  private queueInstancedBox(
+    batches: Map<string, BoxInstanceBatch>,
+    material: THREE.Material,
+    sx: number,
+    sy: number,
+    sz: number,
+    instance: BoxInstance
+  ): void {
+    const key = `${material.uuid}:${sx.toFixed(3)}:${sy.toFixed(3)}:${sz.toFixed(3)}`;
+    const batch = batches.get(key) ?? { material, sx, sy, sz, instances: [] };
+    batch.instances.push(instance);
+    batches.set(key, batch);
+  }
+
+  private flushInstancedBoxBatches(parent: THREE.Group, batches: Map<string, BoxInstanceBatch>): void {
+    batches.forEach((batch) => this.instancedBoxMaterial(parent, batch.material, batch.sx, batch.sy, batch.sz, batch.instances));
+  }
+
   private boxGeometry(sx: number, sy: number, sz: number): THREE.BoxGeometry {
     const key = `${sx.toFixed(3)}:${sy.toFixed(3)}:${sz.toFixed(3)}`;
     const existing = this.boxGeometries.get(key);
@@ -1518,6 +1766,45 @@ export class VoxelRenderer {
     });
     parent.add(group);
     return group;
+  }
+
+  private batchStaticMeshes(): void {
+    this.staticGroup.updateMatrixWorld(true);
+    const inverseStatic = new THREE.Matrix4().copy(this.staticGroup.matrixWorld).invert();
+    const batches = new Map<string, { geometry: THREE.BufferGeometry; material: THREE.Material; roof: boolean; matrices: THREE.Matrix4[] }>();
+    const collected: THREE.Mesh[] = [];
+    this.staticGroup.traverse((child) => {
+      if (!(child instanceof THREE.Mesh) || child instanceof THREE.InstancedMesh) return;
+      if (!child.geometry?.userData.sharedBox || Array.isArray(child.material)) return;
+      const roof = Boolean(child.userData.roof);
+      const key = `${child.geometry.uuid}:${child.material.uuid}:${roof ? 'roof' : 'static'}`;
+      let batch = batches.get(key);
+      if (!batch) {
+        batch = { geometry: child.geometry, material: child.material, roof, matrices: [] };
+        batches.set(key, batch);
+      }
+      batch.matrices.push(new THREE.Matrix4().multiplyMatrices(inverseStatic, child.matrixWorld));
+      collected.push(child);
+    });
+    if (collected.length < 24) return;
+
+    const collectedSet = new Set<THREE.Mesh>(collected);
+    const retainedRoofMeshes = this.roofMeshes.filter((mesh) => !collectedSet.has(mesh));
+    collected.forEach((mesh) => mesh.parent?.remove(mesh));
+    this.roofMeshes = retainedRoofMeshes;
+
+    batches.forEach((batch) => {
+      const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, batch.matrices.length);
+      batch.matrices.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      mesh.userData.batchedStatic = true;
+      if (batch.roof) {
+        mesh.userData.roof = true;
+        this.trackRoof(mesh);
+      }
+      this.staticGroup.add(mesh);
+    });
   }
 
   private updateRoofCutaway(state: GameState): void {
@@ -1592,12 +1879,7 @@ export class VoxelRenderer {
   }
 
   private fountain(x: number, z: number): void {
-    const stone = this.mats.get('fountain-stone', '#8c8a82');
-    const water = this.mats.get('fountain-water', '#3b8fb6', { transparent: true, opacity: 0.8 });
-    this.box(this.staticGroup, x, 0.15, z, 2.2, 0.3, 2.2, stone);
-    this.box(this.staticGroup, x, 0.35, z, 1.6, 0.2, 1.6, water);
-    this.box(this.staticGroup, x, 0.9, z, 0.5, 1.0, 0.5, stone);
-    this.box(this.staticGroup, x, 1.45, z, 0.25, 0.2, 0.25, water);
+    this.addKitGroup(this.staticGroup, this.kit.fountainBuilder({ seed: this.tileHash(x, z), colorVariation: 0.025 }), x, z);
   }
 
   private dock(x: number, z: number): void {
@@ -1619,6 +1901,79 @@ export class VoxelRenderer {
     this.box(this.staticGroup, x - 1, 0.75, z, 0.18, 1.5, 0.18, wood);
     this.box(this.staticGroup, x + 1, 0.75, z, 0.18, 1.5, 0.18, wood);
     this.box(this.staticGroup, x, 1.1, z, 2.4, 0.55, 0.14, wood);
+  }
+
+  private servicePlaque(x: number, z: number, accent: string): void {
+    const post = this.mats.get('service-plaque-post', '#5b351b');
+    const face = this.mats.get(`service-plaque-${accent}`, accent, { emissive: accent, emissiveIntensity: 0.12 });
+    this.box(this.staticGroup, x, 0.72, z, 0.16, 1.15, 0.16, post);
+    this.box(this.staticGroup, x, 1.12, z - 0.1, 0.72, 0.46, 0.08, face);
+    this.box(this.staticGroup, x, 0.08, z + 0.22, 0.9, 0.05, 0.32, face, { ry: 0.15 });
+  }
+
+  private routeStone(x: number, z: number, accent: string): void {
+    const stone = this.mats.get(`route-stone-${accent}`, accent, { emissive: accent, emissiveIntensity: 0.08 });
+    for (let i = 0; i < 3; i += 1) {
+      this.box(this.staticGroup, x + (i - 1) * 0.34, 0.07, z - 0.48, 0.24, 0.08, 0.24, stone, { ry: i * 0.24 });
+    }
+  }
+
+  private townSquareReferenceDressing(): void {
+    for (const bed of briarbrookTownSquareReference.dressing.flowerBeds) this.flowerBed(bed.position.x, bed.position.z, bed.accent ?? '#dfd8b1');
+    for (const banner of briarbrookTownSquareReference.dressing.banners) this.civicBanner(banner.position.x, banner.position.z, banner.accent ?? '#1f5a95');
+    for (const stack of briarbrookTownSquareReference.dressing.marketStacks) this.marketStack(stack.position.x, stack.position.z);
+    this.fountainTrim();
+    this.townGroundFlowers();
+  }
+
+  private flowerBed(x: number, z: number, accent: string): void {
+    this.addKitGroup(this.staticGroup, this.kit.flowerBushBuilder({ seed: this.tileHash(x, z), color: accent, colorVariation: 0.04, props: true }), x, z);
+    this.addKitGroup(this.staticGroup, this.kit.flowerBushBuilder({ seed: this.tileHash(x + 1, z), color: accent, colorVariation: 0.04, props: true }), x + 0.62, z + 0.18);
+    this.addKitGroup(this.staticGroup, this.kit.flowerBushBuilder({ seed: this.tileHash(x - 1, z), color: '#f0ead4', colorVariation: 0.04, props: true }), x - 0.58, z - 0.12);
+  }
+
+  private civicBanner(x: number, z: number, accent: string): void {
+    const post = this.mats.get('civic-banner-post', '#5b351b');
+    const cloth = this.mats.get(`civic-banner-${accent}`, accent);
+    const trim = this.mats.get('civic-banner-trim', '#d6b45a');
+    this.box(this.staticGroup, x, 0.95, z, 0.16, 1.9, 0.16, post);
+    this.box(this.staticGroup, x + 0.44, 1.42, z, 0.72, 0.64, 0.08, cloth);
+    this.box(this.staticGroup, x + 0.44, 1.15, z - 0.01, 0.5, 0.08, 0.09, trim);
+  }
+
+  private marketStack(x: number, z: number): void {
+    this.addKitGroup(this.staticGroup, this.kit.crateBarrelStackBuilder({ seed: this.tileHash(x, z), wear: 0.28, colorVariation: 0.035, props: true }), x, z);
+    this.box(this.staticGroup, x - 0.18, 0.62, z - 0.38, 0.22, 0.18, 0.22, this.mats.get('market-produce-red', '#b74432'));
+    this.box(this.staticGroup, x + 0.24, 0.62, z - 0.3, 0.2, 0.16, 0.2, this.mats.get('market-produce-green', '#5d8b3b'));
+  }
+
+  private fountainTrim(): void {
+    const stone = this.mats.get('fountain-trim-civic-stone', '#9a9486');
+    for (const [x, z, ry] of [
+      [-2.1, -2.1, 0],
+      [2.1, -2.1, 0],
+      [-2.1, 2.1, 0],
+      [2.1, 2.1, 0]
+    ] as Array<[number, number, number]>) {
+      this.box(this.staticGroup, x, 0.08, z, 0.65, 0.08, 0.2, stone, { ry });
+      this.box(this.staticGroup, x, 0.1, z, 0.2, 0.1, 0.65, stone, { ry });
+    }
+  }
+
+  private townGroundFlowers(): void {
+    const colors = ['#dfd8b1', '#cd584c', '#6f87d4', '#e8bf4b'];
+    for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
+      const instances: Array<{ x: number; y: number; z: number; ry?: number }> = [];
+      for (let i = 0; i < 14; i += 1) {
+        const n = i * 4 + colorIndex;
+        const x = -11 + ((n * 7) % 23);
+        const z = -8 + ((n * 11) % 19);
+        if (Math.abs(x) < 3 && Math.abs(z) < 3) continue;
+        if (x > 5 && z > 2 && z < 7) continue;
+        instances.push({ x: x + (colorIndex - 1.5) * 0.08, y: 0.16, z, ry: (n % 6) * 0.18 });
+      }
+      this.instancedBoxes(this.staticGroup, `town-ground-flower-${colorIndex}`, colors[colorIndex], 0.1, 0.16, 0.1, instances);
+    }
   }
 
   private forgeSmokeMarker(x: number, z: number): void {
@@ -1645,8 +2000,36 @@ export class VoxelRenderer {
   }
 
   private counter(x: number, z: number, width: number): void {
-    const wood = this.mats.get('counter', '#5a351d');
-    for (let i = 0; i < width; i += 1) this.box(this.staticGroup, x + i, 0.45, z, 0.92, 0.9, 0.75, wood);
+    this.addKitGroup(this.staticGroup, this.kit.bankCounterBuilder({ width, seed: this.tileHash(x, z), colorVariation: 0.025 }), x + (width - 1) / 2, z);
+  }
+
+  private bankServiceDressing(): void {
+    this.bankShelf(-4.9, -4.2, 0);
+    this.bankShelf(4.9, -4.2, 0);
+    this.bankShelf(-5.1, 3.8, Math.PI);
+    this.ledgerStack(-1.1, -0.55);
+    this.ledgerStack(1.2, -0.55);
+    this.secureChestStack(4.4, 0.4);
+    this.secureChestStack(-4.4, 3.4);
+  }
+
+  private bankShelf(x: number, z: number, ry: number): void {
+    const shelf = this.addKitGroup(this.staticGroup, this.kit.bankShelfBuilder({ seed: this.tileHash(x, z), colorVariation: 0.025 }), x, z);
+    shelf.rotation.y = ry;
+  }
+
+  private ledgerStack(x: number, z: number): void {
+    const paper = this.mats.get('bank-ledger-paper', '#d7bf8d');
+    const ink = this.mats.get('bank-ledger-ink', '#36261a');
+    this.box(this.staticGroup, x, 1.04, z, 0.76, 0.05, 0.44, paper, { ry: -0.18 });
+    this.box(this.staticGroup, x - 0.12, 1.075, z, 0.06, 0.025, 0.34, ink, { ry: -0.18 });
+    this.box(this.staticGroup, x + 0.12, 1.08, z - 0.05, 0.04, 0.025, 0.28, ink, { ry: -0.18 });
+  }
+
+  private secureChestStack(x: number, z: number): void {
+    this.chest(x, z);
+    this.box(this.staticGroup, x + 0.42, 0.58, z - 0.18, 0.5, 0.28, 0.42, this.mats.get('bank-lockbox', '#5d4328'));
+    this.box(this.staticGroup, x + 0.42, 0.74, z - 0.18, 0.22, 0.08, 0.08, this.mats.get('bank-lockbox-brass', '#c9a24f', { metalness: 0.2 }));
   }
 
   private chest(x: number, z: number): void {
@@ -1676,10 +2059,24 @@ export class VoxelRenderer {
     this.addKitGroup(this.staticGroup, this.kit.forgeBuilder({ seed: this.tileHash(x, z), colorVariation: 0.035, props: true }), x, z);
   }
 
+  private smithyServiceDressing(): void {
+    this.forgeGlow(2, -2);
+    this.ingotCrates(-5.1, -0.6);
+    this.ingotCrates(4.4, -1.1);
+    this.repairBench(-2.5, 2.7);
+    this.box(this.staticGroup, 0.6, 0.82, 1.1, 0.44, 0.12, 0.18, this.mats.get('smith-hot-ingot', '#ff8a2e', { emissive: '#ff5c1f', emissiveIntensity: 0.7 }), { ry: -0.2 });
+  }
+
+  private forgeGlow(x: number, z: number): void {
+    const hot = this.mats.get('forge-service-glow', '#ff6a24', { emissive: '#ff4d12', emissiveIntensity: 1.05 });
+    const coal = this.mats.get('forge-service-coal', '#191613');
+    this.box(this.staticGroup, x, 0.72, z + 0.18, 1.28, 0.1, 0.74, hot);
+    this.box(this.staticGroup, x - 0.36, 0.8, z + 0.06, 0.22, 0.12, 0.22, coal);
+    this.box(this.staticGroup, x + 0.34, 0.82, z + 0.2, 0.18, 0.12, 0.2, coal);
+  }
+
   private anvil(x: number, z: number): void {
-    const metal = this.mats.get('anvil', '#777c80', { metalness: 0.25 });
-    this.box(this.staticGroup, x, 0.35, z, 1.1, 0.25, 0.55, metal);
-    this.box(this.staticGroup, x, 0.15, z, 0.45, 0.3, 0.45, metal);
+    this.addKitGroup(this.staticGroup, this.kit.anvilBuilder({ seed: this.tileHash(x, z), colorVariation: 0.02 }), x, z);
   }
 
   private oreBins(x: number, z: number): void {
@@ -1689,11 +2086,27 @@ export class VoxelRenderer {
     this.box(this.staticGroup, x + 1.3, 0.75, z, 0.55, 0.25, 0.55, this.mats.get('copper-ore-pile', '#b77745'));
   }
 
+  private ingotCrates(x: number, z: number): void {
+    this.crates(x, z);
+    const iron = this.mats.get('stacked-iron-ingot', '#b7b8ad', { metalness: 0.25, roughness: 0.62 });
+    const copper = this.mats.get('stacked-copper-ingot', '#c47742', { metalness: 0.2, roughness: 0.64 });
+    for (let i = 0; i < 4; i += 1) {
+      this.box(this.staticGroup, x - 0.24 + i * 0.16, 0.74 + (i % 2) * 0.07, z - 0.16, 0.24, 0.08, 0.12, iron, { ry: 0.08 });
+      this.box(this.staticGroup, x - 0.2 + i * 0.15, 0.72 + ((i + 1) % 2) * 0.06, z + 0.15, 0.22, 0.08, 0.12, copper, { ry: -0.12 });
+    }
+  }
+
+  private repairBench(x: number, z: number): void {
+    this.worktable(x, z, '#d0984a');
+    const leather = this.mats.get('repair-bench-leather', '#7c4e2c');
+    const metal = this.mats.get('repair-bench-metal', '#9fa4a0', { metalness: 0.22 });
+    this.box(this.staticGroup, x - 0.35, 0.75, z, 0.44, 0.08, 0.32, leather, { ry: 0.18 });
+    this.box(this.staticGroup, x + 0.34, 0.77, z - 0.08, 0.44, 0.08, 0.2, metal, { ry: -0.24 });
+    this.box(this.staticGroup, x + 0.08, 0.86, z + 0.24, 0.1, 0.28, 0.1, this.mats.get('repair-bench-awl', '#d8c28a', { metalness: 0.2 }), { rz: 0.45 });
+  }
+
   private toolRack(x: number, z: number): void {
-    const wood = this.mats.get('toolrack', '#5e371a');
-    this.box(this.staticGroup, x, 0.9, z, 1.5, 0.16, 0.16, wood);
-    this.box(this.staticGroup, x - 0.4, 0.55, z, 0.1, 0.75, 0.1, this.mats.get('tool-metal', '#9da1a0'), { rz: 0.35 });
-    this.box(this.staticGroup, x + 0.4, 0.55, z, 0.1, 0.75, 0.1, this.mats.get('tool-metal2', '#9da1a0'), { rz: -0.35 });
+    this.addKitGroup(this.staticGroup, this.kit.toolRackBuilder({ seed: this.tileHash(x, z), colorVariation: 0.025 }), x, z);
   }
 
   private worktable(x: number, z: number, accent: string): void {
@@ -1736,9 +2149,7 @@ export class VoxelRenderer {
   }
 
   private mineEntrance(x: number, z: number): void {
-    this.box(this.staticGroup, x, 0.6, z, 3, 1.2, 1, this.mats.get('mine-rock', '#5a5853'));
-    this.box(this.staticGroup, x, 0.55, z - 0.15, 1.4, 1.1, 0.5, this.mats.get('mine-dark', '#11100f'));
-    this.box(this.staticGroup, x, 1.25, z - 0.55, 2.5, 0.22, 0.22, this.mats.get('mine-wood', '#6a421f'));
+    this.addKitGroup(this.staticGroup, this.kit.mineEntranceBuilder({ seed: this.tileHash(x, z), colorVariation: 0.025 }), x, z);
   }
 
   private oreCluster(x: number, z: number, color: string): void {
@@ -1970,6 +2381,124 @@ export class VoxelRenderer {
     const dirt = this.mats.get('wagon-rut', '#4e3c2a');
     this.box(this.staticGroup, x, 0.045, z - 0.42, 2.3, 0.035, 0.12, dirt, { ry: 0.14 });
     this.box(this.staticGroup, x, 0.045, z + 0.42, 2.3, 0.035, 0.12, dirt, { ry: 0.14 });
+  }
+
+  private roadReferenceDressing(): void {
+    for (const fence of adventureReferencePlan.road.dressing.lowFences) this.lowFence(fence.x1, fence.z1, fence.x2, fence.z2);
+    for (const embankment of adventureReferencePlan.road.dressing.embankments) this.embankment(embankment.x, embankment.z);
+    this.roadTargetClearanceMarkers();
+  }
+
+  private lowFence(x1: number, z1: number, x2: number, z2: number): void {
+    const steps = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+    const wood = this.mats.get('road-low-fence', '#6a421f');
+    const rail = this.mats.get('road-low-fence-rail', '#7c512d');
+    for (let i = 0; i <= steps; i += 2) {
+      const t = steps === 0 ? 0 : i / steps;
+      const x = THREE.MathUtils.lerp(x1, x2, t);
+      const z = THREE.MathUtils.lerp(z1, z2, t);
+      this.box(this.staticGroup, x, 0.42, z, 0.16, 0.84, 0.16, wood);
+    }
+    const centerX = (x1 + x2) * 0.5;
+    const centerZ = (z1 + z2) * 0.5;
+    const length = Math.hypot(x2 - x1, z2 - z1) + 0.8;
+    const ry = Math.atan2(x2 - x1, z2 - z1);
+    this.box(this.staticGroup, centerX, 0.62, centerZ, 0.12, 0.14, length, rail, { ry });
+  }
+
+  private embankment(x: number, z: number): void {
+    const dirt = this.mats.get('road-embankment-dirt', '#51422f');
+    const grass = this.mats.get('road-embankment-grass', '#5f7d43');
+    this.box(this.staticGroup, x, 0.16, z, 2.2, 0.28, 0.72, dirt, { ry: 0.28 });
+    this.box(this.staticGroup, x + 0.18, 0.34, z - 0.08, 1.7, 0.18, 0.44, grass, { ry: 0.28 });
+    this.rockScatter(x + 0.9, z + 0.35);
+  }
+
+  private checkpointGate(x: number, z: number): void {
+    const wood = this.mats.get('checkpoint-wood', '#60401f');
+    const cloth = this.mats.get('checkpoint-cloth', '#274f82');
+    this.box(this.staticGroup, x - 1.2, 0.8, z, 0.18, 1.6, 0.18, wood);
+    this.box(this.staticGroup, x + 1.2, 0.8, z, 0.18, 1.6, 0.18, wood);
+    this.box(this.staticGroup, x, 1.48, z, 2.65, 0.18, 0.18, wood);
+    this.box(this.staticGroup, x, 1.18, z - 0.06, 0.76, 0.54, 0.08, cloth);
+    this.crates(x - 1.9, z + 0.55);
+  }
+
+  private roadTargetClearanceMarkers(): void {
+    const stone = this.mats.get('road-clearance-stones', '#8a8375');
+    for (const [x, z] of [
+      [-2.8, -2.7],
+      [2.8, -2.5],
+      [-3.2, 2.8],
+      [3.3, 2.6]
+    ] as Array<[number, number]>) {
+      this.box(this.staticGroup, x, 0.07, z, 0.28, 0.08, 0.28, stone, { ry: (x + z) * 0.12 });
+    }
+  }
+
+  private mineTrack(x: number, z: number): void {
+    const rail = this.mats.get('mine-track-rail', '#5a5a55', { metalness: 0.25 });
+    const tie = this.mats.get('mine-track-tie', '#5d3920');
+    this.box(this.staticGroup, x - 0.28, 0.08, z, 0.08, 0.06, 2.8, rail, { ry: -0.1 });
+    this.box(this.staticGroup, x + 0.28, 0.08, z, 0.08, 0.06, 2.8, rail, { ry: -0.1 });
+    for (let i = -1; i <= 1; i += 1) this.box(this.staticGroup, x, 0.075, z + i * 0.82, 1.0, 0.05, 0.12, tie, { ry: -0.1 });
+  }
+
+  private forageClue(x: number, z: number): void {
+    const leaf = this.mats.get('forage-clue-leaf', '#8fb75a');
+    const soil = this.mats.get('forage-clue-soil', '#4b3824');
+    this.box(this.staticGroup, x, 0.055, z, 0.82, 0.035, 0.42, soil, { ry: 0.35 });
+    this.box(this.staticGroup, x - 0.18, 0.17, z + 0.04, 0.18, 0.22, 0.08, leaf, { ry: 0.2 });
+    this.box(this.staticGroup, x + 0.16, 0.18, z - 0.08, 0.16, 0.24, 0.08, leaf, { ry: -0.32 });
+    this.mushrooms(x + 0.42, z + 0.28);
+  }
+
+  private cryptReferenceDressing(): void {
+    this.sarcophagus(-2, 8);
+    this.sarcophagus(9, -7);
+    this.cryptAltar(0, -8);
+    for (const [x, z] of [
+      [-4, 2],
+      [2, -2],
+      [7, 5],
+      [-10, 7],
+      [11, -2]
+    ] as Array<[number, number]>) this.crackedFloorCluster(x, z);
+    for (const [x, z] of [
+      [-8, -4],
+      [5, -6],
+      [0, 10]
+    ] as Array<[number, number]>) this.torchPool(x, z);
+  }
+
+  private sarcophagus(x: number, z: number): void {
+    const stone = this.mats.get('sarcophagus-stone', '#5d5952');
+    const lid = this.mats.get('sarcophagus-lid', '#6b665e');
+    this.box(this.staticGroup, x, 0.28, z, 1.15, 0.46, 2.15, stone, { ry: 0.12 });
+    this.box(this.staticGroup, x, 0.62, z, 0.92, 0.22, 1.82, lid, { ry: 0.12 });
+    this.box(this.staticGroup, x, 0.78, z - 0.42, 0.42, 0.08, 0.08, this.mats.get('sarcophagus-mark', '#a08d5a'), { ry: 0.12 });
+  }
+
+  private cryptAltar(x: number, z: number): void {
+    const base = this.mats.get('crypt-altar-base', '#46413c');
+    const glow = this.mats.get('crypt-altar-glow', '#7ad7ff', { emissive: '#4bbcff', emissiveIntensity: 0.45, transparent: true, opacity: 0.74 });
+    this.box(this.staticGroup, x, 0.32, z, 1.9, 0.55, 1.05, base);
+    this.box(this.staticGroup, x, 0.72, z, 1.35, 0.2, 0.72, this.mats.get('crypt-altar-slab', '#5b554e'));
+    this.box(this.staticGroup, x, 0.9, z, 0.38, 0.12, 0.38, glow, { ry: 0.4 });
+    this.candle(x - 0.75, z + 0.38);
+    this.candle(x + 0.75, z + 0.38);
+  }
+
+  private crackedFloorCluster(x: number, z: number): void {
+    const crack = this.mats.get('crypt-floor-crack-deep', '#121212');
+    this.box(this.staticGroup, x, 0.055, z, 0.9, 0.035, 0.06, crack, { ry: 0.4 });
+    this.box(this.staticGroup, x + 0.24, 0.058, z + 0.16, 0.48, 0.035, 0.055, crack, { ry: -0.32 });
+    this.box(this.staticGroup, x - 0.3, 0.058, z - 0.1, 0.42, 0.035, 0.05, crack, { ry: 1.05 });
+  }
+
+  private torchPool(x: number, z: number): void {
+    const glow = this.mats.get('crypt-torch-pool', '#ff8e39', { transparent: true, opacity: 0.16, emissive: '#ff8e39', emissiveIntensity: 0.2 });
+    this.box(this.staticGroup, x, 0.052, z, 3.0, 0.03, 3.0, glow);
   }
 
   private clearGroup(group: THREE.Object3D): void {

@@ -2,6 +2,7 @@ import { areas } from '../data/areas';
 import { createInitialEconomyState } from '../data/economy';
 import { housingPieceDefinitions, housingTierDefinitions } from '../data/housing';
 import { buildPieces, itemDefs } from '../data/items';
+import { masteryMilestones, professionClusters, professionContracts } from '../data/professions';
 import { createInitialQuests } from '../data/quests';
 import { recipes } from '../data/recipes';
 import { createInitialResourceTiles } from '../data/resourceMaps';
@@ -12,7 +13,18 @@ import { spellDefs } from '../data/spells';
 import { lockDefinitions, secretDefinitions, trapDefinitions, treasureLootTables, treasureMapDefinitions } from '../data/treasure';
 import { visualPrefabs } from '../data/visualPrefabs';
 import { createDefaultHotbar, createInitialEntities } from '../game/GameState';
-import type { GameState } from '../game/types';
+import type { AreaId, GameState, MapWaypointSource, Vec3 } from '../game/types';
+import { livingWorldEventDefinitions } from '../systems/LivingWorldSystem';
+
+export interface ContentMapMarkerDefinition {
+  id: string;
+  areaId: AreaId;
+  label: string;
+  position: Vec3;
+  source: MapWaypointSource;
+}
+
+export type ContentEventDefinition = (typeof livingWorldEventDefinitions)[keyof typeof livingWorldEventDefinitions];
 
 export interface ContentRegistry {
   areas: typeof areas;
@@ -21,11 +33,18 @@ export interface ContentRegistry {
   recipes: typeof recipes;
   spells: typeof spellDefs;
   skills: typeof skillDefinitions;
+  professions: {
+    clusters: typeof professionClusters;
+    milestones: typeof masteryMilestones;
+    contracts: typeof professionContracts;
+  };
   resources: typeof resourceNodeDefs;
   resourcePlacements: typeof resourcePlacements;
   resourceTiles: ReturnType<typeof createInitialResourceTiles>;
   quests: ReturnType<typeof createInitialQuests>;
   entities: GameState['entities'];
+  events: ContentEventDefinition[];
+  mapMarkers: ContentMapMarkerDefinition[];
   economy: GameState['world']['economy'];
   housing: {
     tiers: typeof housingTierDefinitions;
@@ -54,11 +73,18 @@ export function createContentRegistry(state?: GameState): ContentRegistry {
     recipes,
     spells: spellDefs,
     skills: skillDefinitions,
+    professions: {
+      clusters: professionClusters,
+      milestones: masteryMilestones,
+      contracts: professionContracts
+    },
     resources: resourceNodeDefs,
     resourcePlacements,
     resourceTiles: state?.world.resourceTiles ?? createInitialResourceTiles(),
     quests: state?.quests ?? createInitialQuests(),
     entities: state?.entities ?? createInitialEntities(),
+    events: Object.values(livingWorldEventDefinitions),
+    mapMarkers: createMapMarkerDefinitions(),
     economy: state?.world.economy ?? createInitialEconomyState(),
     housing: {
       tiers: housingTierDefinitions,
@@ -89,9 +115,12 @@ export function exportContentSnapshot(registry: ContentRegistry = createContentR
       recipes: registry.recipes,
       spells: Object.values(registry.spells),
       skills: registry.skills,
+      professions: registry.professions,
       resources: Object.values(registry.resources),
       resourcePlacements: registry.resourcePlacements,
       quests: Object.values(registry.quests),
+      events: registry.events,
+      mapMarkers: registry.mapMarkers,
       vendors: Object.values(registry.entities)
         .filter((entity) => (entity.kind === 'npc' || entity.kind === 'social') && entity.tradeInventory)
         .map((entity) => ({
@@ -110,4 +139,14 @@ export function exportContentSnapshot(registry: ContentRegistry = createContentR
     null,
     2
   );
+}
+
+function createMapMarkerDefinitions(): ContentMapMarkerDefinition[] {
+  return Object.values(areas).map((area) => ({
+    id: `area_${area.id}_spawn`,
+    areaId: area.id,
+    label: area.name,
+    position: area.spawn,
+    source: 'manual'
+  }));
 }

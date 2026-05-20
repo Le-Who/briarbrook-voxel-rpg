@@ -5,7 +5,7 @@ import type { ContainerEntity, GameState, TargetRef, Vec3 } from '../game/types'
 import { setPlayerActionState } from './ActionStateSystem';
 import type { AreaManager } from '../world/AreaManager';
 import { addSystemMessage } from './ChatSystem';
-import { triggerContainerTrap } from './ContainerSystem';
+import { interactContainer, triggerContainerTrap } from './ContainerSystem';
 import { addItem, getItemCount, removeItems } from './InventorySystem';
 import { addFloatingText } from './LootSystem';
 import { markSecretDisarmedByContainer, markSecretTriggeredByContainer, revealSecretsNear } from './SecretSystem';
@@ -46,13 +46,17 @@ export function decipherTreasureMap(state: GameState, mapId = state.ui.selectedT
   if (!definition || !runtime) return;
   const cartography = getSkillValue(state, 'Cartography');
   const inscription = getSkillValue(state, 'Inscription');
-  const precision = Math.max(0.25, Math.min(1, 0.35 + (cartography - definition.requiredCartography) / 70 + inscription / 260));
+  const tracking = getSkillValue(state, 'Tracking');
+  const precision = Math.max(0.25, Math.min(1, 0.35 + (cartography - definition.requiredCartography) / 70 + inscription / 260 + tracking / 220));
   const success = precision >= 0.42;
-  attemptSkillUse(state, 'Cartography', { verb: 'track', difficulty: definition.requiredCartography, success, itemId: 'rough_treasure_map', relatedSkills: ['Inscription'] });
+  attemptSkillUse(state, 'Cartography', { verb: 'track', difficulty: definition.requiredCartography, success, itemId: 'rough_treasure_map', relatedSkills: ['Inscription', 'Tracking'] });
+  if (tracking > 0) {
+    attemptSkillUse(state, 'Tracking', { verb: 'track', difficulty: Math.max(16, definition.cartographyDifficulty - 4), success, itemId: 'rough_treasure_map', relatedSkills: ['Cartography'] });
+  }
   runtime.decipheredPrecision = Math.max(runtime.decipheredPrecision, Number(precision.toFixed(2)));
   runtime.lastCheckedAt = state.clock;
   state.ui.prompt = success ? 'The map sharpens into a workable route.' : 'The clue remains vague, but usable.';
-  addSystemMessage(state, `${definition.regionHint} clue: ${precisionLabel(runtime.decipheredPrecision)}.`);
+  addSystemMessage(state, `${definition.regionHint} tier ${definition.tier} clue: ${precisionLabel(runtime.decipheredPrecision)}.`);
 }
 
 export function pinTreasureMap(state: GameState, mapId = state.ui.selectedTreasureMapId): void {
@@ -164,14 +168,39 @@ export function removeTrapFromTarget(state: GameState, target: TargetRef): boole
 
 export function triggerTrapWithTelekinesis(state: GameState, target: TargetRef): boolean {
   const container = target?.kind === 'entity' ? state.entities[target.entityId] : null;
-  if (!container || container.kind !== 'container' || !container.trap?.armed) return false;
-  container.trap.detected = true;
-  container.trap.armed = false;
-  markSecretTriggeredByContainer(state, container.id);
-  addFloatingText(state, 'Trap Snap', container.position, '#b66dff');
-  addSystemMessage(state, `${container.name} discharges at a safe distance.`);
-  state.ui.prompt = 'Telekinesis snaps the trap from a safer distance.';
-  emitAudioHook('trap_trigger', { id: container.id, area: container.area, position: container.position });
+  if (!container || container.kind !== 'container') return false;
+  if (container.hidden) {
+    state.ui.prompt = 'Telekinesis cannot find the hidden mechanism.';
+    return true;
+  }
+  if (container.trap?.armed) {
+    container.trap.detected = true;
+    container.trap.armed = false;
+    markSecretTriggeredByContainer(state, container.id);
+    addFloatingText(state, 'Trap Snap', container.position, '#b66dff');
+    addSystemMessage(state, `${container.name} discharges at a safe distance.`);
+    state.ui.prompt = 'Telekinesis snaps the trap from a safer distance.';
+    emitAudioHook('trap_trigger', { id: container.id, area: container.area, position: container.position });
+    return true;
+  }
+  if (container.requiredSpellId) {
+    state.ui.prompt = `${container.name} resists remote handling.`;
+    return true;
+  }
+  if (container.locked) {
+    state.ui.prompt = `${container.name} rattles, but the lock holds.`;
+    return true;
+  }
+  if (container.opened) {
+    state.ui.prompt = `${container.name} is already open.`;
+    return true;
+  }
+  if (container.protected) {
+    state.ui.prompt = `${container.name} is watched too closely for remote handling.`;
+    return true;
+  }
+  interactContainer(state, container);
+  if (container.opened) state.ui.prompt = `${container.name} opens from a distance.`;
   return true;
 }
 
@@ -223,6 +252,13 @@ function spawnTreasureCache(state: GameState, mapId: string, position: Vec3): vo
   };
   state.entities[id] = chest;
   runtime.found = true;
+  if (mapId === 'greymont_cache') {
+    const secret = state.world.treasure.secrets.greymont_buried_cache;
+    if (secret) {
+      secret.revealedUntil = Math.max(secret.revealedUntil, state.clock + 120);
+      secret.opened = true;
+    }
+  }
   addFloatingText(state, 'Buried Cache', position, '#f0c957');
   addSystemMessage(state, 'Your shovel strikes old wood. A buried cache is exposed.');
   state.ui.prompt = 'Buried cache exposed. Check the lock and trap before opening it.';

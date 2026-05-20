@@ -4,6 +4,7 @@ import { Simulation } from '../game/Simulation';
 import { HelpPanel } from './HelpPanel';
 import { applyWindowPreset } from './WindowManager';
 import { uiLayoutPresets } from './UILayoutPresets';
+import { visualUiTokenNames } from './VisualTheme';
 
 describe('UI customization, presets, and accessibility options', () => {
   it('defines the expected layout presets with accessibility settings', () => {
@@ -93,5 +94,25 @@ describe('UI customization, presets, and accessibility options', () => {
     expect(html).toContain('Move</span><b>Click ground');
     expect(html).toContain('Keyboard movement</span><b>Disabled');
     expect(html).toContain('data-movement-mode="keyboardMouse"');
+  });
+
+  it('defines shared visual UI tokens for the reference screenshot language', () => {
+    expect(visualUiTokenNames).toEqual([
+      '--ui-panel-bg',
+      '--ui-panel-border-gold',
+      '--ui-title-text',
+      '--ui-tab-active',
+      '--ui-tab-inactive',
+      '--ui-slot-border',
+      '--ui-selected-state',
+      '--ui-invalid-state',
+      '--ui-minimap-compact-bg',
+      '--ui-target-frame-bg',
+      '--ui-item-badge-bg',
+      '--ui-graph-gathering',
+      '--ui-graph-crafting',
+      '--ui-graph-combat',
+      '--ui-map-marker-objective'
+    ]);
   });
 });

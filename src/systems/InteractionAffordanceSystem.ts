@@ -106,7 +106,7 @@ function describeEntity(state: GameState, entity: Entity): InteractionDescriptor
   }
   if (entity.kind === 'enemy') {
     const primary = action('Target', 'target', 'Target');
-    return descriptor(entity.id, entity.name, `${entity.name} - Target`, primary, [
+    return descriptor(entity.id, entity.name, `${entity.name} — Target`, primary, [
       primary,
       action('Attack', 'attack', 'Attack'),
       action('Cast', 'cast_spell', 'Cast Spell'),
@@ -115,6 +115,23 @@ function describeEntity(state: GameState, entity: Entity): InteractionDescriptor
     ]);
   }
   if (entity.kind === 'npc' || entity.kind === 'social') {
+    if (entity.kind === 'npc' && entity.role === 'banker' && entity.area === 'bank') {
+      const primary = action('Open', 'talk', 'Open Bank');
+      return descriptor(entity.id, entity.name, 'Banker — Open Bank', primary, [
+        primary,
+        action('Inspect', 'inspect', 'Inspect'),
+        action('Mark', 'mark', 'Mark on Map')
+      ]);
+    }
+    if (entity.kind === 'npc' && entity.role === 'blacksmith' && entity.area === 'blacksmith') {
+      const primary = action('Use', 'talk', 'Craft/Repair');
+      return descriptor(entity.id, entity.name, `${entity.name} — Craft/Repair`, primary, [
+        primary,
+        action('Trade', 'trade', 'Train'),
+        action('Inspect', 'inspect', 'Inspect'),
+        action('Mark', 'mark', 'Mark on Map')
+      ]);
+    }
     const primary = action('Talk', 'talk', 'Talk');
     const actions = [primary];
     if (entity.role === 'merchant' || entity.tradeInventory || entity.training) actions.push(action('Trade', 'trade', entity.training ? 'Trade / Train' : 'Trade'));
@@ -127,7 +144,7 @@ function describeEntity(state: GameState, entity: Entity): InteractionDescriptor
       return descriptor(entity.id, entity.name, `${entity.name} - Protected Tree`, primary, [primary, action('Mark', 'mark', 'Mark on Map')], false, 'Town tree is protected.');
     }
     const primary = resourceAction(entity);
-    return descriptor(entity.id, entity.name, `${entity.name} - ${defaultResourcePrompt(entity)}`, primary, [primary, action('Inspect', 'inspect', 'Inspect'), action('Mark', 'mark', 'Mark on Map')]);
+    return descriptor(entity.id, entity.name, shortResourcePrompt(entity), primary, [primary, action('Inspect', 'inspect', 'Inspect'), action('Mark', 'mark', 'Mark on Map')]);
   }
   if (entity.kind === 'container') {
     const primary = entity.locked ? action('Pick Lock', 'open', 'Pick Lock') : action('Open', 'open', 'Open');
@@ -167,6 +184,7 @@ function describeToolTarget(state: GameState, target: ConcreteTarget, toolItemId
   const name = targetName(state, target);
   const toolName = itemDefs[toolItemId]?.name ?? toolItemId;
   const primary = action('Use Tool', 'use_tool', toolTargetLabel(toolItemId, null));
+  const resourceStateLabel = inspectTargetForTool(state, toolItemId, target);
   if (target.kind === 'entity') {
     const entity = state.entities[target.entityId];
     if (entity?.kind === 'resource') {
@@ -174,22 +192,34 @@ function describeToolTarget(state: GameState, target: ConcreteTarget, toolItemId
         const reason = 'Town tree is protected.';
         return descriptor(entity.id, entity.name, `${entity.name} - Protected Tree`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
       }
+      if (resourceStateLabel === 'Depleted' || resourceStateLabel?.endsWith('(depleted)')) {
+        const reason = entity.resourceType === 'tree' ? 'Depleted' : `${entity.name} depleted.`;
+        return descriptor(entity.id, entity.name, `${entity.name} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
+      }
       if (toolMatchesResource(toolItemId, entity)) {
         const label = toolTargetLabel(toolItemId, entity);
-        return descriptor(entity.id, entity.name, `${entity.name} - ${label}`, { ...primary, label }, [{ ...primary, label }, action('Inspect', 'inspect', 'Inspect')]);
+        return descriptor(entity.id, entity.name, shortResourcePrompt(entity), { ...primary, label }, [{ ...primary, label }, action('Inspect', 'inspect', 'Inspect')]);
       }
       const reason = betterToolReason(entity);
       return descriptor(entity?.id ?? targetId(target), entity?.name ?? name, `${entity?.name ?? name} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
     }
   }
-  const tileLabel = inspectTargetForTool(state, toolItemId, target);
+  const tileLabel = resourceStateLabel;
   if (tileLabel) {
     const label = toolTargetLabel(toolItemId, null);
     if (tileLabel === 'Protected Tree') {
       const reason = 'Town tree is protected.';
       return descriptor(targetId(target), tileLabel, `${tileLabel} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
     }
-    return descriptor(targetId(target), tileLabel, `${tileLabel} - ${label}`, { ...primary, label }, [{ ...primary, label }, action('Inspect', 'inspect', 'Inspect')]);
+    if (tileLabel === 'Too small/shrub') {
+      const reason = 'Too small to chop.';
+      return descriptor(targetId(target), tileLabel, `${tileLabel} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
+    }
+    if (tileLabel === 'Depleted' || tileLabel.endsWith('(depleted)')) {
+      const reason = 'Depleted';
+      return descriptor(targetId(target), tileLabel, `${tileLabel} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
+    }
+    return descriptor(targetId(target), tileLabel, `${tileLabel} — ${shortToolActionLabel(toolItemId)}`, { ...primary, label }, [{ ...primary, label }, action('Inspect', 'inspect', 'Inspect')]);
   }
   const reason = `${toolName} cannot be used here.`;
   return descriptor(targetId(target), name, `${name} - ${reason}`, primary, [action('Inspect', 'inspect', 'Inspect')], false, reason);
@@ -241,6 +271,26 @@ function defaultResourceAction(entity: ResourceNodeEntity): string {
   if (entity.resourceType === 'ore') return 'Mine with Pickaxe';
   if (entity.resourceType === 'fish') return 'Fish';
   return 'Gather';
+}
+
+function shortResourcePrompt(entity: ResourceNodeEntity): string {
+  return `${resolveResourceDefinition(entity).name} — ${shortResourceAction(entity)}`;
+}
+
+function shortResourceAction(entity: ResourceNodeEntity): string {
+  if (entity.resourceType === 'tree') return 'Chop';
+  if (entity.resourceType === 'ore') return 'Mine';
+  if (entity.resourceType === 'fish') return 'Fish';
+  if (entity.resourceType === 'herb') return 'Forage';
+  return 'Gather';
+}
+
+function shortToolActionLabel(toolItemId: string): string {
+  if (toolItemId === 'axe') return 'Chop';
+  if (toolItemId === 'pickaxe') return 'Mine';
+  if (toolItemId === 'shovel') return 'Dig';
+  if (toolItemId === 'fishing_pole') return 'Fish';
+  return itemDefs[toolItemId]?.name ?? 'Use';
 }
 
 function toolTargetLabel(toolItemId: string, entity: ResourceNodeEntity | null): string {

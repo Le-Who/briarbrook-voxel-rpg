@@ -1,6 +1,20 @@
 import type { GameState, SkillGainMode } from '../game/types';
 import { itemDefs } from '../data/items';
-import { masteryMilestones, milestoneProgress, professionActivityScore, professionById, professionClusters, requirementMet, describeRequirement, skillProfessionIds, type ProfessionCluster, type ProfessionEdge, type ProfessionNode } from '../data/professions';
+import {
+  deriveProfessionContractProgresses,
+  masteryMilestones,
+  milestoneProgress,
+  professionActivityScore,
+  professionById,
+  professionClusters,
+  requirementMet,
+  describeRequirement,
+  skillProfessionIds,
+  type ProfessionCluster,
+  type ProfessionContractProgress,
+  type ProfessionEdge,
+  type ProfessionNode
+} from '../data/professions';
 import { recipes } from '../data/recipes';
 import { skillDefinitionById, skillDefinitions, skillGroups, skillsForGroup, type SkillDefinition } from '../data/skillDefinitions';
 import { spellDefs } from '../data/spells';
@@ -65,7 +79,8 @@ const trainableSkills = new Set([
   'Poisoning',
   'Lumberjacking',
   'Mining',
-  'Fishing'
+  'Fishing',
+  'Survival'
 ]);
 
 export function SkillsPanel(state: GameState): string {
@@ -167,26 +182,32 @@ function renderProfessionAtlas(state: GameState): string {
   const selected = professionById(selectedProfessionId) ?? [...professionClusters].sort((a, b) => professionActivityScore(state, b) - professionActivityScore(state, a))[0];
   const zoom = state.ui.professionAtlasZoom ?? 1;
   const search = state.ui.professionAtlasSearch?.trim().toLowerCase() ?? '';
-  const activeNodeIds = atlasActiveNodeIds(state, selected);
-  const searchNodeIds = new Set(selected.nodes.filter((node) => search && atlasSearchText(selected, node).includes(search)).map((node) => node.id));
+  const showFuture = state.ui.professionAtlasShowFuture !== false;
+  const futureNodes = selected.nodes.filter((node) => !atlasNodeImplemented(node));
+  const visibleNodes = showFuture ? selected.nodes : selected.nodes.filter((node) => atlasNodeImplemented(node));
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = selected.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to));
+  const visibleProfession = { ...selected, nodes: visibleNodes, edges: visibleEdges };
+  const activeNodeIds = atlasActiveNodeIds(state, visibleProfession);
+  const searchNodeIds = new Set(visibleNodes.filter((node) => search && atlasSearchText(visibleProfession, node).includes(search)).map((node) => node.id));
   const selectedNode =
-    selected.nodes.find((node) => node.id === state.ui.selectedProfessionNodeId) ??
-    selected.nodes.find((node) => searchNodeIds.has(node.id)) ??
-    selected.nodes.find((node) => activeNodeIds.has(node.id)) ??
-    selected.nodes.find((node) => node.type === 'goal') ??
-    selected.nodes[0];
-  const pathNodeIds = selectedNode ? atlasPathNodeIds(selected, selectedNode.id) : new Set<string>();
+    visibleNodes.find((node) => node.id === state.ui.selectedProfessionNodeId) ??
+    visibleNodes.find((node) => searchNodeIds.has(node.id)) ??
+    visibleNodes.find((node) => activeNodeIds.has(node.id)) ??
+    visibleNodes.find((node) => node.type === 'goal') ??
+    visibleNodes[0];
+  const pathNodeIds = selectedNode ? atlasPathNodeIds(visibleProfession, selectedNode.id) : new Set<string>();
   const pathEdgeIds = new Set(
-    selected.edges
+    visibleEdges
       .filter((edge) => selectedNode && (edge.from === selectedNode.id || edge.to === selectedNode.id))
       .map((edge) => atlasEdgeKey(edge))
   );
   const implementedCount = selected.nodes.filter((node) => atlasNodeImplemented(node)).length;
   const selectedPinned = selectedNode ? isAtlasNodePinned(state, selectedNode) : false;
 
-  return `<div class="atlas-layout profession-atlas-redesign" data-atlas-selected="${attr(selectedNode?.id ?? '')}" style="--profession:${selected.color}">
+  return `<div class="atlas-layout profession-atlas-redesign" data-atlas-selected="${attr(selectedNode?.id ?? '')}" data-future-visible="${showFuture ? 'true' : 'false'}" style="--profession:${selected.color}">
     <aside class="atlas-lenses" aria-label="Profession lenses">
-      <div class="atlas-info-banner"><b>Relationship Map</b><span>Not a passive tree: skills, tools, activities, outputs, services, milestones, and future loops.</span></div>
+      <div class="atlas-info-banner"><b>Relationship Map</b><span>Not a passive tree: skills, tools, activities, outputs, services, milestones, profession contracts, and future loops.</span></div>
       <div class="profession-filters">
         ${professionClusters
           .map((profession) => {
@@ -195,6 +216,7 @@ function renderProfessionAtlas(state: GameState): string {
           })
           .join('')}
       </div>
+      ${renderContractBoard(state, selected.id)}
     </aside>
     <main class="atlas-main" aria-label="${attr(selected.title)} relationship graph">
       <div class="atlas-toolbar">
@@ -206,15 +228,16 @@ function renderProfessionAtlas(state: GameState): string {
           <button data-atlas-zoom="reset">Reset</button>
           <button data-atlas-zoom="0.1" aria-label="Zoom in">+</button>
         </div>
+        <button data-atlas-future="${showFuture ? 'hide' : 'show'}" class="${showFuture ? 'active' : ''}">${showFuture ? 'Hide Future' : 'Show Future'}</button>
         <button data-pin-profession-goal="${selected.id}" class="${state.ui.pinnedProfessionGoalId === selected.id ? 'active' : ''}">Pin Lens</button>
       </div>
       <div class="atlas-stage-wrap" data-atlas-pan="scroll" tabindex="0">
         <div class="atlas-stage" style="--profession:${selected.color}; --atlas-zoom:${zoom}">
           <svg class="atlas-edges" viewBox="0 0 100 100" aria-hidden="true">
-            ${selected.edges
+            ${visibleEdges
               .map((edge) => {
-                const from = selected.nodes.find((node) => node.id === edge.from);
-                const to = selected.nodes.find((node) => node.id === edge.to);
+                const from = visibleNodes.find((node) => node.id === edge.from);
+                const to = visibleNodes.find((node) => node.id === edge.to);
                 if (!from || !to) return '';
                 const edgeKey = atlasEdgeKey(edge);
                 const hot = activeNodeIds.has(edge.from) || activeNodeIds.has(edge.to);
@@ -223,7 +246,7 @@ function renderProfessionAtlas(state: GameState): string {
               })
               .join('')}
           </svg>
-          ${selected.nodes
+          ${visibleNodes
             .map((node) =>
               renderAtlasNode(state, node, {
                 active: activeNodeIds.has(node.id),
@@ -236,12 +259,45 @@ function renderProfessionAtlas(state: GameState): string {
             .join('')}
         </div>
       </div>
-      ${renderAtlasLoopCards(selected, selectedNode, pathNodeIds, searchNodeIds)}
+      ${renderAtlasLoopCards(visibleProfession, selectedNode, pathNodeIds, searchNodeIds, showFuture ? '' : `${futureNodes.map((node) => node.label).join(', ')} hidden`)}
     </main>
     <aside class="atlas-node-detail" aria-live="polite">
-      ${selectedNode ? renderAtlasDetail(state, selected, selectedNode, selectedPinned) : `<div class="atlas-empty-detail"><b>Select a profession lens to see its loop.</b></div>`}
+      ${selectedNode ? renderAtlasDetail(state, visibleProfession, selectedNode, selectedPinned) : `<div class="atlas-empty-detail"><b>Select a profession lens to see its loop.</b></div>`}
     </aside>
   </div>`;
+}
+
+function renderContractBoard(state: GameState, selectedProfessionId: string): string {
+  const progresses = deriveProfessionContractProgresses(state);
+  const selected = progresses.filter((progress) => progress.contract.professionId === selectedProfessionId);
+  const active = progresses.filter((progress) => progress.active && !selected.includes(progress));
+  const visible = [...active, ...selected].slice(0, 3);
+  const fallback = visible.length ? visible : progresses.slice(0, 2);
+  return `<section class="profession-contract-board" aria-label="Profession Contracts">
+    <header><b>Profession Contracts</b><span>Direction without class locks</span></header>
+    ${fallback.map((progress) => renderContractCard(state, progress)).join('')}
+  </section>`;
+}
+
+function renderContractCard(state: GameState, progress: ProfessionContractProgress): string {
+  const pct = Math.round(progress.progress * 100);
+  const active = progress.active;
+  const pinned = state.ui.pinnedProfessionGoalId === `contract:${progress.contract.id}`;
+  const next = progress.nextObjective;
+  const actionLabel = active ? 'Active' : state.ui.activeProfessionContractId ? 'Swap' : 'Start';
+  return `<article class="profession-contract ${active ? 'active' : ''} ${progress.complete ? 'complete' : ''}" data-contract-card="${attr(progress.contract.id)}">
+    <div class="contract-head"><b>${attr(progress.contract.title)}</b><span>${active ? 'Active contract' : progress.complete ? 'Complete' : 'Available'}</span></div>
+    <p>${attr(progress.contract.teaches)}</p>
+    <div class="contract-progress"><i style="width:${pct}%"></i><span>Contract progress ${progress.objectives.filter((objective) => objective.done).length}/${progress.objectives.length}</span></div>
+    <small>${next ? `Next: ${attr(next.label)} (${Math.min(next.current, next.required)}/${next.required})` : 'Ready to claim rewards when reward flow is expanded.'}</small>
+    <em>${attr(progress.contract.skills.join(', '))}</em>
+    <span class="contract-rewards">${attr(progress.rewardSummary)}</span>
+    <div class="contract-actions">
+      <button class="${active ? 'active' : ''}" data-profession-contract="${attr(progress.contract.id)}">${actionLabel}</button>
+      ${active ? `<button data-abandon-profession-contract="${attr(progress.contract.id)}">Abandon</button>` : ''}
+      <button class="${pinned ? 'active' : ''}" data-pin-profession-goal="contract:${attr(progress.contract.id)}">Pin Next Step</button>
+    </div>
+  </article>`;
 }
 
 function renderAtlasNode(
@@ -341,7 +397,7 @@ function isAtlasNodePinned(state: GameState, node: ProfessionNode): boolean {
   return state.ui.pinnedProfessionGoalId === node.id || state.ui.pinnedProfessionGoalId === node.ref || state.ui.pinnedProfessionGoalId === `${node.type}:${node.ref ?? node.label}`;
 }
 
-function renderAtlasLoopCards(profession: ProfessionCluster, selectedNode: ProfessionNode | undefined, pathNodeIds: Set<string>, searchNodeIds: Set<string>): string {
+function renderAtlasLoopCards(profession: ProfessionCluster, selectedNode: ProfessionNode | undefined, pathNodeIds: Set<string>, searchNodeIds: Set<string>, hiddenFutureSummary = ''): string {
   if (searchNodeIds.size === 0 && (profession.nodes.length <= 4 || !selectedNode)) {
     return `<div class="atlas-loop-list"><article><b>Select a profession lens to see its loop.</b><span>Starter goals, tools, skills, activities, and outputs will fill this space.</span></article></div>`;
   }
@@ -353,7 +409,8 @@ function renderAtlasLoopCards(profession: ProfessionCluster, selectedNode: Profe
     return `<article class="${highlighted ? 'active' : ''}"><b>${attr(edge.label)}</b><span>${attr(from?.label ?? edge.from)} -> ${attr(to?.label ?? edge.to)}</span></article>`;
   });
   const searchSummary = searchNodeIds.size ? `<article class="search-result"><b>${searchNodeIds.size} search match${searchNodeIds.size === 1 ? '' : 'es'}</b><span>${profession.nodes.filter((node) => searchNodeIds.has(node.id)).map((node) => attr(node.label)).join(', ')}</span></article>` : '';
-  return `<div class="atlas-loop-list">${searchSummary}${cards.join('')}</div>`;
+  const hiddenSummary = hiddenFutureSummary ? `<article class="future-hidden"><b>Future hidden</b><span>${attr(hiddenFutureSummary)}</span></article>` : '';
+  return `<div class="atlas-loop-list">${hiddenSummary}${searchSummary}${cards.join('')}</div>`;
 }
 
 function renderAtlasDetail(state: GameState, profession: ProfessionCluster, node: ProfessionNode, pinned: boolean): string {

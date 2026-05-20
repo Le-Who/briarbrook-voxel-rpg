@@ -17,10 +17,119 @@ export const treasureMapDefinitions: Record<string, TreasureMapDefinition> = {
     lootTableId: 'tier1_forest_cache',
     hiddenModifiers: ['disturbed_ground', 'moss_thin', 'old_mine_road'],
     persistentStateKey: 'treasure_greymont_cache'
+  },
+  old_river_bandit_stash: {
+    id: 'old_river_bandit_stash',
+    tier: 2,
+    regionHint: 'road',
+    clueText: 'Follow the old river stones until the broken cart is behind you. Bandit boot-marks circle a mossy fence post where a small iron lock waits.',
+    approximateCoordinate: { x: 8, y: 0, z: 4 },
+    approximateLocation: { x: 8, y: 0, z: 4 },
+    requiredCartography: 25,
+    cartographyDifficulty: 30,
+    digRadius: 3,
+    searchRadius: 3.5,
+    requiredTool: 'shovel',
+    possibleEncounters: ['Bandit'],
+    lootTableId: 'tier2_road_stash',
+    hiddenModifiers: ['bandit_tracks', 'mossy_fence_post', 'broken_cart_shadow'],
+    persistentStateKey: 'treasure_old_river_bandit_stash'
+  },
+  crypt_reliquary: {
+    id: 'crypt_reliquary',
+    tier: 3,
+    regionHint: 'crypt',
+    clueText: 'The reliquary is not lost, only warded. Blue dust gathers where the old crypt door lies false beside the sealed alcove.',
+    approximateCoordinate: { x: 7, y: 0, z: 7 },
+    approximateLocation: { x: 7, y: 0, z: 7 },
+    requiredCartography: 35,
+    cartographyDifficulty: 42,
+    digRadius: 2,
+    searchRadius: 2.8,
+    requiredTool: 'lockpick',
+    possibleEncounters: ['Undead'],
+    lootTableId: 'tier3_crypt_reliquary',
+    hiddenModifiers: ['blue_dust', 'sealed_alcove', 'false_door_scratch'],
+    persistentStateKey: 'treasure_crypt_reliquary'
   }
 };
 
 export const secretDefinitions: Record<string, SecretDefinition> = {
+  town_fountain_cache: {
+    id: 'town_fountain_cache',
+    areaId: 'town',
+    location: { x: -1, y: 0, z: 2 },
+    triggerType: 'detect_hidden',
+    revealMethods: ['detect_hidden', 'reveal'],
+    requiredSkill: 'Detect Hidden',
+    difficulty: 18,
+    revealDuration: 90,
+    revealedState: 'hidden_cache',
+    revealedEntityId: 'cache_town_fountain_loose_stone',
+    reward: [
+      { itemId: 'map_fragment', quantity: 1 },
+      { itemId: 'ginseng', quantity: 2 }
+    ],
+    danger: 'none',
+    persistenceKey: 'secret_town_fountain_cache',
+    persistentStateKey: 'secret_town_fountain_cache'
+  },
+  greymont_buried_cache: {
+    id: 'greymont_buried_cache',
+    areaId: 'forest',
+    location: { x: 9, y: 0, z: -7 },
+    triggerType: 'excavate',
+    revealMethods: ['detect_hidden', 'reveal', 'excavate'],
+    requiredSkill: 'Detect Hidden',
+    difficulty: 24,
+    revealDuration: 90,
+    revealedState: 'hidden_cache',
+    reward: [
+      { itemId: 'map_fragment', quantity: 1 },
+      { itemId: 'wall_tapestry', quantity: 1 }
+    ],
+    danger: 'trap',
+    persistenceKey: 'secret_greymont_buried_cache',
+    persistentStateKey: 'secret_greymont_buried_cache'
+  },
+  old_river_bandit_stash: {
+    id: 'old_river_bandit_stash',
+    areaId: 'road',
+    location: { x: 8, y: 0, z: 4 },
+    triggerType: 'detect_hidden',
+    revealMethods: ['detect_hidden', 'reveal'],
+    requiredSkill: 'Detect Hidden',
+    difficulty: 28,
+    revealDuration: 100,
+    revealedState: 'hidden_cache',
+    revealedEntityId: 'cache_road_hidden',
+    reward: [
+      { itemId: 'lockpick', quantity: 2 },
+      { itemId: 'vendor_contract', quantity: 1 }
+    ],
+    danger: 'trap',
+    persistenceKey: 'secret_old_river_bandit_stash',
+    persistentStateKey: 'secret_old_river_bandit_stash'
+  },
+  bank_ledger_cache: {
+    id: 'bank_ledger_cache',
+    areaId: 'bank',
+    location: { x: -5, y: 0, z: -1 },
+    triggerType: 'detect_hidden',
+    revealMethods: ['detect_hidden', 'reveal'],
+    requiredSkill: 'Detect Hidden',
+    difficulty: 20,
+    revealDuration: 90,
+    revealedState: 'hidden_cache',
+    revealedEntityId: 'cache_bank_ledger_niche',
+    reward: [
+      { itemId: 'vendor_contract', quantity: 1 },
+      { itemId: 'parchment_scroll', quantity: 2 }
+    ],
+    danger: 'none',
+    persistenceKey: 'secret_bank_ledger_cache',
+    persistentStateKey: 'secret_bank_ledger_cache'
+  },
   crypt_loose_wall: {
     id: 'crypt_loose_wall',
     areaId: 'crypt',
@@ -73,6 +182,44 @@ export const secretDefinitions: Record<string, SecretDefinition> = {
     danger: 'trap',
     persistenceKey: 'secret_crypt_sealed_alcove',
     persistentStateKey: 'secret_crypt_sealed_alcove'
+  },
+  crypt_reliquary: {
+    id: 'crypt_reliquary',
+    areaId: 'crypt',
+    location: { x: 7, y: 0, z: 7 },
+    triggerType: 'spell',
+    revealMethods: ['detect_magic', 'reveal', 'spell'],
+    requiredSkill: 'Item Identification',
+    difficulty: 34,
+    revealDuration: 110,
+    revealedState: 'sealed_alcove',
+    revealedEntityId: 'chest_crypt_warded',
+    reward: [
+      { itemId: 'glimmer_gem', quantity: 1 },
+      { itemId: 'treasure_map_display_kit', quantity: 1 }
+    ],
+    danger: 'trap',
+    persistenceKey: 'secret_crypt_reliquary',
+    persistentStateKey: 'secret_crypt_reliquary'
+  },
+  crypt_false_door: {
+    id: 'crypt_false_door',
+    areaId: 'crypt',
+    location: { x: -2, y: 0, z: 9 },
+    triggerType: 'spell',
+    revealMethods: ['detect_magic', 'reveal', 'spell'],
+    requiredSkill: 'Item Identification',
+    difficulty: 36,
+    revealDuration: 110,
+    revealedState: 'hidden_cache',
+    revealedEntityId: 'secret_crypt_false_door',
+    reward: [
+      { itemId: 'crypt_lore_clue', quantity: 1 },
+      { itemId: 'glimmer_gem', quantity: 1 }
+    ],
+    danger: 'alarm',
+    persistenceKey: 'secret_crypt_false_door',
+    persistentStateKey: 'secret_crypt_false_door'
   },
   crypt_treasure_room: {
     id: 'crypt_treasure_room',
@@ -157,6 +304,20 @@ export const treasureLootTables: Record<string, Array<{ itemId: string; quantity
     { itemId: 'repair_kit', quantity: 1 },
     { itemId: 'map_fragment', quantity: 1 },
     { itemId: 'vendor_contract', quantity: 1 },
+    { itemId: 'wall_tapestry', quantity: 1 }
+  ],
+  tier2_road_stash: [
+    { itemId: 'lockpick', quantity: 3 },
+    { itemId: 'repair_kit', quantity: 1 },
+    { itemId: 'vendor_contract', quantity: 1 },
+    { itemId: 'treasure_map_display_kit', quantity: 1 },
+    { itemId: 'silver_ring', quantity: 1 }
+  ],
+  tier3_crypt_reliquary: [
+    { itemId: 'glimmer_gem', quantity: 2 },
+    { itemId: 'recall_rune', quantity: 1 },
+    { itemId: 'spell_scroll_magic_arrow', quantity: 1 },
+    { itemId: 'treasure_map_display_kit', quantity: 1 },
     { itemId: 'wall_tapestry', quantity: 1 }
   ]
 };

@@ -65,7 +65,7 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
     yieldItemId: 'logs',
     yieldRange: [3, 6],
     baseDuration: 1.85,
-    respawnSeconds: 16,
+    respawnSeconds: 18,
     actionVerb: 'Chopping',
     inspectText: 'Light timber. Requires an axe. Easier logs for novice cutters.'
   },
@@ -104,7 +104,7 @@ export const resourceNodeDefs: Record<string, ResourceNodeDefinition> = {
     yieldItemId: 'ginseng',
     yieldRange: [2, 5],
     baseDuration: 1.55,
-    respawnSeconds: 16,
+    respawnSeconds: 18,
     actionVerb: 'Foraging',
     inspectText: 'Useful roots and leaves. Requires scissors. Alchemists prize the fresher sprigs.'
   },

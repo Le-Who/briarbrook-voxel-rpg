@@ -18,7 +18,7 @@ describe('world density without map bloat', () => {
       expect(area.revisitHooks.length).toBeGreaterThan(0);
     }
 
-    expect(density.road.secretsOrSideInteractions).toEqual(expect.arrayContaining(['Roadside Shrine', 'Hidden Road Cache', 'Fresh Bandit Tracks']));
+    expect(density.road.secretsOrSideInteractions).toEqual(expect.arrayContaining(['Roadside Shrine', 'Old Bandit Stash', 'Fresh Bandit Tracks']));
     expect(density.forest.servicesOrResources).toEqual(expect.arrayContaining(['Ancient Yew', 'Hunter Camp Supplies']));
     expect(density.crypt.risksOrObstacles).toEqual(expect.arrayContaining(['Crypt Bone Captain', 'Collapsed Mine Side Room']));
     expect(density.housing.revisitHooks).toEqual(expect.arrayContaining(['Starter Resource Crate', 'Workbench Frame', 'Trophy Hook']));

@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createInitialGameState } from '../game/GameState';
 import { addItem, getItemCount } from './InventorySystem';
 import { meleeAttack } from './CombatSystem';
-import { calculateLocalPrice, repairEquippedItem, completeWorkOrder, fulfillMarketOrder } from './EconomySystem';
+import { applyEconomyEventDemand, calculateLocalPrice, repairEquippedItem, completeWorkOrder, fulfillMarketOrder } from './EconomySystem';
 import { startCraft, updateCrafting } from './CraftingSystem';
 import { gatherResource, updateGathering } from './InteractionSystem';
+import { MarketBoardPanel } from '../ui/MarketBoardPanel';
+import { JournalPanel } from '../ui/JournalPanel';
+import type { EconomyOrderCategory } from '../game/types';
 
 describe('modern economy and item sinks', () => {
   afterEach(() => {
@@ -190,5 +193,101 @@ describe('modern economy and item sinks', () => {
       exceptional: true
     });
     expect(crafted?.maxDurability).toBeGreaterThan(75);
+  });
+
+  it('covers local service categories and reward types without raw gold inflation', () => {
+    const state = createInitialGameState();
+    const requiredCategories: EconomyOrderCategory[] = ['smithy', 'healer', 'mage', 'guard', 'carpenter', 'tavern', 'banker'];
+    const categories = new Set(state.world.economy.workOrders.map((order) => order.category));
+
+    for (const category of requiredCategories) {
+      expect(categories.has(category)).toBe(true);
+    }
+
+    expect(state.world.economy.workOrders.some((order) => order.rewardRecipeIds?.length)).toBe(true);
+    expect(state.world.economy.workOrders.some((order) => order.rewardVoucherItems?.length)).toBe(true);
+    expect(state.world.economy.workOrders.some((order) => order.rewardDiscount)).toBe(true);
+    expect(Math.max(...state.world.economy.workOrders.map((order) => order.rewardGold))).toBeLessThanOrEqual(190);
+  });
+
+  it('applies local demand cycles from world events to board prices and demand signals', () => {
+    const state = createInitialGameState();
+    const arrowBefore = state.world.economy.localDemand.arrow ?? 1;
+    const reagentBefore = state.world.economy.localDemand.sulfurous_ash ?? 1;
+    const torchBefore = state.world.economy.localDemand.torch ?? 1;
+
+    applyEconomyEventDemand(state, 'bandit_ambush');
+    applyEconomyEventDemand(state, 'crypt_spill');
+    applyEconomyEventDemand(state, 'storm');
+    applyEconomyEventDemand(state, 'merchant_caravan');
+    applyEconomyEventDemand(state, 'market_day');
+
+    expect(state.world.economy.localDemand.arrow).toBeGreaterThan(arrowBefore);
+    expect(state.world.economy.localDemand.sulfurous_ash).toBeGreaterThan(reagentBefore);
+    expect(state.world.economy.localDemand.torch).toBeGreaterThan(torchBefore);
+    expect(state.world.economy.demandSignals.map((signal) => signal.eventType)).toEqual(expect.arrayContaining(['bandit_ambush', 'crypt_spill', 'storm', 'merchant_caravan', 'market_day']));
+
+    const arrowOrder = state.world.economy.marketOrders.find((order) => order.itemId === 'arrow' || order.itemId === 'torch');
+    if (!arrowOrder) throw new Error('combat market order missing');
+    const priceBefore = arrowOrder.unitPrice;
+    state.clock += 1;
+    applyEconomyEventDemand(state, 'bandit_ambush');
+    expect(arrowOrder.unitPrice).toBeGreaterThanOrEqual(priceBefore);
+  });
+
+  it('fulfills work orders and market buy orders from bank only when the board is nearby', () => {
+    const state = createInitialGameState();
+    const order = state.world.economy.workOrders.find((candidate) => candidate.id === 'wo_guard_arrows');
+    if (!order?.requiredItems) throw new Error('guard order missing');
+    state.player.currentArea = 'forest';
+    addItem(state.player.bank, 'arrow', order.quantity);
+
+    expect(completeWorkOrder(state, order.id)).toBe(false);
+    expect(order.status).toBe('open');
+    expect(getItemCount(state.player.bank, 'arrow')).toBe(order.quantity);
+
+    state.player.currentArea = 'bank';
+    expect(completeWorkOrder(state, order.id)).toBe(true);
+    expect(order.status).toBe('complete');
+    expect(getItemCount(state.player.bank, 'arrow')).toBe(0);
+
+    const marketOrder = state.world.economy.marketOrders.find((candidate) => candidate.kind === 'buy' && candidate.itemId === 'logs');
+    if (!marketOrder) throw new Error('logs buy order missing');
+    addItem(state.player.bank, 'logs', marketOrder.quantity);
+    expect(fulfillMarketOrder(state, marketOrder.id)).toBe(true);
+    expect(marketOrder.status).toBe('filled');
+    expect(getItemCount(state.player.bank, 'logs')).toBe(0);
+  });
+
+  it('surfaces demand, rewards, bank access and work-order pinning in market and journal UI', () => {
+    const state = createInitialGameState();
+    state.ui.panels.market = true;
+    state.ui.panels.journal = true;
+    state.player.currentArea = 'bank';
+    state.world.economy.demandSignals.push({
+      id: 'signal_test',
+      eventType: 'bandit_ambush',
+      label: 'Bandit raids',
+      startedAt: state.clock,
+      endsAt: state.clock + 60,
+      affected: ['guard', 'combat', 'arrow', 'torch']
+    });
+    const order = state.world.economy.workOrders.find((candidate) => candidate.id === 'wo_guard_arrows');
+    if (!order) throw new Error('guard order missing');
+    state.ui.pinnedWorkOrderId = order.id;
+
+    const marketHtml = MarketBoardPanel(state);
+    const journalHtml = JournalPanel(state);
+
+    for (const label of ['Smithy', 'Healer', 'Mage', 'Guard', 'Carpenter', 'Tavern', 'Banker']) {
+      expect(marketHtml).toContain(label);
+    }
+    expect(marketHtml).toContain('Bandit raids');
+    expect(marketHtml).toContain('Reward');
+    expect(marketHtml).toContain('Time');
+    expect(marketHtml).toContain('Bank access');
+    expect(marketHtml).toContain('data-pin-work-order');
+    expect(journalHtml).toContain(order.title);
+    expect(journalHtml).toContain('Pinned Work Order');
   });
 });

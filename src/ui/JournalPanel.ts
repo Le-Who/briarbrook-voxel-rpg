@@ -6,7 +6,7 @@ import { tutorialQuestIds } from '../data/quests';
 import { skillDefinitions } from '../data/skillDefinitions';
 import { spellDefs } from '../data/spells';
 import type { AreaId, GameState, QuestState, Vec3 } from '../game/types';
-import { deriveFirstHourDirector } from '../systems/FirstHourDirector';
+import { deriveFirstHourDirector, FIRST_HOUR_RECOMMENDED_SKILLS } from '../systems/FirstHourDirector';
 import { getItemCount } from '../systems/InventorySystem';
 import { describeProfessionGoal } from '../systems/ProfessionSystem';
 
@@ -80,11 +80,11 @@ function activeQuestSummary(quest: QuestState): string {
 export function JournalPanel(state: GameState): string {
   if (!state.ui.panels.journal) return '';
   const firstHour = deriveFirstHourDirector(state);
-  const pinnedProfessionGoal = describeProfessionGoal(state.ui.pinnedProfessionGoalId);
+  const pinnedProfessionGoal = describeProfessionGoal(state.ui.pinnedProfessionGoalId, state);
   const activeQuests = state.player.activeQuestIds.map((id) => state.quests[id]).filter(Boolean);
   const completedTutorials = tutorialQuestIds.map((id) => state.quests[id]).filter((quest) => quest && state.player.completedQuestIds.includes(quest.id));
   const mechanics = unlockedMechanics(state);
-  const relevantSkills = ['Lumberjacking', 'Mining', 'Healing', 'Magery', 'Meditation', 'Swordsmanship', 'Archery', 'Lockpicking', 'Carpentry']
+  const relevantSkills = FIRST_HOUR_RECOMMENDED_SKILLS
     .map((id) => skillDefinitions.find((definition) => definition.id === id))
     .filter(Boolean);
   const recipeUnlocked =
@@ -99,6 +99,7 @@ export function JournalPanel(state: GameState): string {
   const spells = state.player.spellbook.knownSpellIds.map((id) => spellDefs[id]).filter(Boolean);
   const rumors = state.world.activeEvents.filter((event) => event.discovered || state.world.discoveredRumorIds.includes(event.id));
   const pinnedRumor = rumors.find((event) => event.id === state.ui.pinnedRumorId);
+  const pinnedWorkOrder = state.world.economy.workOrders.find((order) => order.id === state.ui.pinnedWorkOrderId && order.status === 'open');
   const hasMapFragments = getItemCount(state.player.inventory, 'map_fragment') > 0;
   const hasRoughMap = getItemCount(state.player.inventory, 'rough_treasure_map') > 0;
   const treasureClues = Object.entries(state.world.treasure.maps)
@@ -112,7 +113,7 @@ export function JournalPanel(state: GameState): string {
   ];
   const completedEvents = [
     ...completedTutorials.map((quest) => `${quest.title}: ${quest.description}`),
-    ...state.world.activeEvents.filter((event) => event.endsAt <= state.clock).map((event) => `${event.title}: ${event.rumor}`)
+    ...(state.world.resolvedEventLog ?? [])
   ];
   const goals = [
     'Build a workshop: carry 12 wood and 12 stone to the river plot.',
@@ -138,9 +139,20 @@ export function JournalPanel(state: GameState): string {
             ? `<article><b>Pinned Rumor</b><span>${attr(pinnedRumor.title)} · ${attr(pinnedRumor.rumor)}</span>${pinnedRumor.position ? waypointButton(pinnedRumor.area, pinnedRumor.position, pinnedRumor.title, 'rumor') : ''}</article>`
             : ''
         }
+        ${
+          pinnedWorkOrder
+            ? `<article><b>Pinned Work Order</b><span>${attr(pinnedWorkOrder.title ?? pinnedWorkOrder.requester)} · ${attr(
+                (pinnedWorkOrder.requiredItems ?? [{ itemId: pinnedWorkOrder.itemId, quantity: pinnedWorkOrder.quantity }])
+                  .map((requirement) => `${itemDefs[requirement.itemId]?.name ?? requirement.itemId} ${getItemCount(state.player.inventory, requirement.itemId)}/${requirement.quantity}`)
+                  .join(' · ')
+              )} · Reward ${pinnedWorkOrder.rewardGold}g</span></article>`
+            : ''
+        }
         <article>
           <b>Next: ${attr(firstHour.nextStep?.label ?? 'First-hour route complete')}</b>
           <span>Progress ${firstHour.progress.done}/${firstHour.progress.total} · Skills touched ${firstHour.skills.touchedCount}/${firstHour.skills.target}</span>
+          ${firstHour.objective ? waypointButton(firstHour.objective.areaId, firstHour.objective.position, firstHour.objective.label, firstHour.objective.source) : ''}
+          ${firstHour.hint.unlocked ? `<small>${attr(firstHour.hint.text)}</small>` : ''}
         </article>
         <article>
           <b>Systems touched</b>

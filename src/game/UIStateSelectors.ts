@@ -86,16 +86,27 @@ export function getSpellCastability(state: GameState, spellId: string): SpellCas
   const missingReagents = spell.reagents.filter((req) => getItemCount(state.player.inventory, req.itemId) < req.quantity).map((req) => req.itemId);
   const manaReady = state.player.mana >= spell.manaCost;
   const skillReady = magery >= spell.minSkill;
-  const reason = !known ? 'Not learned' : !manaReady ? 'Not enough mana' : !skillReady ? 'Magery too low' : missingReagents.length ? 'Missing reagents' : '';
+  const worldReason = spellWorldCastabilityReason(state, spell.effectType);
+  const reason = !known ? 'Not learned' : !manaReady ? 'Not enough mana' : !skillReady ? 'Magery too low' : missingReagents.length ? 'Missing reagents' : worldReason;
   return {
     spellId: spell.id,
     known,
-    canCast: known && manaReady && skillReady && missingReagents.length === 0,
+    canCast: known && manaReady && skillReady && missingReagents.length === 0 && !worldReason,
     reason,
     missingReagents,
     manaReady,
     skillReady
   };
+}
+
+function spellWorldCastabilityReason(state: GameState, effectType: string): string {
+  if (effectType === 'recall' && !state.world.recallMark) return 'No safe rune marked';
+  if (effectType === 'mark_rune' && !isSafeRecallArea(state.player.currentArea)) return 'Safe zone only';
+  return '';
+}
+
+function isSafeRecallArea(areaId: GameState['player']['currentArea']): boolean {
+  return areaId === 'town' || areaId === 'bank' || areaId === 'blacksmith' || areaId === 'housing';
 }
 
 export function getTooltipContent(state: GameState, anchorId: string): string | null {

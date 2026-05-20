@@ -210,6 +210,9 @@ function dirtySignatures(state: GameState): Record<keyof LoopDirtyFlags, string>
   const equipment = Object.entries(state.player.equipment)
     .map(([slot, stack]) => `${slot}:${stack?.itemId ?? '-'}:${stack?.durability ?? ''}`)
     .join('|');
+  const worldEvents = state.world.activeEvents.map((event) => `${event.id}:${event.type}:${event.discovered}:${event.endsAt}:${event.spawnedEntityIds.join(',')}`).join('|');
+  const demandSignals = state.world.economy.demandSignals.map((signal) => `${signal.id}:${signal.eventType}:${signal.endsAt}`).join('|');
+  const workOrders = state.world.economy.workOrders.map((order) => `${order.id}:${order.status}:${order.delivered}:${order.expiresAt}`).join('|');
   const skillSignature = Object.entries(state.player.skills)
     .map(([id, skill]) => `${id}:${skill.value.toFixed(1)}:${skill.mode}:${skill.lastGainAt}`)
     .join('|');
@@ -225,11 +228,11 @@ function dirtySignatures(state: GameState): Record<keyof LoopDirtyFlags, string>
     inventoryDirty: `${inventory}:${state.ui.selectedInventorySlot ?? '-'}:${state.ui.selectedBankSlot ?? '-'}`,
     equipmentDirty: equipment,
     hotbarDirty: `${state.ui.activeHotbarSlot}:${state.ui.hotbar.map((binding) => (binding ? `${binding.kind}:${binding.id}` : '-')).join('|')}`,
-    skillsDirty: `${state.ui.panels.skills}:${state.ui.skillView}:${state.ui.skillsViewMode}:${state.player.selectedSkillGroup}:${state.ui.skillSearch}:${state.ui.skillProfessionFilter}:${state.ui.professionFilter}:${state.ui.professionAtlasZoom}:${state.ui.professionAtlasSearch}:${state.ui.selectedProfessionNodeId}:${state.ui.pinnedProfessionGoalId}:${skillSignature}`,
+    skillsDirty: `${state.ui.panels.skills}:${state.ui.skillView}:${state.ui.skillsViewMode}:${state.player.selectedSkillGroup}:${state.ui.skillSearch}:${state.ui.skillProfessionFilter}:${state.ui.professionFilter}:${state.ui.professionAtlasZoom}:${state.ui.professionAtlasSearch}:${state.ui.professionAtlasShowFuture}:${state.ui.selectedProfessionNodeId}:${state.ui.activeProfessionContractId}:${state.ui.pinnedProfessionGoalId}:${skillSignature}`,
     spellbookDirty: `${state.ui.panels.spellbook}:${state.ui.selectedSpellId}:${state.ui.spellbookSearch}:${state.ui.spellbookCircleFilter}:${state.ui.spellbookRoleFilter}:${state.ui.spellbookKnowledgeFilter}:${state.ui.spellbookViewMode}:${state.player.mana.toFixed(0)}:${state.combat.magicCooldown.toFixed(1)}`,
     chatDirty: `${state.ui.chatTab}:${state.ui.chatMode}:${state.ui.showChatTabs}:${state.ui.chatHiddenChannels.join(',')}:${state.ui.chatOpacity}:${state.ui.chatMessageRetention}:${state.chat.length}:${state.chat.at(-1)?.id ?? '-'}`,
-    journalDirty: `${state.ui.panels.journal}:${state.ui.journalTab}:${state.ui.pinnedRumorId}:${state.ui.pinnedProfessionGoalId}:${Object.values(state.quests).map((quest) => `${quest.id}:${quest.status}:${quest.objectives.map((objective) => objective.progress).join(',')}`).join('|')}`,
-    marketDirty: `${state.ui.panels.market}:${state.ui.marketCategory}:${state.ui.marketView}:${state.ui.marketSearch}:${state.world.economy.transactionLog.length}`,
+    journalDirty: `${state.ui.panels.journal}:${state.ui.journalTab}:${state.ui.pinnedRumorId}:${state.ui.activeProfessionContractId}:${state.ui.pinnedProfessionGoalId}:${worldEvents}:${state.world.discoveredRumorIds.join(',')}:${state.world.resolvedEventLog.join('|')}:${Object.values(state.quests).map((quest) => `${quest.id}:${quest.status}:${quest.objectives.map((objective) => objective.progress).join(',')}`).join('|')}`,
+    marketDirty: `${state.ui.panels.market}:${state.ui.marketCategory}:${state.ui.marketView}:${state.ui.marketSearch}:${demandSignals}:${workOrders}:${state.world.economy.transactionLog.length}`,
     minimapDirty: `${state.ui.minimapMode}:${state.ui.mapHiddenLayers.join(',')}:${tile}:${state.ui.mapWaypoint?.areaId ?? '-'}:${state.ui.mapWaypoint?.position.x ?? '-'}:${state.ui.mapWaypoint?.position.z ?? '-'}:${state.world.discoveredAreas.join('|')}:${state.world.activeEvents.map((event) => `${event.id}:${event.discovered}:${event.endsAt > state.clock}`).join('|')}`,
     tooltipDirty: `${state.ui.tooltipMode}:${state.ui.tooltipDelayMs}:${targetKey(state.ui.hoverTarget)}:${targetKey(state.ui.selectedTarget)}`,
     windowLayoutDirty: `${panels}:${JSON.stringify(state.ui.windowLayouts)}:${state.ui.uiScale}:${state.ui.fontScale}:${state.ui.hudDensity}`

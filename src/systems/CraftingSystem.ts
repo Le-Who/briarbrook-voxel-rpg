@@ -9,14 +9,14 @@ import { addFloatingText } from './LootSystem';
 import { recordQuestEvent, refreshQuestProgress } from './QuestSystem';
 import { attemptSkillUse, getSkillValue } from './SkillSystem';
 import { createExceptionalTrait } from './EconomySystem';
-import { hasHomeCraftStation } from './HousingSystem';
+import { hasHomeCraftStation, homeCraftDurationMultiplier } from './HousingSystem';
 import { recordItemConsumed, recordResourceOutflow } from './TelemetrySystem';
 import { pushVisualEffect } from './VfxSystem';
 
 export function startCraft(state: GameState, recipeId: string, quantity: number): void {
   const recipe = recipes.find((candidate) => candidate.id === recipeId);
   if (!recipe) return;
-  if (!hasHomeCraftStation(state, recipe.stationType)) {
+  if (!hasAccessibleCraftStation(state, recipe.stationType)) {
     const stationName = recipe.stationType === 'forge' ? 'small forge' : `${recipe.stationType} station`;
     state.ui.prompt = `Place a home ${stationName} before crafting ${recipe.name} on your plot.`;
     addSystemMessage(state, state.ui.prompt);
@@ -45,14 +45,15 @@ export function startCraft(state: GameState, recipeId: string, quantity: number)
     recordItemConsumed(state, cost.itemId, cost.quantity);
     recordResourceOutflow(state, cost.itemId, cost.quantity);
   });
+  const duration = recipe.duration * quantity * homeCraftDurationMultiplier(state, recipe.stationType);
   state.craftQueue.push({
     id: createId('craft'),
     recipeId,
     quantity,
-    remaining: recipe.duration * quantity,
-    total: recipe.duration * quantity
+    remaining: duration,
+    total: duration
   });
-  pushVisualEffect(state, { kind: 'craft_loop', tier: 1, position: state.player.position, color: '#f0c957', duration: Math.min(1.2, recipe.duration * quantity) });
+  pushVisualEffect(state, { kind: 'craft_loop', tier: 1, position: state.player.position, color: '#f0c957', duration: Math.min(1.2, duration) });
   emitAudioHook('craft_station', { id: recipe.stationType, area: state.player.currentArea, position: state.player.position });
   addSystemMessage(state, `Crafting started: ${recipe.name}.`);
 }
@@ -164,4 +165,9 @@ function supportSkills(recipe: Recipe): string[] | undefined {
   if (recipe.skill === 'Cooking') return ['Taste Identification'];
   if (recipe.skill === 'Tinkering') return ['Lockpicking', 'Remove Trap'];
   return undefined;
+}
+
+function hasAccessibleCraftStation(state: GameState, stationType: Recipe['stationType']): boolean {
+  if (hasHomeCraftStation(state, stationType)) return true;
+  return state.player.currentArea === 'blacksmith' && stationType === 'forge' && state.ui.selectedStationType === 'forge';
 }

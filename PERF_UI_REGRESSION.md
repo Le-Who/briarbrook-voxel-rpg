@@ -1,21 +1,27 @@
 # Performance and UI Regression Suite
 
-Purpose: keep the Phase 10 CPU, tooltip, inventory, chat, minimap, movement-mode, tree-resource, and Profession Atlas fixes from regressing.
+Purpose: keep CPU, tooltip, inventory, chat, minimap/map, movement-mode, tree-resource, save/load, and Profession Atlas fixes from regressing while the internal alpha gameplay and visual-reference passes expand.
 
-Last updated: 2026-05-19.
+Last updated: 2026-05-20.
 
-Current verification on 2026-05-19:
+Current verification on 2026-05-20:
 
-- `npm run test:perf-ui`: passed, 12 files / 59 tests.
+- `npm run lint`: passed (`tsc --noEmit`).
+- `npm test`: passed, 77 files / 357 tests.
+- `npm run test:perf-ui`: passed, 12 files / 69 tests.
+- `npm run content:validate`: passed, 0 errors / 18 known warnings.
 - `npm run build`: passed with the known large chunk warning.
-- Browser smoke: dev overlay exposed FPS, frame time, perf counters, tooltip counters, loop governor state, DOM count, and minimap update counters.
+- Browser smoke from prompt 117 covered R1-R9 HUD screenshot parity across desktop viewports and UI scales; dev overlay counters remain the source of truth for live render/DOM budget reads.
 
 ## Automated Gate
 
 Run before product-cut or release-candidate checks:
 
 ```bash
+npm run lint
+npm test
 npm run test:perf-ui
+npm run content:validate
 npm run build
 ```
 
@@ -31,6 +37,8 @@ npm run build
 | Movement modes and persistence | `src/game/movement-mode.test.ts`, `src/game/save-load.test.ts` |
 | Tree harvestability and protected trees | `src/systems/tree-harvestability.test.ts` |
 | Profession Atlas layout, node details, search, pinning | `src/ui/profession-ui.test.ts` |
+
+For visual-reference changes, also update `VISUAL_BUDGET.md` and the relevant reference QA document with current render stats.
 
 ## Browser Performance Cases
 
@@ -93,6 +101,6 @@ Severity rules:
 | Issue | Severity | Workaround |
 | --- | --- | --- |
 | Vite build warns that the main JS chunk is over 500 kB. | Low | Track for future code-splitting; not a functional regression. |
-| Browser console warns that `tool:torch` has a MagicaVoxel declaration without a source path. | Low | Existing content-validation warning; runtime uses fallback asset. |
+| Content validation reports 18 known warnings for event economy-impact labels and `tool:torch` source metadata. | Low | Existing content-validation warnings; runtime content remains valid with 0 errors and 0 dead references. |
 | Headless/first-load browser warns that AudioContext needs a user gesture. | Low | Expected browser autoplay policy; first user gesture resumes audio. |
 | Browser requests a missing favicon on first load. | Low | Cosmetic browser request; add favicon asset during release polish if desired. |

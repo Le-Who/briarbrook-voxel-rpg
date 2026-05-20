@@ -10,7 +10,7 @@ function attr(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
 }
 
-const roles: SpellbookRoleFilter[] = ['all', 'Damage', 'Healing', 'Utility', 'Control', 'Travel', 'Buff', 'Debuff'];
+const roles: SpellbookRoleFilter[] = ['all', 'Damage', 'Utility', 'Travel', 'Support', 'Control', 'Debuff'];
 const views: SpellbookViewMode[] = ['grid', 'list', 'circle'];
 const SPELLBOOK_WINDOW_ROWS = 96;
 
@@ -36,11 +36,10 @@ function targetLabel(targetType: string): string {
 
 function roleForSpell(spell: SpellDefinition): Exclude<SpellbookRoleFilter, 'all'> {
   if (spell.effectType === 'damage') return 'Damage';
-  if (spell.effectType === 'heal' || spell.effectType === 'cure') return 'Healing';
-  if (spell.effectType === 'wall' || spell.effectType === 'magic_trap' || spell.effectType === 'dispel_field') return 'Control';
   if (spell.effectType === 'recall' || spell.effectType === 'mark_rune') return 'Travel';
+  if (spell.effectType === 'heal' || spell.effectType === 'cure' || spell.effectType === 'protection' || spell.effectType === 'strength' || spell.effectType === 'night_sight' || spell.effectType === 'create_food' || spell.effectType === 'water_walk') return 'Support';
+  if (spell.effectType === 'wall' || spell.effectType === 'magic_trap' || spell.effectType === 'dispel_field') return 'Control';
   if (spell.effectType === 'debuff' || spell.effectType === 'poison') return 'Debuff';
-  if (spell.effectType === 'protection' || spell.effectType === 'strength' || spell.effectType === 'night_sight') return 'Buff';
   return 'Utility';
 }
 
@@ -72,7 +71,8 @@ export function SpellbookPanel(state: GameState): string {
   const knowledge = state.ui.spellbookKnowledgeFilter ?? 'known';
   const view = state.ui.spellbookViewMode ?? 'grid';
   const circle = state.ui.spellbookCircleFilter ?? 'all';
-  const role = state.ui.spellbookRoleFilter ?? 'all';
+  const rawRole = state.ui.spellbookRoleFilter ?? 'all';
+  const role = roles.includes(rawRole) ? rawRole : 'all';
   const search = (state.ui.spellbookSearch ?? '').trim().toLowerCase();
   const allSpells = Object.values(spellDefs);
   const visible = allSpells.filter((spell) => {

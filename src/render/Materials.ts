@@ -56,3 +56,71 @@ export const areaAmbient: Record<AreaId, { bg: string; fog: string; hemi: string
   road: { bg: '#171a16', fog: '#28271f', hemi: '#d4b27f', sun: '#f3a964', intensity: 1.24 },
   housing: { bg: '#17251e', fog: '#263b30', hemi: '#e1d5a3', sun: '#ffde9b', intensity: 1.7 }
 };
+
+export interface VisualLightingPreset {
+  id: string;
+  area: AreaId;
+  phase: 'dawn' | 'day' | 'dusk' | 'night';
+  mood: string;
+  ambientKey: AreaId;
+  dynamicLightBudget: number;
+}
+
+export const visualLightingPresets: Record<string, VisualLightingPreset> = {
+  'briarbrook-day': {
+    id: 'briarbrook-day',
+    area: 'town',
+    phase: 'day',
+    mood: 'Warm, clear town daylight with soft civic lamp accents.',
+    ambientKey: 'town',
+    dynamicLightBudget: 3
+  },
+  'road-day-dusk': {
+    id: 'road-day-dusk',
+    area: 'road',
+    phase: 'dusk',
+    mood: 'Readable road combat with slight danger and warm lantern contrast.',
+    ambientKey: 'road',
+    dynamicLightBudget: 3
+  },
+  'forest-day': {
+    id: 'forest-day',
+    area: 'forest',
+    phase: 'day',
+    mood: 'Green ambient forest light with dappled detail kept gameplay-readable.',
+    ambientKey: 'forest',
+    dynamicLightBudget: 2
+  },
+  'crypt-readable': {
+    id: 'crypt-readable',
+    area: 'crypt',
+    phase: 'day',
+    mood: 'Dark dungeon tone with bounded torch pools and strong silhouettes.',
+    ambientKey: 'crypt',
+    dynamicLightBudget: 3
+  },
+  'smithy-forge': {
+    id: 'smithy-forge',
+    area: 'blacksmith',
+    phase: 'day',
+    mood: 'Warm indoor workshop lighting led by a forge glow.',
+    ambientKey: 'blacksmith',
+    dynamicLightBudget: 3
+  },
+  'bank-warm': {
+    id: 'bank-warm',
+    area: 'bank',
+    phase: 'day',
+    mood: 'Warm safe bank interior with controlled lamp highlights.',
+    ambientKey: 'bank',
+    dynamicLightBudget: 3
+  },
+  'housing-build': {
+    id: 'housing-build',
+    area: 'housing',
+    phase: 'day',
+    mood: 'Clear outdoor plot light tuned for build ghost readability.',
+    ambientKey: 'housing',
+    dynamicLightBudget: 2
+  }
+};

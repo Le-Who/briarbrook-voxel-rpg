@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialGameState } from '../game/GameState';
-import { deriveFirstHourDirector, FIRST_HOUR_SKILL_TARGET } from './FirstHourDirector';
+import { deriveFirstHourDirector, FIRST_HOUR_SKILL_TARGET, FIRST_HOUR_STALL_HINT_SECONDS } from './FirstHourDirector';
 
 function completeObjective(state: ReturnType<typeof createInitialGameState>, questId: string, type: string, labelIncludes?: string): void {
   const objective = state.quests[questId]?.objectives.find((candidate) => candidate.type === type && (!labelIncludes || candidate.label.includes(labelIncludes)));
@@ -30,6 +30,71 @@ describe('first-hour director', () => {
     expect(director.systems.some((system) => system.id === 'tools' && system.done)).toBe(false);
   });
 
+  it('pins the current route objective and unlocks hints only after a stall', () => {
+    const state = createInitialGameState();
+
+    let director = deriveFirstHourDirector(state);
+
+    expect(director.objective).toMatchObject({
+      id: 'talk_mira',
+      areaId: 'town',
+      label: 'Talk to Mira at the fountain',
+      source: 'objective'
+    });
+    expect(director.hint.unlocked).toBe(false);
+    expect(director.hint.text).toBe('');
+
+    state.clock = FIRST_HOUR_STALL_HINT_SECONDS + 1;
+    state.dev.stability.lastMovementCommandAt = 0;
+    director = deriveFirstHourDirector(state);
+
+    expect(director.hint.unlocked).toBe(true);
+    expect(director.hint.stalledFor).toBeGreaterThanOrEqual(FIRST_HOUR_STALL_HINT_SECONDS);
+    expect(director.hint.text).toContain('Mira');
+
+    completeObjective(state, 'prepare_for_road', 'talk');
+    state.dev.stability.lastMovementCommandAt = state.clock;
+    state.clock += 5;
+    director = deriveFirstHourDirector(state);
+
+    expect(director.nextStep?.id).toBe('open_inventory');
+    expect(director.objective).toMatchObject({
+      id: 'open_inventory',
+      areaId: 'town',
+      source: 'objective'
+    });
+    expect(director.hint.unlocked).toBe(false);
+  });
+
+  it('keeps the first-hour skill suggestions broad enough for the required profession surface', () => {
+    const state = createInitialGameState();
+
+    const director = deriveFirstHourDirector(state);
+
+    for (const skillId of [
+      'Swordsmanship',
+      'Archery',
+      'Tactics',
+      'Parrying',
+      'Healing',
+      'Magery',
+      'Meditation',
+      'Evaluating Intelligence',
+      'Mining',
+      'Lumberjacking',
+      'Blacksmithing',
+      'Carpentry',
+      'Lockpicking',
+      'Detect Hidden',
+      'Remove Trap',
+      'Cartography',
+      'Tracking',
+      'Survival'
+    ]) {
+      expect(director.skills.missingSuggestions).toContain(skillId);
+    }
+  });
+
   it('recognizes a connected first-hour route across systems and skill events', () => {
     const state = createInitialGameState();
     state.clock = 35 * 60;
@@ -46,6 +111,8 @@ describe('first-hour director', () => {
     completeObjective(state, 'prepare_for_road', 'collect');
     completeObjective(state, 'prepare_for_road', 'bank');
     completeObjective(state, 'ore_for_brom', 'gather');
+    completeObjective(state, 'ore_for_brom', 'craft', 'Smelt');
+    completeObjective(state, 'ore_for_brom', 'craft', 'Craft or repair');
     completeObjective(state, 'mages_errand', 'cast', 'Magic Arrow');
     completeObjective(state, 'mages_errand', 'cast', 'Heal');
     completeObjective(state, 'patch_yourself_up', 'bandage');

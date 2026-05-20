@@ -1,5 +1,10 @@
 # Performance Audit
 
+Current status update: 2026-05-20
+Current validation: `npm run lint`, `npm test`, `npm run test:perf-ui`, `npm run content:validate`, and `npm run build` all pass on the post-foundation/internal-alpha branch. `content:validate` still reports 18 known warnings, and `npm run build` still reports the accepted Vite large-chunk warning for the main JavaScript bundle.
+
+This document keeps the original Phase 10 browser profiling table as the baseline that motivated loop-governor, dirty UI, minimap, tooltip, and DOM containment work. The current R1-R9 visual-reference budget captures and worst-observed render stats live in `VISUAL_BUDGET.md`.
+
 Date: 2026-05-19  
 Build mode: production build via `npm run build` and `npm run preview -- --host 127.0.0.1 --port 4173`  
 Viewport: 1280x720  
@@ -120,6 +125,19 @@ CPU estimate is main-thread measured work per second: `(simulation avg ms + rend
 - Idle town/forest/crypt: simulation may keep a low fixed rate, but static UI/minimap/labels should sleep. Rendering can continue only for visible world animation.
 - Pause/help: no full-rate simulation; world render should stop or drop to a very low cadence unless resume preview animation is intentionally active.
 - Background tab: pause or throttle nonessential work to 1 FPS or browser visibility-driven sleeps.
+
+## Current Guardrail Coverage
+
+- `npm run lint`: TypeScript static quality gate (`tsc --noEmit`).
+- `npm test`: full Vitest project suite.
+- `npm run test:perf-ui`: focused performance/UI regression suite for loop governor, render budgets, DOM containment, tooltips, minimap/map, movement modes, save/load, tree harvestability, and Profession Atlas.
+- `npm run content:validate`: registry/dead-reference validation for areas, items, spells, skills, professions, recipes, work orders, resources, enemies, loot tables, housing objects, map markers, events, quests, and visual prefabs.
+- `npm run build`: TypeScript compile plus production Vite build.
+
+Known accepted warnings:
+
+- Vite reports the main JavaScript chunk over 500 kB after minification.
+- Content validation reports 18 low-severity warnings for event economy-impact text labels and `tool:torch` source metadata.
 
 ## Optimization Plan
 

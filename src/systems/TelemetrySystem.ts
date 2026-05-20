@@ -62,6 +62,14 @@ export function recordResourceOutflow(state: GameState, itemId: string, amount: 
   data.resourceOutflow[itemId] = (data.resourceOutflow[itemId] ?? 0) + amount;
 }
 
+export function recordDurabilityLoss(state: GameState, itemId: string, amount: number): void {
+  const value = Math.max(0, Math.round(amount));
+  if (value <= 0) return;
+  const data = telemetry(state);
+  data.durabilityLossByItem ??= {};
+  data.durabilityLossByItem[itemId] = (data.durabilityLossByItem[itemId] ?? 0) + value;
+}
+
 export function recordItemSold(state: GameState, itemId: string, amount: number): void {
   if (amount <= 0) return;
   const data = telemetry(state);
@@ -93,6 +101,12 @@ export function recordWorkOrderCompleted(state: GameState): void {
   telemetry(state).workOrdersCompleted += 1;
 }
 
+export function recordWorkOrderCompletionTime(state: GameState, orderId: string): void {
+  const data = telemetry(state);
+  data.workOrderCompletionSeconds ??= {};
+  data.workOrderCompletionSeconds[orderId] = Math.max(0, Number((state.clock - data.startedAt).toFixed(1)));
+}
+
 export function recordMarketTransaction(state: GameState): void {
   telemetry(state).marketTransactions += 1;
 }
@@ -117,6 +131,21 @@ export function recordPotionConsumed(state: GameState, itemId: string): void {
 
 export function recordDeath(state: GameState): void {
   telemetry(state).deathCount += 1;
+}
+
+export function recordCombatEngagementStart(state: GameState, enemyId: string): void {
+  const data = telemetry(state);
+  data.combatEngagementStartedAt ??= {};
+  data.combatEngagementStartedAt[enemyId] ??= state.clock;
+}
+
+export function recordCombatTimeToKill(state: GameState, enemyId: string): void {
+  const data = telemetry(state);
+  data.combatEngagementStartedAt ??= {};
+  data.combatTimeToKillSeconds ??= {};
+  const startedAt = data.combatEngagementStartedAt[enemyId];
+  data.combatTimeToKillSeconds[enemyId] = Math.max(0, Number((state.clock - (startedAt ?? state.clock)).toFixed(1)));
+  delete data.combatEngagementStartedAt[enemyId];
 }
 
 export function recordStuckRecovery(state: GameState): void {

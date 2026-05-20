@@ -1,12 +1,14 @@
 import { areas } from '../data/areas';
 import { clampAudioVolume } from '../audio/AudioSettings';
 import { buildPieces, itemDefs } from '../data/items';
+import { professionContractById } from '../data/professions';
 import { recipes } from '../data/recipes';
 import { spellDefs } from '../data/spells';
 import { updateSocialNpcs } from '../systems/AISystem';
 import { refreshPlayerActionState, setPlayerActionState } from '../systems/ActionStateSystem';
 import { beginMoveLastBuilding, claimPlotAndRefreshBuild, placeBuilding, undoLastBuilding, updateBuildGhost } from '../systems/BuildingSystem';
 import { addChat, addSystemMessage, updateAmbientChat } from '../systems/ChatSystem';
+import { dismissCompanion, hireCompanion, setCompanionCommand, updateCompanions } from '../systems/CompanionSystem';
 import { applyPoisonToWeapon, attemptHide, startBandage, updateBandage, useBardSkill } from '../systems/CombatAbilitySystem';
 import { meleeAttack, rangedAttack, updateEnemyCombat, updateProjectiles, weaponCooldown } from '../systems/CombatSystem';
 import { attemptSnoopContainer, attemptStealFromContainer, begNearby, handleInnocentAttack, inspectCrimeScene, updateReputation } from '../systems/CrimeSystem';
@@ -28,7 +30,7 @@ import {
   devTeleportToScene
 } from '../systems/DevToolsSystem';
 import { addItem, equipItem, hasItems, moveStackBetween, offerTradeItem, removeItems, removeTradeOffer, splitStack, useItem } from '../systems/InventorySystem';
-import { updateLivingWorld } from '../systems/LivingWorldSystem';
+import { triggerWorldEvent, updateLivingWorld } from '../systems/LivingWorldSystem';
 import { buyMerchantItem, closeMerchant, sellMerchantItem, trainSkill } from '../systems/MerchantSystem';
 import { depositSelectedToHousingStorage, harvestHousingGarden, restAtHome, selectHousingStorage, upgradeHousingStorage, upgradeHousingTier, withdrawFromHousingStorage } from '../systems/HousingSystem';
 import { gatherResource, interactEntity, openTrade, updateGathering, updateResources } from '../systems/InteractionSystem';
@@ -49,6 +51,7 @@ import { clearSave, saveGame } from './SaveLoad';
 import type { GameState, MovementMode, TargetRef, Vec3 } from './types';
 import { sanitizeUiStateReferences } from './UIStateSelectors';
 import { setSkillMode } from '../systems/SkillSystem';
+import { applyScreenshotParityPreset, clearScreenshotParityPreset } from '../tools/screenshotParity';
 import { updateWindowFocusOrder } from '../ui/WindowManager';
 import { applyUiLayoutPresetSettings } from '../ui/UILayoutPresets';
 
@@ -294,6 +297,16 @@ export class Simulation {
         openTrade(this.state, action.partnerId);
         recordWindowOpened(this.state, 'trade');
         break;
+      case 'HIRE_COMPANION':
+        if (!fromBuffer && this.bufferEntityAction(action, action.entityId, 2.1, `Approaching ${this.state.entities[action.entityId]?.name ?? 'companion'}...`)) break;
+        hireCompanion(this.state, action.entityId);
+        break;
+      case 'SET_COMPANION_COMMAND':
+        setCompanionCommand(this.state, action.entityId, action.command);
+        break;
+      case 'DISMISS_COMPANION':
+        dismissCompanion(this.state, action.entityId);
+        break;
       case 'BUY_MERCHANT_ITEM':
         buyMerchantItem(this.state, action.slot);
         break;
@@ -523,6 +536,17 @@ export class Simulation {
           this.state.ui.prompt = 'Rumor unpinned.';
         }
         break;
+      case 'PIN_WORK_ORDER':
+        if (action.orderId && this.state.world.economy.workOrders.some((order) => order.id === action.orderId && order.status === 'open')) {
+          this.state.ui.pinnedWorkOrderId = this.state.ui.pinnedWorkOrderId === action.orderId ? null : action.orderId;
+          this.state.ui.journalTab = 'workOrders';
+          this.state.ui.panels.journal = true;
+          this.state.ui.prompt = this.state.ui.pinnedWorkOrderId ? 'Work order pinned to Journal.' : 'Work order unpinned.';
+        } else {
+          this.state.ui.pinnedWorkOrderId = null;
+          this.state.ui.prompt = 'Work order unpinned.';
+        }
+        break;
       case 'SET_SPELLBOOK_SEARCH':
         this.state.ui.spellbookSearch = action.search.slice(0, 48);
         this.state.ui.spellSearch = action.search.slice(0, 40);
@@ -595,8 +619,27 @@ export class Simulation {
       case 'SET_PROFESSION_ATLAS_SEARCH':
         this.state.ui.professionAtlasSearch = action.search;
         break;
+      case 'SET_PROFESSION_ATLAS_SHOW_FUTURE':
+        this.state.ui.professionAtlasShowFuture = action.show;
+        break;
       case 'SET_PROFESSION_ATLAS_NODE':
         this.state.ui.selectedProfessionNodeId = action.nodeId;
+        break;
+      case 'ACCEPT_PROFESSION_CONTRACT':
+        if (professionContractById(action.contractId)) {
+          this.state.ui.activeProfessionContractId = action.contractId;
+          this.state.ui.skillView = 'atlas';
+          this.state.ui.skillsViewMode = 'atlas';
+          this.state.ui.professionFilter = professionContractById(action.contractId)?.professionId ?? this.state.ui.professionFilter;
+          this.state.ui.prompt = 'Profession contract accepted. Skills remain classless.';
+        }
+        break;
+      case 'ABANDON_PROFESSION_CONTRACT':
+        if (this.state.ui.activeProfessionContractId === action.contractId) {
+          this.state.ui.activeProfessionContractId = null;
+          if (this.state.ui.pinnedProfessionGoalId === `contract:${action.contractId}`) this.state.ui.pinnedProfessionGoalId = null;
+          this.state.ui.prompt = 'Profession contract abandoned. No skills were locked.';
+        }
         break;
       case 'PIN_PROFESSION_GOAL':
         this.state.ui.pinnedProfessionGoalId = this.state.ui.pinnedProfessionGoalId === action.goalId ? null : action.goalId;
@@ -614,6 +657,12 @@ export class Simulation {
         break;
       case 'DEV_TELEPORT_SCENE':
         devTeleportToScene(this.state, this.areaManager, action.sceneId);
+        break;
+      case 'DEV_APPLY_SCREENSHOT_PARITY':
+        applyScreenshotParityPreset(this.state, this.areaManager, action.presetId);
+        break;
+      case 'DEV_CLEAR_SCREENSHOT_PARITY':
+        clearScreenshotParityPreset(this.state);
         break;
       case 'DEV_TELEPORT_AREA':
         devTeleportToArea(this.state, this.areaManager, action.areaId);
@@ -641,6 +690,9 @@ export class Simulation {
         break;
       case 'DEV_SIMULATE_TIME':
         devSimulateTime(this.state, action.phase);
+        break;
+      case 'DEV_TRIGGER_WORLD_EVENT':
+        triggerWorldEvent(this.state, action.eventType);
         break;
       case 'DEV_EXPORT_TELEMETRY':
         devExportTelemetry(this.state);
@@ -914,6 +966,7 @@ export class Simulation {
     updateEconomy(this.state);
     updateReputation(this.state);
     updateSocialNpcs(this.state, dt);
+    updateCompanions(this.state, this.areaManager, dt);
     updateAmbientChat(this.state, dt);
     this.regenerate(dt);
     this.updateTargetLock();
@@ -1170,7 +1223,7 @@ export class Simulation {
     } else if (command === 'steal') {
       this.applyAction({ type: 'USE_SKILL_ON_TARGET', skillId: 'Stealing', target });
     } else if (command === 'follow' && entity) {
-      this.bufferEntityAction({ type: 'INTERACT_ENTITY', entityId: entity.id }, entity.id, 2.1, `Following ${entity.name}...`);
+      this.bufferEntityAction({ type: 'HIRE_COMPANION', entityId: entity.id }, entity.id, 2.1, `Following ${entity.name}...`);
     } else if (command === 'mark') {
       this.state.ui.prompt = 'Marked on the local map.';
     } else if (command === 'inspect') {

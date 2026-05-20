@@ -8,16 +8,17 @@ import type { EnemyEntity, GameState, SpellEffectState, TargetRef, Vec3 } from '
 import { actionSucceeded, invalidAction } from './ActionFeedbackSystem';
 import { refreshPlayerActionState, setPlayerActionState } from './ActionStateSystem';
 import { addSystemMessage } from './ChatSystem';
-import { revealMagicalContainers, unlockContainerWithSpell } from './ContainerSystem';
+import { dispelContainerBarrier, revealMagicalContainers, unlockContainerWithSpell } from './ContainerSystem';
 import { calculateDerivedStats } from './EquipmentSystem';
 import { facePlayerTowardTarget } from './FacingSystem';
 import { addItem, hasItems, removeItems } from './InventorySystem';
 import { addFloatingText, pickupLoot, spawnLootFromEnemy } from './LootSystem';
 import { recordKill, recordQuestEvent } from './QuestSystem';
 import { attemptSkillUse, gainPlayerXp, getSkillValue } from './SkillSystem';
-import { recordDamageDealt } from './TelemetrySystem';
+import { recordCombatEngagementStart, recordCombatTimeToKill, recordDamageDealt, recordItemConsumed } from './TelemetrySystem';
 import { triggerTrapWithTelekinesis } from './TreasureSystem';
 import { queueSpellRoleEffect } from './VfxSystem';
+import { revealSubtleMarksNear } from './SecretSystem';
 
 export function castSpellIntent(state: GameState, spellId: string, target: TargetRef = null): void {
   const spell = spellDefs[spellId];
@@ -50,6 +51,11 @@ export function castSpellIntent(state: GameState, spellId: string, target: Targe
     invalidAction(state, text('error.missingReagents', { count: missingReagents.length, reagents: missing }), undefined, { position: state.player.position });
     return;
   }
+  const worldReason = spellWorldPreflightReason(state, spell);
+  if (worldReason) {
+    invalidAction(state, worldReason, undefined, { position: state.player.position });
+    return;
+  }
   const resolved = resolveSpellTarget(state, spell, target);
   if (resolved === 'needs-target') {
     state.ui.targeting = {
@@ -68,7 +74,10 @@ export function castSpellIntent(state: GameState, spellId: string, target: Targe
   }
   facePlayerTowardTarget(state, resolved, 'cast', spell.castTime + 0.25);
   state.player.mana = Math.max(0, state.player.mana - spell.manaCost);
-  spell.reagents.forEach((req) => removeItems(state.player.inventory, req.itemId, req.quantity));
+  spell.reagents.forEach((req) => {
+    removeItems(state.player.inventory, req.itemId, req.quantity);
+    recordItemConsumed(state, req.itemId, req.quantity);
+  });
   state.spellCasting = {
     id: createId('cast'),
     spellId,
@@ -158,8 +167,9 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
   }
   if (spell.effectType === 'night_sight') {
     addEffect(state, { type: 'night_sight', remaining: 60, amount: 1 });
+    const subtleMarks = revealSubtleMarksNear(state, state.player.position, 5);
     addFloatingText(state, 'Night Sight', state.player.position, '#ffe98d');
-    state.ui.prompt = 'Your sight brightens.';
+    state.ui.prompt = subtleMarks ? 'Your sight brightens and catches subtle marks.' : 'Your sight brightens.';
     return;
   }
   if (spell.effectType === 'detect_magic') {
@@ -217,6 +227,7 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
   }
   if ((spell.effectType === 'debuff' || spell.effectType === 'poison') && targetEntity?.kind === 'enemy') {
     const amount = spell.effectType === 'poison' ? spell.power : Math.max(1, spell.power + Math.floor(evalInt / 20));
+    recordCombatEngagementStart(state, targetEntity.id);
     targetEntity.health = Math.max(0, targetEntity.health - amount);
     recordDamageDealt(state, spell.effectType, amount);
     state.combat.hitFlashes[targetEntity.id] = state.clock + 0.25;
@@ -239,6 +250,11 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
     const entity = state.entities[target.entityId];
     if (entity?.kind === 'loot') pickupLoot(state, entity.id);
     state.ui.prompt = 'Telekinesis reaches out.';
+    return;
+  }
+  if (spell.effectType === 'magic_lock') {
+    if (magicLockTarget(state, target)) return;
+    state.ui.prompt = 'Magic Lock needs a simple unopened container or door.';
     return;
   }
   if (spell.effectType === 'unlock') {
@@ -281,18 +297,23 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
   }
   if (spell.effectType === 'recall') {
     const mark = state.world.recallMark;
-    state.player.currentArea = mark?.area ?? 'town';
-    state.player.position = mark ? { ...mark.position } : { ...areas.town.spawn };
+    if (!mark) {
+      state.ui.prompt = 'Mark a safe rune first.';
+      return;
+    }
+    state.player.currentArea = mark.area;
+    state.player.position = { ...mark.position };
     state.player.targetPosition = null;
     state.player.movement.path = [];
     state.player.movement.waypoint = null;
     state.player.movement.velocity = { x: 0, z: 0 };
     state.ui.targeting = null;
-    state.ui.prompt = 'You recall to Briarbrook.';
-    addSystemMessage(state, 'You recall to Briarbrook.');
+    state.ui.prompt = `You recall to ${areas[mark.area].name}.`;
+    addSystemMessage(state, `You recall to ${areas[mark.area].name}.`);
     return;
   }
   if (spell.effectType === 'dispel_field') {
+    if (target?.kind === 'entity' && dispelContainerBarrier(state, target)) return;
     const position = target?.kind === 'tile' ? target.position : state.player.position;
     const before = state.world.magicFields.length;
     state.world.magicFields = state.world.magicFields.filter((field) => field.area !== state.player.currentArea || distance(field.position, position) > 1.6);
@@ -312,6 +333,10 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
     return;
   }
   if (spell.effectType === 'mark_rune') {
+    if (!isSafeRecallArea(state.player.currentArea)) {
+      state.ui.prompt = 'Mark requires a safe town, service, or housing point.';
+      return;
+    }
     state.world.recallMark = { area: state.player.currentArea, position: { ...state.player.position }, markedAt: state.clock };
     state.world.magicFields.push({
       id: createId('field'),
@@ -328,7 +353,39 @@ function applySpellEffect(state: GameState, spell: SpellDefinition, target: Targ
   }
 }
 
+function spellWorldPreflightReason(state: GameState, spell: SpellDefinition): string {
+  if (spell.effectType === 'recall' && !state.world.recallMark) return 'Mark a safe rune first.';
+  if (spell.effectType === 'mark_rune' && !isSafeRecallArea(state.player.currentArea)) return 'Mark requires a safe town, service, or housing point.';
+  if ((spell.effectType === 'recall' || spell.effectType === 'mark_rune') && state.combat.lastDamagedAt > 0 && state.combat.lastDamagedAt > state.clock - 3) return 'Travel magic fails under immediate attack.';
+  return '';
+}
+
+function isSafeRecallArea(areaId: GameState['player']['currentArea']): boolean {
+  return areaId === 'town' || areaId === 'bank' || areaId === 'blacksmith' || areaId === 'housing';
+}
+
+function magicLockTarget(state: GameState, target: TargetRef): boolean {
+  const container = target?.kind === 'entity' ? state.entities[target.entityId] : null;
+  if (!container || container.kind !== 'container') return false;
+  if (container.opened) {
+    state.ui.prompt = `${container.name} is already open.`;
+    return true;
+  }
+  if (container.hidden || container.protected || container.requiredSpellId || container.trap || container.lockDifficulty > 35) {
+    state.ui.prompt = `${container.name} resists Magic Lock.`;
+    return true;
+  }
+  container.locked = true;
+  container.lockDifficulty = Math.max(18, Math.min(35, container.lockDifficulty || 18 + Math.floor(getSkillValue(state, 'Magery') / 10)));
+  addFloatingText(state, 'Magic Lock', container.position, '#dbe7ff');
+  addSystemMessage(state, `${container.name} is sealed with a weak magical lock.`);
+  state.ui.prompt = `${container.name} is magically locked.`;
+  emitAudioHook('spell_impact', { id: 'magic_lock', area: container.area, position: container.position });
+  return true;
+}
+
 function damageEnemy(state: GameState, enemy: EnemyEntity, amount: number, projectileKind: NonNullable<SpellDefinition['projectileKind']>, color: string): void {
+  recordCombatEngagementStart(state, enemy.id);
   enemy.health = Math.max(0, enemy.health - amount);
   recordDamageDealt(state, 'spell', amount);
   state.combat.hitFlashes[enemy.id] = state.clock + 0.25;
@@ -349,6 +406,7 @@ function damageEnemy(state: GameState, enemy: EnemyEntity, amount: number, proje
 
 function finishEnemyKill(state: GameState, enemy: EnemyEntity): void {
   if (enemy.state === 'dead') return;
+  recordCombatTimeToKill(state, enemy.id);
   enemy.state = 'dead';
   enemy.blocksMovement = false;
   enemy.health = 0;
@@ -389,6 +447,11 @@ function resolveSpellTarget(state: GameState, spell: SpellDefinition, target: Ta
     return null;
   }
   const position = target.kind === 'entity' ? state.entities[target.entityId]?.position : target.kind === 'tile' ? target.position : state.player.position;
+  const targetEntity = target.kind === 'entity' ? state.entities[target.entityId] : null;
+  if (spell.lineOfSight && targetEntity && 'hidden' in targetEntity && targetEntity.hidden) {
+    invalidAction(state, 'Line of sight blocked.', 'Reveal the target or move to a clear angle.', { position: targetEntity.position });
+    return null;
+  }
   if (position && distance(state.player.position, position) > spell.range) {
     invalidAction(state, 'You are too far away for that spell.', 'Move closer or choose a nearer target.', { position });
     return null;
@@ -433,7 +496,7 @@ function spellVisualRole(spell: SpellDefinition): string {
   if (spell.effectType === 'debuff' || spell.effectType === 'poison') return 'debuff';
   if (spell.effectType === 'reveal') return 'reveal';
   if (spell.effectType === 'recall' || spell.effectType === 'mark_rune') return 'recall';
-  if (spell.effectType === 'detect_magic' || spell.effectType === 'telekinesis' || spell.effectType === 'unlock' || spell.effectType === 'dispel_field' || spell.effectType === 'magic_trap' || spell.effectType === 'wall' || spell.effectType === 'water_walk' || spell.effectType === 'create_food') return 'utility';
+  if (spell.effectType === 'detect_magic' || spell.effectType === 'telekinesis' || spell.effectType === 'unlock' || spell.effectType === 'magic_lock' || spell.effectType === 'dispel_field' || spell.effectType === 'magic_trap' || spell.effectType === 'wall' || spell.effectType === 'water_walk' || spell.effectType === 'create_food') return 'utility';
   return 'damage';
 }
 

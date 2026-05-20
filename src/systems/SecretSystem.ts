@@ -39,6 +39,25 @@ export function revealSecretsNear(state: GameState, options: RevealSecretsOption
   return revealed;
 }
 
+export function revealSubtleMarksNear(state: GameState, origin: Vec3, radius = 5): number {
+  let revealed = 0;
+  for (const secret of Object.values(secretDefinitions)) {
+    if (secret.areaId !== state.player.currentArea) continue;
+    if (!secret.revealMethods.includes('reveal') && !secret.revealMethods.includes('detect_magic')) continue;
+    if (distance(origin, secret.location) > radius) continue;
+    const runtime = runtimeForSecret(state, secret.id);
+    if (runtime.opened) continue;
+    const previous = runtime.revealedUntil;
+    runtime.revealedUntil = Math.max(runtime.revealedUntil, state.clock + Math.min(45, secret.revealDuration));
+    if (runtime.revealedUntil !== previous) {
+      revealed += 1;
+      addFloatingText(state, 'Subtle Mark', secret.location, '#ffe98d');
+      addSystemMessage(state, `Night Sight catches a subtle mark in the ${secret.areaId}.`);
+    }
+  }
+  return revealed;
+}
+
 export function markSecretOpenedByContainer(state: GameState, containerId: string): void {
   for (const secret of Object.values(secretDefinitions)) {
     if (secret.revealedEntityId !== containerId) continue;

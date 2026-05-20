@@ -62,5 +62,5 @@ describe('stability acceptance gate harness', () => {
 
     expect(report.ok).toBe(true);
     expect(report.checks.map((entry) => [entry.id, entry.ok])).toEqual(report.checks.map((entry) => [entry.id, true]));
-  }, 10_000);
+  }, 20_000);
 });

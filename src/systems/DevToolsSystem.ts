@@ -20,6 +20,7 @@ export function devTeleportToScene(state: GameState, areaManager: AreaManager, s
   }
   teleportPlayer(state, areaManager, scene.area, scene.position);
   state.dev.selectedSceneId = scene.id;
+  state.dev.screenshotParity.active = false;
   if (scene.id === 'building_sandbox') {
     state.buildMode.active = true;
     state.ui.panels.build = true;
@@ -31,6 +32,7 @@ export function devTeleportToScene(state: GameState, areaManager: AreaManager, s
 export function devTeleportToArea(state: GameState, areaManager: AreaManager, areaId: AreaId): void {
   teleportPlayer(state, areaManager, areaId, areaManager.getSpawn(areaId));
   state.dev.selectedSceneId = 'world';
+  state.dev.screenshotParity.active = false;
   state.ui.prompt = `Dev teleport: ${areas[areaId].name}.`;
 }
 
@@ -165,7 +167,8 @@ export function devSimulateTime(state: GameState, phase: WorldPhase): void {
     minute: 0,
     phase,
     visibilityModifier: phase === 'night' ? 0.58 : phase === 'dusk' ? 0.74 : phase === 'dawn' ? 0.82 : 1,
-    stealthModifier: phase === 'night' ? 1.2 : phase === 'dusk' ? 1.1 : phase === 'dawn' ? 1.05 : 0.94
+    stealthModifier: phase === 'night' ? 1.2 : phase === 'dusk' ? 1.1 : phase === 'dawn' ? 1.05 : 0.94,
+    dangerModifier: phase === 'night' ? 1.1 : phase === 'dusk' ? 1.05 : 1
   };
   state.ui.prompt = `Time set to ${phase}.`;
 }

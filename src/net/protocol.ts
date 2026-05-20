@@ -47,6 +47,7 @@ export type SimulationEvent =
   | { id: string; type: 'PlayerLeft'; actorId: string; serverTick: number }
   | { id: string; type: 'EntitySnapshot'; entityId: string; position: Vec3; serverTick: number }
   | { id: string; type: 'ChatBroadcast'; actorId: string; text: string; serverTick: number }
+  | { id: string; type: 'EmoteBroadcast'; actorId: string; emoteId: string; serverTick: number }
   | { id: string; type: 'TradeOpened'; tradeId: string; actorIds: string[]; serverTick: number }
   | { id: string; type: 'TradeUpdated'; tradeId: string; actorId: string; serverTick: number }
   | { id: string; type: 'EntityMoved'; entityId: string; from: Vec3; to: Vec3; serverTick: number }
@@ -79,21 +80,18 @@ export function commandToAction(command: PlayerCommand): GameAction | null {
       return command.payload.entityId ? { type: 'INTERACT_ENTITY', entityId: command.payload.entityId } : null;
     case 'ChatMessage':
       return command.payload.text ? { type: 'SEND_CHAT', text: command.payload.text } : null;
-    case 'StartAttack':
-      return { type: 'ATTACK_ENTITY', entityId: command.payload.entityId };
-    case 'CastSpell':
-      return command.payload.spellId ? { type: 'CAST_SPELL', spellId: command.payload.spellId, entityId: command.payload.entityId } : null;
-    case 'UseItem':
-      return typeof command.payload.slot === 'number' ? { type: 'USE_ITEM', slot: command.payload.slot } : null;
-    case 'UseToolOnTile':
-      return command.payload.toolItemId && command.payload.target ? { type: 'USE_TOOL_ON_TARGET', toolItemId: command.payload.toolItemId, target: command.payload.target } : null;
-    case 'StartTrade':
-      return command.payload.partnerId ? { type: 'OPEN_TRADE', partnerId: command.payload.partnerId } : null;
-    case 'LockTrade':
-    case 'AcceptTrade':
-      return { type: 'LOCK_TRADE', side: 'player' };
     case 'CancelTrade':
       return { type: 'CANCEL_TRADE' };
+    case 'Emote':
+    case 'StartAttack':
+    case 'CastSpell':
+    case 'UseItem':
+    case 'UseToolOnTile':
+    case 'StartTrade':
+    case 'UpdateTradeOffer':
+    case 'LockTrade':
+    case 'AcceptTrade':
+      return null;
     default:
       return null;
   }

@@ -8,6 +8,7 @@ import { AreaManager } from '../world/AreaManager';
 import { createContentRegistry } from './ContentRegistry';
 import { validateContent } from './ContentValidation';
 import { createDevScenePresets } from './devScenes';
+import { applyScreenshotParityPreset, createScreenshotParityPresets } from './screenshotParity';
 
 describe('production content tools', () => {
   it('validates the shipped content registry', () => {
@@ -48,6 +49,76 @@ describe('production content tools', () => {
       'building_sandbox',
       'pathfinding_test'
     ]);
+  });
+
+  it('provides dev-only screenshot parity presets for the nine visual references', () => {
+    const presets = createScreenshotParityPresets();
+    expect(presets.map((preset) => preset.id)).toEqual([
+      'r1-town-square',
+      'r2-road-combat',
+      'r3-crypt-combat',
+      'r4-forest-gathering',
+      'r5-smithy-crafting',
+      'r6-bank-storage',
+      'r7-housing-build',
+      'r8-profession-atlas',
+      'r9-adventure-map'
+    ]);
+    presets.forEach((preset) => {
+      expect(preset.camera.zoom).toBeGreaterThanOrEqual(11);
+      expect(preset.camera.zoom).toBeLessThanOrEqual(24);
+      expect(preset.openPanels.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('applies screenshot parity without exposing normal-mode debug controls', () => {
+    const state = createInitialGameState();
+    const areaManager = new AreaManager();
+    state.dev.overlay = true;
+    state.ui.devTravel = true;
+
+    const applied = applyScreenshotParityPreset(state, areaManager, 'r5-smithy-crafting');
+
+    expect(applied).toBe(true);
+    expect(state.dev.overlay).toBe(false);
+    expect(state.ui.devTravel).toBe(false);
+    expect(state.dev.screenshotParity.active).toBe(true);
+    expect(state.dev.screenshotParity.presetId).toBe('r5-smithy-crafting');
+    expect(state.player.currentArea).toBe('blacksmith');
+    expect(state.world.time.phase).toBe('day');
+    expect(state.ui.panels.crafting).toBe(true);
+    expect(state.ui.panels.inventory).toBe(true);
+    expect(state.ui.selectedStationType).toBe('forge');
+  });
+
+  it('applies all reference presets with short HUD prompts instead of capture debug text', () => {
+    const expectedPrompts: Record<string, string> = {
+      'r1-town-square': '',
+      'r2-road-combat': 'Highway Bandit — Target',
+      'r3-crypt-combat': 'Skeletal Warrior — Target',
+      'r4-forest-gathering': 'Oak Tree — Chop',
+      'r5-smithy-crafting': 'Brom — Craft/Repair',
+      'r6-bank-storage': 'Banker — Open Bank',
+      'r7-housing-build': 'Plot — Build',
+      'r8-profession-atlas': '',
+      'r9-adventure-map': ''
+    };
+
+    for (const preset of createScreenshotParityPresets()) {
+      const state = createInitialGameState();
+      const areaManager = new AreaManager();
+      state.dev.overlay = true;
+      state.ui.devTravel = true;
+
+      expect(applyScreenshotParityPreset(state, areaManager, preset.id)).toBe(true);
+      expect(state.dev.overlay).toBe(false);
+      expect(state.ui.devTravel).toBe(false);
+      expect(state.dev.screenshotParity.active).toBe(true);
+      expect(state.dev.screenshotParity.referenceId).toBe(preset.referenceId);
+      expect(state.ui.chatMode).toBe('expanded');
+      expect(state.ui.prompt).toBe(expectedPrompts[preset.id]);
+      expect(state.ui.prompt).not.toContain('Screenshot parity');
+    }
   });
 
   it('roundtrips a player snapshot without volatile queues', () => {

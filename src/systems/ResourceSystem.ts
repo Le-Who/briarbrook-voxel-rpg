@@ -183,9 +183,12 @@ export function inspectTargetForTool(state: GameState, toolItemId: string, targe
   const config = toolConfig[toolItemId];
   if (!config || !target) return null;
   const tile = resolveResourceTile(state, target, config.kind);
-  if (!tile) return null;
+  if (!tile) {
+    if (toolItemId === 'axe' && target.kind === 'tile' && target.areaId === 'forest') return 'Too small/shrub';
+    return null;
+  }
   if (tile.protected) return 'Protected Tree';
-  if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) return tile.resourceKind === 'tree' ? 'Tree recovering' : `${tile.name} (depleted)`;
+  if (tile.depletedUntil > state.clock || tile.harvestsRemaining <= 0) return tile.resourceKind === 'tree' ? 'Depleted' : `${tile.name} (depleted)`;
   return tile.name;
 }
 

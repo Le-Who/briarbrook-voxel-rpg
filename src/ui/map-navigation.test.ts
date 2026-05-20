@@ -60,6 +60,55 @@ describe('map navigation and spatial UX', () => {
     expect(mapHtml).toContain(`event:${event.id}`);
   });
 
+  it('renders R9 as a discovery-gated regional Adventure Map with compact companion minimap', () => {
+    const state = createInitialGameState();
+    const event = triggerWorldEvent(state, 'merchant_caravan');
+    state.player.currentArea = 'forest';
+    state.player.position = { x: 0, y: 0, z: 4 };
+    state.world.discoveredAreas = ['town', 'bank', 'blacksmith', 'forest', 'road', 'crypt', 'housing'];
+    state.world.discoveredRumorIds.push(event.id);
+    state.ui.pinnedRumorId = event.id;
+    state.world.treasure.maps.greymont_cache.pinned = true;
+    state.ui.minimapMode = 'expanded';
+    state.ui.panels.map = true;
+
+    const hudHtml = Minimap(state);
+    const mapHtml = MapPanel(state);
+
+    expect(hudHtml).toContain('data-minimap-mode="expanded"');
+    expect(hudHtml).toContain('minimap-mode-compact');
+    expect(hudHtml).not.toContain('area-name');
+    expect(mapHtml).toContain('Adventure Map');
+    for (const label of ['Briarbrook', 'Old River Road', 'Greymont Forest', 'Mine Entrance', 'Forgotten Crypt', 'Briarbrook Bank', 'Brom&#039;s Smithy', 'Player Plot', 'Old River Bridge']) {
+      expect(mapHtml).toContain(label);
+    }
+    expect(mapHtml).toContain('data-map-marker="region:town"');
+    expect(mapHtml).toContain('data-map-marker="region:road"');
+    expect(mapHtml).toContain('data-map-marker="region:forest"');
+    expect(mapHtml).toContain('data-map-marker="region:crypt"');
+    expect(mapHtml).toContain('data-map-marker="region:housing"');
+    expect(mapHtml).toContain('data-map-waypoint-source="rumor"');
+    expect(mapHtml).toContain('data-map-waypoint-source="treasure"');
+    expect(mapHtml).toContain('route-hint');
+    expect(mapHtml).not.toContain('data-area=');
+  });
+
+  it('does not reveal undiscovered regional destinations on the expanded map by default', () => {
+    const state = createInitialGameState();
+    state.ui.minimapMode = 'expanded';
+    state.ui.panels.map = true;
+
+    const html = MapPanel(state);
+
+    expect(html).toContain('Briarbrook');
+    expect(html).toContain('Briarbrook Bank');
+    expect(html).toContain('Brom&#039;s Smithy');
+    expect(html).not.toContain('Old River Road');
+    expect(html).not.toContain('Forgotten Crypt');
+    expect(html).not.toContain('Player Plot');
+    expect(html).not.toContain('Greymont Forest treasure clue');
+  });
+
   it('applies expanded map layer filters without hiding the player marker by default', () => {
     const state = createInitialGameState();
     state.ui.minimapMode = 'expanded';

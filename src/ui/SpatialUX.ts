@@ -1,7 +1,8 @@
 import { areas } from '../data/areas';
-import { zoneForArea } from '../data/riskZones';
+import { zoneForState } from '../data/riskZones';
 import { treasureMapDefinitions } from '../data/treasure';
 import type { AreaId, Entity, GameState, MapLayerId, MapWaypointSource, Vec3 } from '../game/types';
+import { crimeFeedbackSummary } from '../systems/CrimeSystem';
 import { deriveFirstHourDirector } from '../systems/FirstHourDirector';
 import { getItemCount } from '../systems/InventorySystem';
 
@@ -32,6 +33,9 @@ export interface SpatialContext {
   currentAreaLabel: string;
   riskLabel: string;
   riskClass: string;
+  reputationLabel: string;
+  guardAttentionLabel: string;
+  criminalWarning: string | null;
   coordinateLabel: string;
   timeLabel: string;
 }
@@ -52,6 +56,7 @@ const staticLandmarks: SpatialMarker[] = [
   marker('landmark:fountain', 'terrain', 'town', { x: 0, y: 0, z: 0 }, 'Town Fountain', 'Mira starts the road-kit route here.', 'landmark fountain'),
   marker('landmark:bank-sign', 'services', 'town', { x: -8, y: 0, z: -2 }, 'Bank Sign', 'Safe storage entrance.', 'service bank'),
   marker('landmark:smith-smoke', 'services', 'town', { x: 6, y: 0, z: -3 }, 'Smithy Smoke', 'Forge and metal work entrance.', 'service smithy'),
+  marker('landmark:market-sign', 'services', 'town', { x: 7, y: 0, z: 5 }, 'Market Sign', 'Work orders and merchant wares.', 'service market'),
   marker('landmark:north-gate', 'entrances', 'town', { x: 0, y: 0, z: 14 }, 'North Gate Sign', 'Forest route.', 'portal'),
   marker('landmark:road-sign', 'entrances', 'town', { x: 13, y: 0, z: 4 }, 'Old Road Sign', 'Road and combat route.', 'portal'),
   marker('landmark:ferry-sign', 'entrances', 'town', { x: -15, y: 0, z: 13 }, 'Ferry Sign', 'Housing plot route.', 'portal'),
@@ -79,44 +84,9 @@ function isDangerEvent(type: string): boolean {
 }
 
 function objectiveMarker(state: GameState): SpatialMarker | null {
-  const next = deriveFirstHourDirector(state).nextStep;
-  if (!next) return null;
-  const current = state.player.currentArea;
-  const entityFor = (entityId: string, fallbackArea: AreaId, fallbackPosition: Vec3, label = next.label) => {
-    const entity = state.entities[entityId];
-    return marker(`objective:${next.id}`, 'objective', entity?.area ?? fallbackArea, entity?.position ?? fallbackPosition, label, next.detail, 'objective', true, 'objective');
-  };
-  switch (next.id) {
-    case 'talk_mira':
-      return entityFor('npc_mira_town', 'town', { x: -1, y: 0, z: 5 });
-    case 'bank_sell':
-      return current === 'bank'
-        ? entityFor('npc_eldon_bank', 'bank', { x: 0, y: 0, z: -2 }, 'Bank with Eldon')
-        : entityFor('portal_bank', 'town', { x: -8, y: 0, z: -2 }, 'Bank Door');
-    case 'mine_ore':
-    case 'forest_mine':
-      return current === 'forest'
-        ? marker(`objective:${next.id}`, 'objective', 'forest', { x: 7, y: 0, z: -6 }, 'Mine trail', next.detail, 'objective', true, 'objective')
-        : entityFor('portal_forest', 'town', { x: 0, y: 0, z: 14 }, 'Forest Road');
-    case 'road_enemy':
-      return current === 'road'
-        ? marker('objective:road_enemy', 'objective', 'road', { x: -2, y: 0, z: -2 }, 'Road danger', next.detail, 'objective danger', true, 'objective')
-        : entityFor('portal_road', 'town', { x: 13, y: 0, z: 4 }, 'Old River Road');
-    case 'crypt_entry':
-    case 'secret':
-      return current === 'crypt'
-        ? marker(`objective:${next.id}`, 'objective', 'crypt', { x: -12, y: 0, z: 6 }, 'Crypt clue', next.detail, 'objective danger', true, 'objective')
-        : current === 'forest'
-          ? entityFor('portal_crypt', 'forest', { x: 7, y: 0, z: -5 }, 'Mine to Crypt')
-          : entityFor('portal_forest', 'town', { x: 0, y: 0, z: 14 }, 'Forest Road');
-    case 'housing_plot':
-    case 'place_housing':
-      return current === 'housing'
-        ? marker(`objective:${next.id}`, 'objective', 'housing', { x: 0, y: 0, z: 0 }, 'Starter plot', next.detail, 'objective housing', true, 'objective')
-        : entityFor('portal_plot', 'town', { x: -15, y: 0, z: 13 }, 'Housing Plot Ferry');
-    default:
-      return null;
-  }
+  const objective = deriveFirstHourDirector(state).objective;
+  if (!objective) return null;
+  return marker(`objective:${objective.id}`, 'objective', objective.areaId, objective.position, objective.label, objective.detail, objective.className, true, objective.source);
 }
 
 function roadSignPrompt(areaId: AreaId): string {
@@ -155,7 +125,8 @@ function displayAreaName(state: GameState): string {
 export function deriveSpatialContext(state: GameState): SpatialContext {
   const areaId = state.player.currentArea;
   const area = areas[areaId];
-  const zone = zoneForArea(areaId);
+  const zone = zoneForState(state, areaId);
+  const crimeFeedback = crimeFeedbackSummary(state);
   const currentAreaKnown = knownArea(state, areaId);
   const localEntities = Object.values(state.entities).filter((entity) => entity.area === areaId);
   const objective = objectiveMarker(state);
@@ -230,6 +201,9 @@ export function deriveSpatialContext(state: GameState): SpatialContext {
     currentAreaLabel: displayAreaName(state),
     riskLabel: `${zone.riskLabel} · ${state.player.reputation.status}`,
     riskClass: `${zone.id} ${state.player.reputation.status}`,
+    reputationLabel: crimeFeedback.reputationLabel,
+    guardAttentionLabel: crimeFeedback.guardAttentionLabel,
+    criminalWarning: crimeFeedback.criminalWarning,
     coordinateLabel: `Map ${cx}:${cz}`,
     timeLabel: formatMapTime(state.world.time.hour, state.world.time.minute, state.world.time.phase)
   };

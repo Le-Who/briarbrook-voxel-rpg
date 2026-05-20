@@ -14,7 +14,8 @@ export type ProfessionId =
   | 'healer'
   | 'bard'
   | 'rogue'
-  | 'naturalist';
+  | 'naturalist'
+  | 'trader';
 
 export type ProfessionNodeType = 'skill' | 'action' | 'tool' | 'station' | 'spell' | 'recipe' | 'resource' | 'output' | 'service' | 'milestone' | 'goal' | 'future';
 export type ProfessionEdgeType = 'trains' | 'requires' | 'supports' | 'unlocks' | 'improves' | 'consumes' | 'produces';
@@ -115,7 +116,7 @@ export const professionClusters: ProfessionCluster[] = [
     title: 'Ranger',
     summary: 'Bow, tracking, lumber, arrows, forest movement, and field scouting.',
     color: '#7fae5a',
-    skills: ['Archery', 'Tactics', 'Lumberjacking', 'Bowcraft/Fletching', 'Tracking', 'Camping'],
+    skills: ['Archery', 'Tactics', 'Lumberjacking', 'Bowcraft/Fletching', 'Tracking', 'Survival', 'Camping'],
     suggestedGoal: 'Turn forest resources into safe ranged pressure.',
     nodes: [
       n('ranger_goal', 'goal', 'Greymont Scout', 'Harvest wood, craft ammunition, and read the forest route.', 50, 16),
@@ -124,6 +125,7 @@ export const professionClusters: ProfessionCluster[] = [
       n('skill_lumberjacking', 'skill', 'Lumberjacking', 'Harvests logs and supports axe work.', 48, 46, 'Lumberjacking'),
       n('recipe_arrows', 'recipe', 'Arrow Bundle', 'Turns boards into ammunition.', 72, 62, 'arrow_bundle'),
       n('skill_tracking', 'skill', 'Tracking', 'Reads trails and wilderness leads.', 82, 40, 'Tracking'),
+      n('skill_survival', 'skill', 'Survival', 'Keeps routes, camps, and hazards manageable.', 76, 54, 'Survival'),
       n('milestone_greymont_scout', 'milestone', 'Greymont Scout', 'Bring forest materials back to town.', 48, 84, 'greymont_scout')
     ],
     edges: [
@@ -131,6 +133,7 @@ export const professionClusters: ProfessionCluster[] = [
       e('skill_lumberjacking', 'recipe_arrows', 'produces', 'boards'),
       e('recipe_arrows', 'skill_archery', 'supports', 'ammo'),
       e('skill_tracking', 'ranger_goal', 'supports', 'route'),
+      e('skill_survival', 'ranger_goal', 'supports', 'field safety'),
       e('skill_lumberjacking', 'milestone_greymont_scout', 'unlocks', 'materials')
     ]
   },
@@ -202,19 +205,29 @@ export const professionClusters: ProfessionCluster[] = [
     suggestedGoal: 'Convert ore into bars and fulfill a metal order.',
     nodes: [
       n('artisan_goal', 'goal', 'Briarbrook Artisan', 'Make resources matter through orders and repairs.', 50, 14),
-      n('skill_mining', 'skill', 'Mining', 'Extracts ore and stone.', 20, 42, 'Mining'),
-      n('tool_pickaxe', 'tool', 'Pickaxe', 'Targets rock faces and mine terrain.', 8, 68, 'pickaxe'),
-      n('station_forge_artisan', 'station', 'Forge', 'Smelt, repair, and craft metal.', 48, 48, 'forge'),
-      n('recipe_smelt_iron', 'recipe', 'Smelt Iron', 'Turns iron ore into bars.', 72, 36, 'smelt_iron'),
-      n('skill_blacksmithing', 'skill', 'Blacksmithing', 'Metal craft and repair skill.', 78, 64, 'Blacksmithing'),
-      n('milestone_artisan', 'milestone', 'Artisan Mark', 'Fulfill orders with your own materials.', 50, 86, 'briarbrook_artisan')
+      n('action_mine_vein', 'action', 'Mine Vein', 'Use a pickaxe on ore-bearing stone.', 12, 54, 'mine-vein'),
+      n('skill_mining', 'skill', 'Mining', 'Extracts ore and stone.', 28, 42, 'Mining'),
+      n('tool_pickaxe', 'tool', 'Pickaxe', 'Targets rock faces and mine terrain.', 8, 72, 'pickaxe'),
+      n('resource_iron_ore', 'resource', 'Iron Ore', 'Raw metal from mines and rocky outcrops.', 46, 38, 'iron_ore'),
+      n('station_forge_artisan', 'station', 'Forge', 'Smelt, repair, and craft metal.', 54, 60, 'forge'),
+      n('recipe_smelt_iron', 'recipe', 'Smelt Iron', 'Turns iron ore into bars.', 68, 36, 'smelt_iron'),
+      n('output_iron_bars', 'output', 'Iron Bars', 'Refined metal used for tools, armor, and repairs.', 78, 52, 'iron_bar'),
+      n('skill_blacksmithing', 'skill', 'Blacksmithing', 'Metal craft and repair skill.', 86, 68, 'Blacksmithing'),
+      n('service_smith_contracts', 'service', 'Smith Contracts', 'Profession contracts turn repairs and orders into local demand.', 72, 84, 'smith_contracts'),
+      n('future_guild_contracts', 'future', 'Guild Contracts', 'Future larger-scale metal commissions and specialist orders.', 92, 24, 'guild_contracts'),
+      n('milestone_artisan', 'milestone', 'Artisan Mark', 'Fulfill orders with your own materials.', 50, 88, 'briarbrook_artisan')
     ],
     edges: [
-      e('tool_pickaxe', 'skill_mining', 'trains', 'trains'),
-      e('skill_mining', 'recipe_smelt_iron', 'produces', 'ore'),
+      e('tool_pickaxe', 'action_mine_vein', 'requires', 'uses'),
+      e('action_mine_vein', 'skill_mining', 'trains', 'trains'),
+      e('skill_mining', 'resource_iron_ore', 'produces', 'ore'),
+      e('resource_iron_ore', 'recipe_smelt_iron', 'consumes', 'smelts'),
       e('station_forge_artisan', 'recipe_smelt_iron', 'requires', 'station'),
-      e('recipe_smelt_iron', 'skill_blacksmithing', 'supports', 'materials'),
-      e('skill_blacksmithing', 'milestone_artisan', 'unlocks', 'orders')
+      e('recipe_smelt_iron', 'output_iron_bars', 'produces', 'bars'),
+      e('output_iron_bars', 'skill_blacksmithing', 'supports', 'materials'),
+      e('skill_blacksmithing', 'service_smith_contracts', 'unlocks', 'orders'),
+      e('skill_blacksmithing', 'future_guild_contracts', 'supports', 'future work'),
+      e('service_smith_contracts', 'milestone_artisan', 'unlocks', 'orders')
     ]
   },
   {
@@ -253,7 +266,7 @@ export const professionClusters: ProfessionCluster[] = [
       n('skill_anatomy_healer', 'skill', 'Anatomy', 'Improves bandage understanding.', 54, 36, 'Anatomy'),
       n('action_bandage', 'action', 'Bandage', 'Delayed healing with interruption risk.', 18, 72, 'bandage'),
       n('spell_heal_healer', 'spell', 'Heal', 'Mana/reagent recovery tool.', 74, 48, 'heal'),
-      n('recipe_health_potion', 'recipe', 'Health Potion', 'Alchemy route for recovery supplies.', 78, 74, 'health_potion'),
+      n('recipe_health_potion', 'recipe', 'Health Potion', 'Alchemy route for recovery supplies.', 78, 74, 'brew_heal_potion'),
       n('milestone_field_medic', 'milestone', 'Field Medic', 'Bandage reliably after taking damage.', 50, 88, 'field_medic')
     ],
     edges: [
@@ -329,6 +342,201 @@ export const professionClusters: ProfessionCluster[] = [
       e('skill_alchemy_naturalist', 'milestone_naturalist', 'unlocks', 'supplies'),
       e('skill_animal_lore', 'naturalist_goal', 'supports', 'future')
     ]
+  },
+  {
+    id: 'trader',
+    title: 'Trader',
+    summary: 'Work orders, appraisal, demand reading, bank access, and local service trust.',
+    color: '#d4b46f',
+    skills: ['Item Identification', 'Arms Lore', 'Begging', 'Cooking', 'Tailoring', 'Inscription'],
+    suggestedGoal: 'Read demand, appraise useful goods, and fulfill one local order.',
+    nodes: [
+      n('trader_goal', 'goal', 'Market Broker', 'Turn local demand into useful deliveries without becoming a class.', 50, 14),
+      n('service_market_board', 'service', 'Market Board', 'Work orders and demand signals.', 18, 40, 'market_board'),
+      n('skill_item_identification_trader', 'skill', 'Item Identification', 'Reveals value and risk on unusual goods.', 42, 38, 'Item Identification'),
+      n('skill_arms_lore_trader', 'skill', 'Arms Lore', 'Appraises gear condition and repair value.', 62, 52, 'Arms Lore'),
+      n('service_bank_access', 'service', 'Bank Access', 'Lets town orders pull from safe stored stock.', 76, 34, 'bank'),
+      n('output_vendor_contract', 'output', 'Vendor Contract', 'Treasure and trade output that feeds service work.', 32, 66, 'vendor_contract'),
+      n('milestone_trader_broker', 'milestone', 'Market Broker', 'Fulfill orders and read demand.', 60, 86, 'trader_broker')
+    ],
+    edges: [
+      e('service_market_board', 'trader_goal', 'supports', 'demand'),
+      e('skill_item_identification_trader', 'output_vendor_contract', 'supports', 'appraises'),
+      e('skill_arms_lore_trader', 'service_market_board', 'supports', 'gear value'),
+      e('service_bank_access', 'service_market_board', 'supports', 'stored stock'),
+      e('output_vendor_contract', 'milestone_trader_broker', 'unlocks', 'orders'),
+      e('service_market_board', 'milestone_trader_broker', 'unlocks', 'work order tier')
+    ]
+  }
+];
+
+export type ProfessionContractId = 'ranger' | 'smith' | 'treasure_hunter' | 'field_medic' | 'hedge_mage' | 'builder' | 'trader';
+export type ProfessionContractRewardType = 'reputation' | 'recipe_access' | 'milestone' | 'title_cosmetic' | 'work_order_tier' | 'station_efficiency' | 'ui_preview' | 'passive_bonus';
+
+export interface ProfessionContractObjective {
+  id: string;
+  label: string;
+  required: number;
+  skills: SkillId[];
+}
+
+export interface ProfessionContractReward {
+  type: ProfessionContractRewardType;
+  label: string;
+}
+
+export interface ProfessionContract {
+  id: ProfessionContractId;
+  title: string;
+  professionId: ProfessionId;
+  teaches: string;
+  skills: SkillId[];
+  objectives: ProfessionContractObjective[];
+  rewards: ProfessionContractReward[];
+  classless: true;
+}
+
+export interface ProfessionContractObjectiveProgress extends ProfessionContractObjective {
+  current: number;
+  done: boolean;
+}
+
+export interface ProfessionContractProgress {
+  contract: ProfessionContract;
+  active: boolean;
+  complete: boolean;
+  progress: number;
+  objectives: ProfessionContractObjectiveProgress[];
+  nextObjective: ProfessionContractObjectiveProgress | null;
+  rewardSummary: string;
+}
+
+export const professionContracts: ProfessionContract[] = [
+  {
+    id: 'ranger',
+    title: 'Ranger Contract',
+    professionId: 'ranger',
+    teaches: 'Scout roads, harvest field supplies, craft arrows, and turn wilderness risk into safer ranged travel.',
+    skills: ['Archery', 'Tracking', 'Survival', 'Lumberjacking', 'Bowcraft/Fletching'],
+    objectives: [
+      contractObjective('ranger_scout_roads', 'Scout Old River Road', 1, ['Tracking', 'Survival']),
+      contractObjective('ranger_hunt_animals', 'Hunt animals or recover leather', 2, ['Archery', 'Survival']),
+      contractObjective('ranger_craft_arrows', 'Craft or stock 50 arrows', 50, ['Bowcraft/Fletching', 'Lumberjacking'])
+    ],
+    rewards: [
+      { type: 'reputation', label: 'Briarbrook road reputation' },
+      { type: 'milestone', label: 'Greymont Scout milestone' },
+      { type: 'recipe_access', label: 'Arrow bundle route preview' }
+    ],
+    classless: true
+  },
+  {
+    id: 'smith',
+    title: 'Smith Contract',
+    professionId: 'smith_artisan',
+    teaches: 'Mine ore, repair gear, and craft practical tools for town orders without locking into a smith class.',
+    skills: ['Mining', 'Blacksmithing', 'Arms Lore', 'Item Identification', 'Tinkering'],
+    objectives: [
+      contractObjective('smith_mine_ore', 'Mine or carry 8 iron ore', 8, ['Mining']),
+      contractObjective('smith_repair_gear', 'Repair 1 damaged item', 1, ['Blacksmithing', 'Arms Lore']),
+      contractObjective('smith_craft_tools', 'Craft tools or spend iron bars', 1, ['Blacksmithing', 'Tinkering'])
+    ],
+    rewards: [
+      { type: 'ui_preview', label: 'Better repair cost preview' },
+      { type: 'milestone', label: 'Briarbrook Artisan milestone' },
+      { type: 'station_efficiency', label: 'station efficiency: small forge queue clarity boost' }
+    ],
+    classless: true
+  },
+  {
+    id: 'treasure_hunter',
+    title: 'Treasure Hunter Contract',
+    professionId: 'treasure_hunter',
+    teaches: 'Map, reveal, pick locks, and disarm traps so treasure risk is solved by play, not class choice.',
+    skills: ['Cartography', 'Detect Hidden', 'Lockpicking', 'Remove Trap', 'Item Identification'],
+    objectives: [
+      contractObjective('treasure_map_progress', 'Assemble or carry treasure clues', 1, ['Cartography']),
+      contractObjective('treasure_reveal_secret', 'Reveal a hidden cache or trap', 1, ['Detect Hidden', 'Item Identification']),
+      contractObjective('treasure_lock_or_trap', 'Pick a lock or disarm a trap', 1, ['Lockpicking', 'Remove Trap'])
+    ],
+    rewards: [
+      { type: 'ui_preview', label: 'Clearer treasure-map clue preview' },
+      { type: 'milestone', label: 'Treasure Hunter Initiate milestone' },
+      { type: 'title_cosmetic', label: 'Treasure Seeker title hook' }
+    ],
+    classless: true
+  },
+  {
+    id: 'field_medic',
+    title: 'Field Medic Contract',
+    professionId: 'healer',
+    teaches: 'Heal under pressure, keep bandages stocked, and prepare poison cures as a practical support lane.',
+    skills: ['Healing', 'Anatomy', 'Alchemy', 'Magery', 'Focus'],
+    objectives: [
+      contractObjective('medic_heal_combat', 'Apply 1 bandage in combat', 1, ['Healing', 'Anatomy']),
+      contractObjective('medic_craft_bandages', 'Craft or carry 12 bandages', 12, ['Healing', 'Tailoring']),
+      contractObjective('medic_cure_poison', 'Learn Cure or carry a cure potion', 1, ['Alchemy', 'Magery'])
+    ],
+    rewards: [
+      { type: 'ui_preview', label: 'Better bandage outcome preview' },
+      { type: 'milestone', label: 'Field Medic milestone' },
+      { type: 'recipe_access', label: 'Cure potion route reminder' }
+    ],
+    classless: true
+  },
+  {
+    id: 'hedge_mage',
+    title: 'Hedge Mage Contract',
+    professionId: 'hedge_mage',
+    teaches: 'Gather reagents, cast utility, and identify magical risk while remaining fully classless.',
+    skills: ['Magery', 'Meditation', 'Evaluating Intelligence', 'Item Identification', 'Inscription', 'Alchemy'],
+    objectives: [
+      contractObjective('mage_gather_reagents', 'Gather or carry 6 reagents', 6, ['Alchemy', 'Magery']),
+      contractObjective('mage_cast_utility', 'Cast utility magic or know Detect Magic', 1, ['Magery', 'Meditation']),
+      contractObjective('mage_identify_magic', 'Identify magical risk or raise Item Identification', 1, ['Item Identification', 'Evaluating Intelligence'])
+    ],
+    rewards: [
+      { type: 'ui_preview', label: 'Spell failure and reagent preview clarity' },
+      { type: 'milestone', label: 'Hedge Mage milestone' },
+      { type: 'work_order_tier', label: 'work order tier: novice mage supply requests' }
+    ],
+    classless: true
+  },
+  {
+    id: 'builder',
+    title: 'Builder Contract',
+    professionId: 'builder',
+    teaches: 'Gather materials, place functional housing objects, and turn the plot into a workshop path.',
+    skills: ['Lumberjacking', 'Carpentry', 'Mining', 'Tinkering', 'Tailoring'],
+    objectives: [
+      contractObjective('builder_gather_materials', 'Gather or carry 24 build materials', 24, ['Lumberjacking', 'Mining']),
+      contractObjective('builder_place_object', 'Place 1 housing object', 1, ['Carpentry']),
+      contractObjective('builder_functional_housing', 'Place 2 functional housing objects', 2, ['Carpentry', 'Tinkering'])
+    ],
+    rewards: [
+      { type: 'milestone', label: 'Plot Steward milestone' },
+      { type: 'recipe_access', label: 'Home workshop recipe reminders' },
+      { type: 'station_efficiency', label: 'station efficiency: small home crafting duration boost' }
+    ],
+    classless: true
+  },
+  {
+    id: 'trader',
+    title: 'Trader Contract',
+    professionId: 'trader',
+    teaches: 'Fulfill work orders, appraise goods, and manage local demand without adding an auction-house class.',
+    skills: ['Item Identification', 'Arms Lore', 'Begging', 'Cooking', 'Tailoring', 'Inscription'],
+    objectives: [
+      contractObjective('trader_fulfill_order', 'Fulfill 1 work order', 1, ['Cooking', 'Tailoring', 'Inscription']),
+      contractObjective('trader_appraise_goods', 'Appraise goods or identify item value', 1, ['Item Identification', 'Arms Lore']),
+      contractObjective('trader_manage_demand', 'Complete a market transaction or read demand', 1, ['Begging', 'Item Identification'])
+    ],
+    rewards: [
+      { type: 'work_order_tier', label: 'work order tier: better service-board sorting' },
+      { type: 'milestone', label: 'Market Broker milestone' },
+      { type: 'title_cosmetic', label: 'Broker title hook' }
+    ],
+    classless: true
   }
 ];
 
@@ -509,6 +717,21 @@ export const masteryMilestones: MasteryMilestone[] = [
     reward: 'Market/work-order rows call out required items more clearly.',
     visibleWhen: [{ type: 'areaDiscovered', areaId: 'town' }],
     unlockMessage: 'Market Helper: the town economy has a rhythm.'
+  },
+  {
+    id: 'trader_broker',
+    professionId: 'trader',
+    title: 'Market Broker',
+    description: 'Read demand and fulfill service work without becoming a trade class.',
+    requirements: [
+      { type: 'workOrdersCompleted', count: 1 },
+      { type: 'skill', skillId: 'Item Identification', value: 10 },
+      { type: 'areaDiscovered', areaId: 'bank' }
+    ],
+    rewardType: 'quality_of_life',
+    reward: 'Work-order tier previews and demand labels become clearer.',
+    visibleWhen: [{ type: 'areaDiscovered', areaId: 'town' }],
+    unlockMessage: 'Market Broker: you can read Briarbrook demand.'
   }
 ];
 
@@ -571,4 +794,95 @@ export function professionActivityScore(state: GameState, profession: Profession
   }
   score += masteryMilestonesForProfession(profession.id).filter((milestone) => milestoneProgress(state, milestone).complete).length * 4;
   return score;
+}
+
+export function professionContractById(id: string | null | undefined): ProfessionContract | undefined {
+  return professionContracts.find((contract) => contract.id === id);
+}
+
+export function deriveProfessionContractProgress(state: GameState, contractId: ProfessionContractId): ProfessionContractProgress {
+  const contract = professionContractById(contractId);
+  if (!contract) throw new Error(`Unknown profession contract: ${contractId}`);
+  const objectives = contract.objectives.map((objective) => {
+    const current = contractObjectiveCurrent(state, objective.id);
+    return {
+      ...objective,
+      current,
+      done: current >= objective.required
+    };
+  });
+  const done = objectives.filter((objective) => objective.done).length;
+  return {
+    contract,
+    active: state.ui.activeProfessionContractId === contract.id,
+    complete: done === objectives.length,
+    progress: done / objectives.length,
+    objectives,
+    nextObjective: objectives.find((objective) => !objective.done) ?? null,
+    rewardSummary: contract.rewards.map((reward) => `${reward.type.replaceAll('_', ' ')}: ${reward.label}`).join(' · ')
+  };
+}
+
+export function deriveProfessionContractProgresses(state: GameState): ProfessionContractProgress[] {
+  return professionContracts.map((contract) => deriveProfessionContractProgress(state, contract.id));
+}
+
+function contractObjective(id: string, label: string, required: number, skills: SkillId[]): ProfessionContractObjective {
+  return { id, label, required, skills };
+}
+
+function contractObjectiveCurrent(state: GameState, id: string): number {
+  switch (id) {
+    case 'ranger_scout_roads':
+      return state.world.discoveredAreas.includes('road') || state.player.currentArea === 'road' ? 1 : 0;
+    case 'ranger_hunt_animals':
+      return itemTotal(state, 'leather') + (state.dev.telemetry.skillEvents.Archery ?? 0);
+    case 'ranger_craft_arrows':
+      return itemTotal(state, 'arrow');
+    case 'smith_mine_ore':
+      return itemTotal(state, 'iron_ore') + (state.dev.telemetry.resourceYields.iron_ore ?? 0);
+    case 'smith_repair_gear':
+      return state.dev.telemetry.repairsCompleted ?? 0;
+    case 'smith_craft_tools':
+      return (state.dev.telemetry.resourceOutflow.iron_bar ?? 0) > 0 ? 1 : 0;
+    case 'treasure_map_progress':
+      return itemTotal(state, 'rough_treasure_map') + itemTotal(state, 'map_fragment') + Number(Object.values(state.world.treasure.maps).some((map) => map.fragmentCount > 0 || map.decipheredPrecision > 0 || map.found));
+    case 'treasure_reveal_secret':
+      return Object.values(state.world.treasure.secrets).some((secret) => secret.revealedUntil > state.clock || secret.opened || secret.disarmed || secret.triggered) ? 1 : 0;
+    case 'treasure_lock_or_trap':
+      return Math.max(state.dev.telemetry.skillEvents.Lockpicking ?? 0, state.dev.telemetry.skillEvents['Remove Trap'] ?? 0, Object.values(state.world.treasure.secrets).some((secret) => secret.opened || secret.disarmed) ? 1 : 0);
+    case 'medic_heal_combat':
+      return state.dev.telemetry.combatBandagesApplied ?? 0;
+    case 'medic_craft_bandages':
+      return itemTotal(state, 'bandage') + (state.dev.telemetry.resourceOutflow.clean_cloth ?? 0);
+    case 'medic_cure_poison':
+      return state.player.spellbook.knownSpellIds.includes('cure') || itemTotal(state, 'cure_potion') > 0 ? 1 : 0;
+    case 'mage_gather_reagents':
+      return itemTotal(state, 'ginseng') + itemTotal(state, 'garlic') + itemTotal(state, 'sulfurous_ash') + itemTotal(state, 'spider_silk');
+    case 'mage_cast_utility':
+      return state.player.spellbook.knownSpellIds.includes('detect_magic') || state.player.spellbook.knownSpellIds.includes('night_sight') || (state.dev.telemetry.skillEvents.Magery ?? 0) > 0 ? 1 : 0;
+    case 'mage_identify_magic':
+      return (state.dev.telemetry.skillEvents['Item Identification'] ?? 0) > 0 || (state.player.skills['Item Identification']?.realValue ?? 0) >= 10 ? 1 : 0;
+    case 'builder_gather_materials':
+      return itemTotal(state, 'wood') + itemTotal(state, 'stone_block') + (state.dev.telemetry.resourceYields.wood ?? 0) + (state.dev.telemetry.resourceYields.stone_block ?? 0);
+    case 'builder_place_object':
+      return state.world.placedBuildings.filter((building) => building.area === 'housing').length;
+    case 'builder_functional_housing':
+      return state.world.placedBuildings.filter((building) => building.area === 'housing' && Boolean(building.functionType)).length;
+    case 'trader_fulfill_order':
+      return state.dev.telemetry.workOrdersCompleted ?? 0;
+    case 'trader_appraise_goods':
+      return Math.max(state.dev.telemetry.skillEvents['Item Identification'] ?? 0, state.dev.telemetry.skillEvents['Arms Lore'] ?? 0, (state.player.skills['Item Identification']?.realValue ?? 0) >= 10 ? 1 : 0);
+    case 'trader_manage_demand':
+      return Math.max(state.dev.telemetry.marketTransactions ?? 0, state.world.economy.demandSignals.length ? 1 : 0);
+    default:
+      return 0;
+  }
+}
+
+function itemTotal(state: GameState, itemId: string): number {
+  const inventory = state.player.inventory.slots.reduce((total, slot) => total + (slot?.itemId === itemId ? slot.quantity : 0), 0);
+  const bank = state.player.bank.slots.reduce((total, slot) => total + (slot?.itemId === itemId ? slot.quantity : 0), 0);
+  const equipment = Object.values(state.player.equipment).reduce((total, slot) => total + (slot?.itemId === itemId ? slot.quantity : 0), 0);
+  return inventory + bank + equipment;
 }

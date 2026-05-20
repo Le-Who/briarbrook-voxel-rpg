@@ -4,6 +4,8 @@
 
 The project is ready for a small multiplayer preparation pass, but not for shared combat, open-world PvP, multiplayer housing permissions, or an MMO-style shard.
 
+**Decision: Colyseus spike** for the next multiplayer prototype.
+
 Recommended first prototype: **Shared Town Presence + Secure Trade**.
 
 Why this scope:
@@ -13,11 +15,45 @@ Why this scope:
 - It exercises item-instance safety, command validation, snapshots, events, and reconnect behavior.
 - It keeps single-player progression intact.
 
-Backend choice for the first 2-8 player test: **room server**.
+Backend choice for the first 2-4 player test: **Colyseus room server**, preceded by an in-process `TownRoomSyncSpike` contract test.
 
-- Use a room-authoritative server for movement, chat, and trade validation.
-- Keep backend-platform evaluation for accounts, friends, groups, and live ops after the prototype proves the realtime loop.
-- Avoid a custom bare WebSocket server until the authoritative command and trade rules are proven; it is easy to underbuild validation and reconnect behavior.
+- Use a room-authoritative server for movement, chat, and later trade validation.
+- Colyseus is the best fit for a browser/TypeScript room-first spike because rooms, matchmaking, and synchronized room state are its core shape.
+- **Nakama plan later** if accounts, persistent social graph, storage-backed parties, leaderboards, chat moderation, and broader live-service features become central.
+- **Custom WebSocket rejected** for now: the team would need to own matchmaking, reconnects, validation, snapshots, trade locking, operational tooling, and abuse handling too early.
+- No combat/resources in the first room spike. Gameplay-sensitive commands remain blocked until authority and anti-cheat rules are specified.
+
+Primary docs checked:
+
+- [Colyseus documentation](https://docs.colyseus.io/)
+- [Nakama documentation](https://heroiclabs.com/docs/nakama/)
+
+## MVP Option Scorecard
+
+Score: 1 = weak/high risk, 5 = strong/low risk.
+
+| Option | Scope | Cost | Browser/Three.js fit | Social value | Economy persistence | Authority/security | Scalability path | Decision |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| A | Solo-first ghost/social features | 5 | 5 | 2 | 4 | 4 | 3 | Keep as fallback; does not answer live presence. |
+| B | 2-4 player town room | 4 | 5 | 5 | 3 | 3 | 4 | Recommended first live prototype. |
+| C | 2-4 player dungeon instance | 2 | 4 | 4 | 2 | 2 | 3 | Later, after room authority and personal loot are proven. |
+| D | MMO-like shard | 1 | 2 | 5 | 1 | 1 | 2 | Not now. |
+
+## Backend Evaluation Scorecard
+
+Score: 1 = poor fit/high ownership, 5 = strong fit/low ownership for this project phase.
+
+| Backend | Implementation cost | Browser/Three.js fit | Social features | Economy persistence | Authority/security | Scalability | Developer familiarity | Total | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Colyseus | 4 | 5 | 3 | 2 | 4 | 4 | 4 | 26 | Choose for room sync spike. |
+| Nakama | 2 | 4 | 5 | 5 | 4 | 5 | 2 | 27 | Strong platform, but broader than the first spike needs. Revisit after live room proof. |
+| Custom WebSocket | 2 | 4 | 1 | 1 | 1 | 2 | 4 | 15 | Rejected unless the team explicitly wants to own all networking complexity. |
+
+Interpretation:
+
+- Colyseus wins for the next step because the needed unit is a room, not a full backend platform.
+- Nakama scores high overall but introduces account/storage/social-platform decisions before the project has proven live presence.
+- Custom WebSocket is technically possible but creates hidden product and security work: reconnect semantics, matchmaking, authoritative validation, trade locks, duping prevention, moderation hooks, and ops.
 
 ## Readiness Audit
 
@@ -43,7 +79,7 @@ Backend choice for the first 2-8 player test: **room server**.
 
 In scope:
 
-- 2-8 players in Briarbrook town.
+- 2-4 players in Briarbrook town for the first live spike.
 - Remote player avatars with nameplates.
 - Server-authoritative movement.
 - Client-side interpolation for remote players.
@@ -122,6 +158,12 @@ Server events for prototype:
 
 ## Implementation Plan
 
+0. **Non-gameplay contract spike**
+   - `TownRoomSyncSpike` exists as an in-process room contract.
+   - It supports two or more town players, movement, chat, and emotes.
+   - It rejects combat/resource/trade gameplay commands until authority rules are designed.
+   - No combat/resources in this spike.
+
 1. **Room state and remote players**
    - Add `RoomPlayerState` separate from single-player `PlayerState`.
    - Keep local save data separate from room presence data.
@@ -163,6 +205,20 @@ Server events for prototype:
 - Secure trade must stop using cloned local offer slots as the source of truth.
 - UI needs remote player nameplates, connection status, and trade invite surfaces.
 - Snapshot payloads should separate authoritative room state from local-only UI state.
+
+## Verification
+
+- `npm test -- src\game\multiplayer-ready.test.ts`: passed, 6 tests.
+- `npm test`: passed, 73 files / 337 tests.
+- `npm run test:perf-ui`: passed, 12 files / 69 tests.
+- `npm run build`: passed. Existing Vite large chunk warning remains.
+
+Verified behavior:
+
+- `AuthoritativeSimulation.submitCommand` still accepts only the local authoritative actor wrapper.
+- `TownRoomSyncSpike` supports room joins, two-player town movement, chat broadcast, and emote broadcast.
+- `TownRoomSyncSpike` rejects gameplay commands such as combat during the non-gameplay spike.
+- `commandToAction` maps movement/chat/cancel-trade only and returns `null` for combat/resource/trade-finalization commands until authority rules exist.
 
 ## Explicit Non-Goals
 

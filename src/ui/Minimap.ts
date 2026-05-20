@@ -48,11 +48,11 @@ export function Minimap(state: GameState): string {
   if (state.ui.minimapMode === 'hidden') return '';
   const area = areas[state.player.currentArea];
   const spatial = deriveSpatialContext(state);
-  const mode = state.ui.minimapMode === 'expanded' ? 'standard' : state.ui.minimapMode;
+  const mode = state.ui.minimapMode === 'expanded' ? 'compact' : state.ui.minimapMode;
   const combatPulse = state.player.activeTargetId || state.combat.meleeCooldown > 0 || state.combat.rangedCooldown > 0 || state.combat.magicCooldown > 0;
   const layers = renderMapLayers(state, mode === 'compact');
   if (mode === 'compact') {
-    return `<section class="minimap-wrap minimap-mode-compact ${combatPulse ? 'danger-pulse' : ''}" data-minimap-mode="compact">
+    return `<section class="minimap-wrap minimap-mode-compact ${combatPulse ? 'danger-pulse' : ''}" data-minimap-mode="${state.ui.minimapMode}">
       <div class="minimap" style="--map-tint:${area.minimapTint}">
         <b class="north">N</b>
         ${layers}
@@ -73,6 +73,8 @@ export function Minimap(state: GameState): string {
     <div class="area-name">${attr(spatial.currentAreaLabel)}</div>
     <div class="world-time">${attr(spatial.timeLabel)}</div>
     <div class="zone-status ${attr(spatial.riskClass)}">${attr(spatial.riskLabel)}</div>
+    <div class="guard-attention ${attr(spatial.riskClass)}">${attr(spatial.guardAttentionLabel)}</div>
+    ${spatial.criminalWarning ? `<div class="criminal-warning">${attr(spatial.criminalWarning)}</div>` : ''}
     ${spatial.localEvent ? `<div class="local-event">${attr(spatial.localEvent)}</div>` : ''}
     <div class="coords">${attr(spatial.coordinateLabel)}</div>
     ${spatial.breadcrumb ? `<div class="minimap-objective">${attr(spatial.breadcrumb)}</div>` : ''}

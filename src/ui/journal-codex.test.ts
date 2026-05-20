@@ -48,4 +48,16 @@ describe('journal codex knowledge layer', () => {
     expect(html).toContain('Pinned Rumor');
     expect(html).toContain('class="pinned"');
   });
+
+  it('keeps resolved world events visible after cleanup', () => {
+    const state = createInitialGameState();
+    state.ui.panels.journal = true;
+    state.world.resolvedEventLog.push('Bandit Ambush on Old River Road: player response resolved - Roadhands report a bandit ambush forming on Old River Road.');
+
+    const html = JournalPanel(state);
+
+    expect(html).toContain('Completed Events');
+    expect(html).toContain('Bandit Ambush on Old River Road');
+    expect(html).toContain('player response resolved');
+  });
 });

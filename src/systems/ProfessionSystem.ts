@@ -1,5 +1,5 @@
 import { skillDefinitionById, skillDefinitions, skillGroups, skillsForGroup, type SkillDefinition, type SkillGroup } from '../data/skillDefinitions';
-import { professionClusters as relationshipProfessionClusters } from '../data/professions';
+import { deriveProfessionContractProgress, professionContractById, professionClusters as relationshipProfessionClusters } from '../data/professions';
 import type { GameState, SkillGainMode, SkillId } from '../game/types';
 
 export type SkillsViewMode = 'ledger' | 'atlas' | 'milestones';
@@ -13,6 +13,7 @@ export type ProfessionLensId =
   | 'field_medic'
   | 'town_smith'
   | 'builder'
+  | 'trader'
   | 'bard'
   | 'rogue'
   | 'provisioner'
@@ -132,14 +133,15 @@ export const TRAINABLE_SKILLS = new Set<SkillId>([
   'Poisoning',
   'Lumberjacking',
   'Mining',
-  'Fishing'
+  'Fishing',
+  'Survival'
 ]);
 
 export const professionLenses: ProfessionLens[] = [
   {
     id: 'ranger',
     name: 'Ranger',
-    skills: ['Archery', 'Tracking', 'Camping', 'Lumberjacking', 'Animal Lore', 'Animal Taming'],
+    skills: ['Archery', 'Tracking', 'Survival', 'Camping', 'Lumberjacking', 'Animal Lore', 'Animal Taming'],
     starterGoals: ['Fletch arrows from boards.', 'Track road danger before engaging.', 'Keep one camp kit ready.'],
     loops: ['Archery -> Arrows -> Road Safety', 'Tracking -> Rumors -> Wilderness Routes']
   },
@@ -179,6 +181,13 @@ export const professionLenses: ProfessionLens[] = [
     loops: ['Lumberjacking -> Boards -> Carpentry', 'Stone -> Building Pieces -> Housing']
   },
   {
+    id: 'trader',
+    name: 'Trader',
+    skills: ['Item Identification', 'Arms Lore', 'Begging', 'Cooking', 'Tailoring', 'Inscription'],
+    starterGoals: ['Fulfill one work order.', 'Identify valuable goods.', 'Watch local demand before selling.'],
+    loops: ['Work Orders -> Demand -> Bank Stock', 'Identification -> Value -> Service Trust']
+  },
+  {
     id: 'bard',
     name: 'Bard',
     skills: ['Musicianship', 'Peacemaking', 'Provocation', 'Discordance', 'Begging'],
@@ -195,7 +204,7 @@ export const professionLenses: ProfessionLens[] = [
   {
     id: 'provisioner',
     name: 'Provisioner',
-    skills: ['Cooking', 'Fishing', 'Alchemy', 'Tailoring', 'Camping'],
+    skills: ['Cooking', 'Fishing', 'Alchemy', 'Tailoring', 'Camping', 'Survival'],
     starterGoals: ['Cook travel food.', 'Keep potions stocked.', 'Deliver healing supplies.'],
     loops: ['Fishing -> Cooking -> Food Orders', 'Cloth -> Bandages -> Field Supply']
   },
@@ -415,8 +424,22 @@ export function deriveMasteryMilestones(state: GameState): MasteryMilestone[] {
   ];
 }
 
-export function describeProfessionGoal(goalId: string | null | undefined): { label: string; detail: string } | null {
+export function describeProfessionGoal(goalId: string | null | undefined, state?: GameState): { label: string; detail: string } | null {
   if (!goalId) return null;
+  if (goalId.startsWith('contract:')) {
+    const id = goalId.slice('contract:'.length);
+    const contract = professionContractById(id);
+    if (!contract) return null;
+    if (state) {
+      const progress = deriveProfessionContractProgress(state, contract.id);
+      const next = progress.nextObjective;
+      return {
+        label: contract.title,
+        detail: next ? `${next.label} (${Math.min(next.current, next.required)}/${next.required})` : progress.rewardSummary
+      };
+    }
+    return { label: contract.title, detail: contract.objectives[0]?.label ?? contract.teaches };
+  }
   if (goalId.startsWith('profession:')) {
     const id = goalId.slice('profession:'.length);
     const lens = professionLenses.find((candidate) => candidate.id === id);

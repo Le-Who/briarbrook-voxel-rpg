@@ -16,8 +16,22 @@ export function TreasureMapPanel(state: GameState): string {
   const radius = Math.max(1.2, definition.searchRadius - precision * 2.2);
   const fragments = getItemCount(state.player.inventory, 'map_fragment');
   const hasMap = getItemCount(state.player.inventory, 'rough_treasure_map') > 0;
+  const knownMaps = Object.values(treasureMapDefinitions).filter((map) => {
+    const mapRuntime = state.world.treasure.maps[map.id];
+    return hasMap || fragments > 0 || mapRuntime?.fragmentCount > 0 || mapRuntime?.decipheredPrecision > 0 || mapRuntime?.found || mapRuntime?.pinned;
+  });
   return `<section class="panel treasure-map-panel">
     <header><span>Treasure Map</span><button data-action="toggle-panel" data-panel="treasureMap">x</button></header>
+    <div class="map-tier-tabs">
+      ${knownMaps
+        .map((map) => {
+          const mapRuntime = state.world.treasure.maps[map.id];
+          const active = map.id === definition.id ? 'active' : '';
+          const status = mapRuntime?.found ? 'Found' : mapRuntime?.pinned ? 'Pinned' : mapRuntime?.decipheredPrecision ? `${Math.round(mapRuntime.decipheredPrecision * 100)}%` : `T${map.tier}`;
+          return `<button class="${active}" data-treasure-map-id="${attr(map.id)}"><span>Tier ${map.tier}</span><b>${attr(areas[map.regionHint].name)}</b><small>${status}</small></button>`;
+        })
+        .join('')}
+    </div>
     <div class="parchment">
       <div class="map-sketch">
         <i class="sketch-road"></i>
@@ -27,6 +41,7 @@ export function TreasureMapPanel(state: GameState): string {
         <b>${areas[definition.regionHint].name}</b>
         <p>${definition.clueText}</p>
         <div><span>Fragments</span><strong>${fragments}/3</strong></div>
+        <div><span>Tier</span><strong>${definition.tier}</strong></div>
         <div><span>Cartography</span><strong>${precision ? `${Math.round(precision * 100)}% precision` : 'undeciphered'}</strong></div>
         <div><span>Search Radius</span><strong>${hasMap ? `${radius.toFixed(1)} tiles` : 'needs map'}</strong></div>
         <div><span>Tool</span><strong>${definition.requiredTool}</strong></div>

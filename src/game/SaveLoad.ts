@@ -10,6 +10,7 @@ import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
 import { sanitizeAudioSettings } from '../audio/AudioSettings';
 import { createInitialRenderStats } from '../render/RenderBudgets';
+import { normalizeCompanionState } from '../systems/CompanionSystem';
 import { ensureFacingState } from '../systems/FacingSystem';
 import { sanitizeInputBindings } from './InputActionMap';
 import { mergeLoopGovernorSnapshot } from './LoopGovernor';
@@ -107,6 +108,12 @@ export function loadGame(): GameState {
       aggressionCount: 0,
       murderCount: 0,
       finesOwed: 0,
+      merchantTrust: 10,
+      guardTrust: 10,
+      mageTrust: 8,
+      healerTrust: 8,
+      smithTrust: 8,
+      guardAttention: 0,
       warningAcknowledged: {},
       lastCrimeAt: -999
     };
@@ -118,6 +125,12 @@ export function loadGame(): GameState {
     parsed.player.reputation.aggressionCount ??= 0;
     parsed.player.reputation.murderCount ??= 0;
     parsed.player.reputation.finesOwed ??= 0;
+    parsed.player.reputation.merchantTrust ??= 10;
+    parsed.player.reputation.guardTrust ??= 10;
+    parsed.player.reputation.mageTrust ??= 8;
+    parsed.player.reputation.healerTrust ??= 8;
+    parsed.player.reputation.smithTrust ??= 8;
+    parsed.player.reputation.guardAttention ??= 0;
     parsed.player.reputation.warningAcknowledged ??= {};
     parsed.player.reputation.lastCrimeAt ??= -999;
     parsed.player.downed ??= { active: false, since: 0, respawnAt: 0 };
@@ -164,6 +177,8 @@ export function loadGame(): GameState {
     parsed.ui.skillView ??= 'ledger';
     parsed.ui.professionFilter ??= 'all';
     parsed.ui.professionAtlasZoom ??= 1;
+    parsed.ui.professionAtlasShowFuture ??= true;
+    parsed.ui.activeProfessionContractId ??= null;
     parsed.ui.pinnedProfessionGoalId ??= null;
     parsed.ui.pinnedRumorId ??= null;
     parsed.ui.mapWaypoint = sanitizeMapWaypoint(parsed.ui.mapWaypoint, parsed.clock ?? 0);
@@ -187,7 +202,9 @@ export function loadGame(): GameState {
     parsed.ui.skillProfessionFilter ??= 'all';
     parsed.ui.professionAtlasZoom ??= 1;
     parsed.ui.professionAtlasSearch ??= '';
+    parsed.ui.professionAtlasShowFuture ??= true;
     parsed.ui.selectedProfessionNodeId ??= null;
+    parsed.ui.activeProfessionContractId ??= null;
     parsed.ui.pinnedProfessionGoalId ??= null;
     parsed.ui.devTravel ??= false;
     parsed.ui.fadeUntil ??= 0;
@@ -355,6 +372,8 @@ export function loadGame(): GameState {
         }
       }
     });
+    parsed.world.partyMemberIds ??= [];
+    normalizeCompanionState(parsed);
     if ((parsed.player.inventory.capacity ?? 0) < 36) {
       parsed.player.inventory.capacity = 36;
       parsed.player.inventory.slots = Array.from({ length: 36 }, (_, index) => parsed.player.inventory.slots[index] ?? null);
@@ -388,6 +407,7 @@ export function loadGame(): GameState {
       }
     }
     parsed.world.resourceTiles = mergeResourceTilesWithDefaults(parsed.world.resourceTiles);
+    parsed.world.partyMemberIds ??= [];
     parsed.world.magicFields ??= [];
     parsed.world.recallMark ??= null;
     parsed.world.time ??= {
@@ -398,11 +418,14 @@ export function loadGame(): GameState {
       minute: 0,
       phase: 'night',
       visibilityModifier: 0.62,
-      stealthModifier: 1.18
+      stealthModifier: 1.18,
+      dangerModifier: 1.1
     };
     parsed.world.time.dayLengthSeconds ||= 96;
+    parsed.world.time.dangerModifier ??= parsed.world.time.phase === 'night' ? 1.1 : 1;
     parsed.world.activeEvents ??= [];
     parsed.world.discoveredRumorIds ??= [];
+    parsed.world.resolvedEventLog ??= [];
     parsed.world.resourcePressure ??= {};
     parsed.world.economy ??= createInitialEconomyState();
     parsed.world.housing = migrateHousingState(parsed);
@@ -417,11 +440,16 @@ export function loadGame(): GameState {
     parsed.world.economy.lastDailySeed ??= 0;
     parsed.world.economy.localDemand ??= createInitialEconomyState().localDemand;
     parsed.world.economy.priceTrends ??= {};
+    parsed.world.economy.demandSignals ??= [];
+    parsed.world.economy.unlockedRecipeIds ??= [];
+    parsed.world.economy.activeDiscounts ??= [];
+    parsed.ui.pinnedWorkOrderId ??= null;
     parsed.world.crimeEvents ??= [];
     const initialDev = createInitialDevState(parsed.clock ?? 0);
     parsed.dev ??= initialDev;
     parsed.dev.overlay = false;
     parsed.dev.selectedSceneId ??= initialDev.selectedSceneId;
+    parsed.dev.screenshotParity = { ...initialDev.screenshotParity };
     parsed.dev.contentValidation ??= initialDev.contentValidation;
     parsed.dev.contentValidation.ok ??= true;
     parsed.dev.contentValidation.errors ??= [];
@@ -442,12 +470,14 @@ export function loadGame(): GameState {
     parsed.dev.telemetry.skillGains ??= {};
     parsed.dev.telemetry.resourceYields ??= {};
     parsed.dev.telemetry.resourceOutflow ??= {};
+    parsed.dev.telemetry.durabilityLossByItem ??= {};
     parsed.dev.telemetry.itemsSold ??= {};
     parsed.dev.telemetry.itemsConsumed ??= {};
     parsed.dev.telemetry.bandagesApplied ??= 0;
     parsed.dev.telemetry.combatBandagesApplied ??= 0;
     parsed.dev.telemetry.repairsCompleted ??= 0;
     parsed.dev.telemetry.workOrdersCompleted ??= 0;
+    parsed.dev.telemetry.workOrderCompletionSeconds ??= {};
     parsed.dev.telemetry.marketTransactions ??= 0;
     parsed.dev.telemetry.goldEarned ??= 0;
     parsed.dev.telemetry.goldSpent ??= 0;
@@ -460,6 +490,8 @@ export function loadGame(): GameState {
     parsed.dev.telemetry.actionCancellations ??= {};
     parsed.dev.telemetry.questCompletionTime ??= {};
     parsed.dev.telemetry.priceTrends ??= {};
+    parsed.dev.telemetry.combatEngagementStartedAt ??= {};
+    parsed.dev.telemetry.combatTimeToKillSeconds ??= {};
     parsed.dev.telemetryExportJson = '';
     parsed.dev.renderStats = {
       ...initialDev.renderStats,
@@ -637,6 +669,7 @@ function sanitizeLoadedTransientState(state: GameState): void {
   state.realtime.renderAlpha = 1;
   const initialDev = createInitialDevState(state.clock ?? 0);
   state.dev.overlay = false;
+  state.dev.screenshotParity = { ...initialDev.screenshotParity };
   state.dev.telemetryExportJson = '';
   state.dev.renderStats = { ...initialDev.renderStats };
   state.dev.input = { ...initialDev.input };

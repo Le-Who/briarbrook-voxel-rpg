@@ -824,6 +824,17 @@ export const itemDefs: Record<string, ItemDef> = {
     value: 45,
     icon: { shape: 'scroll', primary: '#d7bf8d', secondary: '#5ba0b8' }
   },
+  treasure_map_display_kit: {
+    id: 'treasure_map_display_kit',
+    name: 'Treasure Display Kit',
+    type: 'building',
+    stackable: true,
+    maxStack: 10,
+    weight: 0.35,
+    value: 38,
+    buildPieceId: 'treasure_map_display',
+    icon: { shape: 'scroll', primary: '#d7bf8d', secondary: '#f0c957' }
+  },
   crypt_lore_clue: {
     id: 'crypt_lore_clue',
     name: 'Crypt Lore Clue',
@@ -1114,7 +1125,7 @@ export const buildPieces: BuildPieceDef[] = [
   {
     id: 'torch',
     name: 'Wall Torch',
-    category: 'Decor',
+    category: 'Utility',
     description: 'Warm light for a wall or yard.',
     cost: [{ itemId: 'torch', quantity: 1 }],
     size: { x: 1, z: 1 },
@@ -1210,6 +1221,19 @@ export const buildPieces: BuildPieceDef[] = [
     icon: { shape: 'blade', primary: '#a7aaa7', secondary: '#6b3b1d' }
   },
   {
+    id: 'tool_rack_home',
+    name: 'Tool Rack',
+    category: 'Storage',
+    description: 'Six sorted slots for tools so gathering prep has a visible home.',
+    cost: [
+      { itemId: 'wood', quantity: 4 },
+      { itemId: 'iron_bar', quantity: 1 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: true,
+    icon: { shape: 'pickaxe', primary: '#a7aaa7', secondary: '#8f5f2a' }
+  },
+  {
     id: 'armor_stand',
     name: 'Armor Stand',
     category: 'Storage',
@@ -1287,6 +1311,21 @@ export const buildPieces: BuildPieceDef[] = [
     size: { x: 1, z: 1 },
     blocksMovement: true,
     icon: { shape: 'scroll', primary: '#d9bd89', secondary: '#4a281d' }
+  },
+  {
+    id: 'advanced_workshop_home',
+    name: 'Advanced Workshop',
+    category: 'Crafting',
+    description: 'Homestead-tier station cluster for routine metal, wood, fletching, and tinkering prep.',
+    cost: [
+      { itemId: 'boards', quantity: 12 },
+      { itemId: 'iron_bar', quantity: 8 },
+      { itemId: 'gear', quantity: 4 },
+      { itemId: 'glimmer_gem', quantity: 1 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: true,
+    icon: { shape: 'axe', primary: '#d9bd89', secondary: '#6e7271' }
   },
   {
     id: 'cooking_hearth_home',
@@ -1393,6 +1432,19 @@ export const buildPieces: BuildPieceDef[] = [
     icon: { shape: 'torch', primary: '#ffbd55', secondary: '#4a281d' }
   },
   {
+    id: 'lantern_chandelier_home',
+    name: 'Lantern Chandelier',
+    category: 'Utility',
+    description: 'Cottage lighting upgrade for a readable workshop interior.',
+    cost: [
+      { itemId: 'iron_bar', quantity: 2 },
+      { itemId: 'torch', quantity: 2 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: false,
+    icon: { shape: 'torch', primary: '#ffd17a', secondary: '#6e7271' }
+  },
+  {
     id: 'herb_planter_home',
     name: 'Herb Planter',
     category: 'Garden',
@@ -1417,6 +1469,20 @@ export const buildPieces: BuildPieceDef[] = [
     size: { x: 1, z: 1 },
     blocksMovement: true,
     icon: { shape: 'food', primary: '#d9822f', secondary: '#67c56b' }
+  },
+  {
+    id: 'homestead_herb_planter',
+    name: 'Homestead Herb Planter',
+    category: 'Garden',
+    description: 'Slow rare-herb planter for long-term prep without replacing wilderness gathering.',
+    cost: [
+      { itemId: 'boards', quantity: 5 },
+      { itemId: 'nightshade', quantity: 3 },
+      { itemId: 'ginseng', quantity: 3 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: true,
+    icon: { shape: 'food', primary: '#734c9b', secondary: '#67c56b' }
   },
   {
     id: 'small_trophy_hook',
@@ -1476,6 +1542,20 @@ export const buildPieces: BuildPieceDef[] = [
     size: { x: 1, z: 1 },
     blocksMovement: false,
     icon: { shape: 'scroll', primary: '#d7bf8d', secondary: '#5ba0b8' }
+  },
+  {
+    id: 'trophy_wall_home',
+    name: 'Trophy Wall',
+    category: 'Trophies',
+    description: 'Homestead display wall for dungeon trophies, crafted work, and rare finds.',
+    cost: [
+      { itemId: 'boards', quantity: 6 },
+      { itemId: 'wall_tapestry', quantity: 1 },
+      { itemId: 'glimmer_gem', quantity: 1 }
+    ],
+    size: { x: 1, z: 1 },
+    blocksMovement: false,
+    icon: { shape: 'ring', primary: '#d9bd89', secondary: '#734c9b' }
   },
   {
     id: 'rug_home',

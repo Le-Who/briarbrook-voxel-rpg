@@ -266,6 +266,25 @@ export function defaultWindowRect(key: string, size: Pick<WindowRect, 'width' | 
   return clampWindowRect({ x: preferred.x, y: preferred.y, width, height }, viewport);
 }
 
+export function serviceStackWindowRects(viewport: ViewportSize): { bank: WindowRect; inventory: WindowRect } | null {
+  if (viewport.width >= SMALL_VIEWPORT_WIDTH) return null;
+  const margin = DEFAULT_MARGIN;
+  const gap = 8;
+  const width = Math.max(260, viewport.width - margin * 2);
+  const bottom = viewport.height - DEFAULT_SAFE_BOTTOM - margin;
+  const available = bottom - margin;
+  if (available < 360) return null;
+  const totalHeight = Math.min(520, available);
+  const top = Math.max(margin, bottom - totalHeight);
+  const usableHeight = bottom - top;
+  const bankHeight = Math.max(190, Math.min(260, Math.round(usableHeight * 0.44)));
+  const inventoryHeight = Math.max(160, usableHeight - bankHeight - gap);
+  return {
+    bank: { x: margin, y: top, width, height: bankHeight },
+    inventory: { x: margin, y: top + bankHeight + gap, width, height: inventoryHeight }
+  };
+}
+
 export function windowKeyForPanel(panel: HTMLElement): string | null {
   for (const [className, key] of panelKeyByClass) {
     if (panel.classList.contains(className)) return key;
@@ -407,8 +426,8 @@ export class WindowManager {
         y: rect.y,
         width: rect.width,
         height: rect.height,
-        minWidth: registration.minWidth,
-        minHeight: registration.minHeight,
+        minWidth: Math.min(registration.minWidth, rect.width),
+        minHeight: Math.min(registration.minHeight, rect.height),
         maxWidth: registration.maxWidth ?? viewport.width - DEFAULT_MARGIN * 2,
         maxHeight: registration.maxHeight ?? viewport.height - DEFAULT_SAFE_BOTTOM - DEFAULT_MARGIN * 2,
         zIndex: current?.zIndex ?? windowLayerFor(key, ++this.focusCounter),
@@ -437,6 +456,7 @@ export class WindowManager {
       this.applyPanelRect(panel, state);
       if (registration.canResize) this.resizeObserver?.observe(panel);
     });
+    this.applySmallViewportServiceStack(container, viewport);
     this.assertWindowHealth(container, viewport);
   }
 
@@ -585,8 +605,8 @@ export class WindowManager {
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
     panel.style.transform = 'none';
-    panel.style.minWidth = `${rect.minWidth}px`;
-    panel.style.minHeight = `${rect.minHeight}px`;
+    panel.style.minWidth = `${Math.min(rect.minWidth, rect.width)}px`;
+    panel.style.minHeight = `${Math.min(rect.minHeight, rect.height)}px`;
     panel.style.width = `${rect.width}px`;
     panel.style.height = `${rect.height}px`;
     panel.style.maxWidth = `${rect.canResize ? rect.maxWidth : rect.width}px`;
@@ -594,6 +614,31 @@ export class WindowManager {
     panel.style.zIndex = String(rect.zIndex);
     if (rect.canResize) panel.dataset.windowResize = 'true';
     else delete panel.dataset.windowResize;
+  }
+
+  private applySmallViewportServiceStack(container: HTMLElement, viewport: ViewportSize): void {
+    const rects = serviceStackWindowRects(viewport);
+    if (!rects) return;
+    const bankPanel = container.querySelector<HTMLElement>('.bank-panel.managed-window');
+    const inventoryPanel = container.querySelector<HTMLElement>('.inventory-panel.managed-window');
+    if (!bankPanel || !inventoryPanel) return;
+    this.applyManagedWindowRect('bank', bankPanel, rects.bank);
+    this.applyManagedWindowRect('inventory', inventoryPanel, rects.inventory);
+  }
+
+  private applyManagedWindowRect(key: string, panel: HTMLElement, rect: WindowRect): void {
+    const current = this.windows.get(key);
+    if (!current) return;
+    const next: ManagedWindowState = {
+      ...current,
+      ...rect,
+      minWidth: Math.min(current.minWidth, rect.width),
+      minHeight: Math.min(current.minHeight, rect.height),
+      maxWidth: Math.max(rect.width, current.maxWidth),
+      maxHeight: Math.max(rect.height, current.maxHeight)
+    };
+    this.windows.set(key, next);
+    this.applyPanelRect(panel, next);
   }
 
   private handleResizeEntries(entries: ResizeObserverEntry[]): void {

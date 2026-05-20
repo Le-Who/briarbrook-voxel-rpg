@@ -1,4 +1,4 @@
-import type { AreaId, ZoneRuleDefinition, ZoneType } from '../game/types';
+import type { AreaId, GameState, WorldEventType, ZoneRuleDefinition, ZoneType } from '../game/types';
 
 export const zoneRules: Record<ZoneType, ZoneRuleDefinition> = {
   guarded_town: {
@@ -79,6 +79,19 @@ export const zoneRules: Record<ZoneType, ZoneRuleDefinition> = {
     trespassRules: 'warn',
     summonHelpRules: 'npc_shout'
   },
+  event_zone: {
+    id: 'event_zone',
+    label: 'Event Zone',
+    riskLabel: 'Event Risk',
+    canAttackPlayers: false,
+    canAttackNPCs: true,
+    canSteal: true,
+    guardResponse: 'warning',
+    reputationImpact: -1,
+    lootRules: 'normal',
+    trespassRules: 'none',
+    summonHelpRules: 'npc_shout'
+  },
   safe_area: {
     id: 'safe_area',
     label: 'PvP-disabled Safe Area',
@@ -119,4 +132,20 @@ export const areaZoneTypes: Record<AreaId, ZoneType> = {
 
 export function zoneForArea(areaId: AreaId): ZoneRuleDefinition {
   return zoneRules[areaZoneTypes[areaId]];
+}
+
+const eventZoneTypes = new Set<WorldEventType>(['bandit_ambush', 'crypt_spill', 'storm', 'rare_ore']);
+
+export function zoneForState(state: GameState, areaId: AreaId = state.player.currentArea): ZoneRuleDefinition {
+  const base = zoneForArea(areaId);
+  const eventZoneBase = base.id === 'wilderness' || base.id === 'dungeon' || base.id === 'future_risk';
+  if (!eventZoneBase) return base;
+  const activeLocalEvent = state.world.activeEvents.some(
+    (event) =>
+      event.area === areaId &&
+      event.endsAt > state.clock &&
+      eventZoneTypes.has(event.type) &&
+      (event.discovered || state.world.discoveredRumorIds.includes(event.id) || event.type === 'storm')
+  );
+  return activeLocalEvent ? zoneRules.event_zone : base;
 }

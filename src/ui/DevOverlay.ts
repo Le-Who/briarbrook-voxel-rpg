@@ -1,8 +1,9 @@
 import { areas } from '../data/areas';
 import { itemDefs } from '../data/items';
-import { summarizeFirstHourBalance } from '../systems/BalanceSystem';
+import { createProgressionBalanceReport, summarizeFirstHourBalance } from '../systems/BalanceSystem';
 import { skillGainsPerMinute } from '../systems/TelemetrySystem';
 import { createDevScenePresets } from '../tools/devScenes';
+import { createScreenshotParityPresets } from '../tools/screenshotParity';
 import type { GameState, ResourceTile, TargetRef } from '../game/types';
 
 export function DevOverlay(state: GameState): string {
@@ -26,6 +27,7 @@ export function DevOverlay(state: GameState): string {
   const queue = state.realtime.actionQueue.slice(0, 6);
   const telemetry = state.dev.telemetry;
   const balance = summarizeFirstHourBalance(state);
+  const progressionBalance = createProgressionBalanceReport(state);
   const gainsPerMin = skillGainsPerMinute(state);
   const topSkillGains = Object.entries(gainsPerMin)
     .sort((a, b) => b[1] - a[1])
@@ -155,6 +157,11 @@ export function DevOverlay(state: GameState): string {
         <p><span>Skill/min</span><b>${balance.totalSkillGainPerMinute} total (${balance.topSkillGain})</b></p>
         <p><span>Gold net</span><b>${balance.goldNet >= 0 ? '+' : ''}${balance.goldNet}</b></p>
         <p><span>Resources</span><b>+${balance.resourceIn} / -${balance.resourceOut}</b></p>
+        <p><span>Rates/hr</span><b>${progressionBalance.metrics.goldPerHour}g / ${progressionBalance.metrics.resourcePerHour} res / ${progressionBalance.metrics.skillGainPerHour} skill</b></p>
+        <p><span>Wear / reagents</span><b>${progressionBalance.metrics.durabilityLossPerHour} dur / ${progressionBalance.metrics.reagentConsumptionPerHour} reagents</b></p>
+        <p><span>TTK / orders</span><b>${progressionBalance.metrics.averageCombatTimeToKillSeconds ?? 'open'}s / ${progressionBalance.metrics.averageWorkOrderCompletionMinutes ?? 'open'}m</b></p>
+        <p><span>Housing T1</span><b>${progressionBalance.metrics.housingTierOneMaterialMinutes}m</b></p>
+        <p><span>Exploit audit</span><b>${progressionBalance.antiExploit.criticalCount} critical / ${progressionBalance.antiExploit.warningCount} warnings</b></p>
         <p><span>Damage</span><b>${balance.damageDealt} dealt / ${balance.damageTaken} taken</b></p>
         <p><span>Bandages</span><b>${balance.bandagesApplied} total / ${balance.combatBandagesApplied} combat</b></p>
         <p><span>Repairs</span><b>${balance.repairsCompleted} done / ${balance.repairEstimate}</b></p>
@@ -192,6 +199,12 @@ export function DevOverlay(state: GameState): string {
         </div>
         <div class="dev-scenes">
           ${createDevScenePresets().map((scene) => `<button data-dev-scene="${scene.id}" data-tooltip-id="dev-scene:${escapeAttr(scene.id)}" data-tooltip-source="dev" data-tooltip="${escapeAttr(scene.description)}">${scene.label}</button>`).join('')}
+        </div>
+        <h3>Screenshot Parity</h3>
+        <p><span>Preset</span><b>${state.dev.screenshotParity.active ? escapeHtml(state.dev.screenshotParity.captureName) : 'off'}</b></p>
+        <div class="dev-scenes">
+          ${createScreenshotParityPresets().map((preset) => `<button data-dev-screenshot-parity="${preset.id}" data-tooltip-id="shot-parity:${escapeAttr(preset.id)}" data-tooltip-source="dev" data-tooltip="${escapeAttr(`${preset.referenceId} ${preset.label}`)}">${preset.referenceId}</button>`).join('')}
+          <button data-dev-screenshot-parity-clear="1">Clear</button>
         </div>
         <div class="dev-buttons">
           ${(['dawn', 'day', 'dusk', 'night'] as const).map((phase) => `<button data-dev-time-phase="${phase}">${phase}</button>`).join('')}

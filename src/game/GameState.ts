@@ -8,6 +8,7 @@ import { createInitialResourceTiles } from '../data/resourceMaps';
 import { beginnerSpellIds } from '../data/spells';
 import { createInitialSkills } from '../data/skills';
 import { createInitialTreasureState } from '../data/treasure';
+import { combatRoleContracts, type CombatRoleId } from '../data/combatEncounters';
 import { createDefaultAudioSettings } from '../audio/AudioSettings';
 import { createInitialRenderStats } from '../render/RenderBudgets';
 import { createFacingState } from '../systems/FacingSystem';
@@ -93,6 +94,19 @@ export function createInitialDevState(clock = 0): DevToolState {
   return {
     overlay: false,
     selectedSceneId: 'world',
+    screenshotParity: {
+      active: false,
+      presetId: null,
+      referenceId: null,
+      label: '',
+      captureName: '',
+      camera: {
+        zoom: 17,
+        offset: { x: 8.6, y: 10.2, z: 8.6 },
+        focus: null
+      },
+      lastAppliedAt: clock
+    },
     contentValidation: createInitialContentValidationState(clock),
     telemetry: {
       startedAt: clock,
@@ -113,12 +127,14 @@ export function createInitialDevState(clock = 0): DevToolState {
       skillGains: {},
       resourceYields: {},
       resourceOutflow: {},
+      durabilityLossByItem: {},
       itemsSold: {},
       itemsConsumed: {},
       bandagesApplied: 0,
       combatBandagesApplied: 0,
       repairsCompleted: 0,
       workOrdersCompleted: 0,
+      workOrderCompletionSeconds: {},
       marketTransactions: 0,
       goldEarned: 0,
       goldSpent: 0,
@@ -130,7 +146,9 @@ export function createInitialDevState(clock = 0): DevToolState {
       uiResetUsage: 0,
       actionCancellations: {},
       questCompletionTime: {},
-      priceTrends: {}
+      priceTrends: {},
+      combatEngagementStartedAt: {},
+      combatTimeToKillSeconds: {}
     },
     telemetryExportJson: '',
     renderStats: createInitialRenderStats(),
@@ -201,55 +219,61 @@ const enemy = (
   z: number,
   health: number,
   damage: [number, number],
-  aiStyle: EnemyEntity['aiStyle'] = enemyType === 'Cultist' ? 'mage' : enemyType === 'Beast' ? 'beast' : 'melee'
-): EnemyEntity => ({
-  id,
-  kind: 'enemy',
-  area,
-  name,
-  enemyType,
-  level,
-  health,
-  maxHealth: health,
-  damage,
-  armor: enemyType === 'Undead' ? 4 : enemyType === 'Cultist' ? 1 : enemyType === 'Beast' ? 1 : 3,
-  magicResist: enemyType === 'Undead' ? 4 : enemyType === 'Cultist' ? 22 : 8,
-  poisonResist: enemyType === 'Undead' ? 90 : enemyType === 'Beast' ? 35 : 15,
-  weaponSkill: 18 + level * 5,
-  defenseSkill: enemyType === 'Beast' ? 12 + level * 5 : 20 + level * 4,
-  aiStyle,
-  combatRole: aiStyle === 'archer' ? 'archer' : aiStyle === 'mage' ? 'caster' : enemyType === 'Beast' ? 'skirmisher' : level >= 7 ? 'brute' : 'grunt',
-  aggroRadius: enemyType === 'Undead' ? 7 : aiStyle === 'beast' ? 8 : 6,
-  attackRange: aiStyle === 'archer' || aiStyle === 'mage' ? 6.5 : 1.25,
-  attackCooldown: aiStyle === 'archer' ? 1.9 : aiStyle === 'mage' ? 2.2 : enemyType === 'Undead' ? 1.7 : aiStyle === 'beast' ? 1.05 : 1.45,
-  attackTimer: 0,
-  patrolTimer: Math.random() * 6,
-  leashOrigin: { x, y: 0, z },
-  state: 'idle',
-  poison: null,
-  pacifiedUntil: 0,
-  discordUntil: 0,
-  discordAmount: 0,
-  provokedTargetId: null,
-  position: { x, y: 0, z },
-  facing: createFacingState(0),
-  blocksMovement: true,
-  lootTable:
-    enemyType === 'Undead'
-      ? [
-          { itemId: 'bones', min: 1, max: 3, chance: 0.9 },
-          { itemId: 'cracked_shield', min: 1, max: 1, chance: 0.35 },
-          { itemId: 'mana_potion', min: 1, max: 1, chance: 0.2 },
-          { itemId: 'map_fragment', min: 1, max: 1, chance: 0.18 }
-        ]
-      : [
-          { itemId: 'health_potion', min: 1, max: 2, chance: 0.45 },
-          { itemId: 'leather', min: 1, max: 3, chance: 0.8 },
-          { itemId: 'silver_ring', min: 1, max: 1, chance: 0.12 },
-          { itemId: 'map_fragment', min: 1, max: 1, chance: 0.1 }
-        ],
-  goldDrop: enemyType === 'Undead' ? [6, 14] : [12, 24]
-});
+  aiStyle: EnemyEntity['aiStyle'] = enemyType === 'Cultist' ? 'mage' : enemyType === 'Beast' ? 'beast' : 'melee',
+  combatRoleOverride?: EnemyEntity['combatRole']
+): EnemyEntity => {
+  const defaultRole: EnemyEntity['combatRole'] = aiStyle === 'archer' ? 'archer' : aiStyle === 'mage' ? 'caster' : enemyType === 'Beast' ? 'skirmisher' : level >= 7 ? 'brute' : 'grunt';
+  const combatRole = combatRoleOverride ?? defaultRole;
+  const roleTuning = combatRole in combatRoleContracts ? combatRoleContracts[combatRole as CombatRoleId] : null;
+  return {
+    id,
+    kind: 'enemy',
+    area,
+    name,
+    enemyType,
+    level,
+    health,
+    maxHealth: health,
+    damage,
+    armor: enemyType === 'Undead' ? 4 : enemyType === 'Cultist' ? 1 : enemyType === 'Beast' ? 1 : 3,
+    magicResist: enemyType === 'Undead' ? 4 : enemyType === 'Cultist' ? 22 : 8,
+    poisonResist: enemyType === 'Undead' ? 90 : enemyType === 'Beast' ? 35 : 15,
+    weaponSkill: 18 + level * 5,
+    defenseSkill: enemyType === 'Beast' ? 12 + level * 5 : combatRole === 'guard' ? 44 + level * 4 : 20 + level * 4,
+    aiStyle,
+    combatRole,
+    aggroRadius: enemyType === 'Undead' ? 7 : aiStyle === 'beast' ? 8 : 6,
+    attackRange: roleTuning && roleTuning.preferredDistance > 3 ? Math.max(5.8, roleTuning.preferredDistance + 1) : aiStyle === 'archer' || aiStyle === 'mage' ? 6.5 : 1.25,
+    attackCooldown: roleTuning?.cooldownSeconds ?? (aiStyle === 'archer' ? 1.9 : aiStyle === 'mage' ? 2.2 : enemyType === 'Undead' ? 1.7 : aiStyle === 'beast' ? 1.05 : 1.45),
+    attackTimer: 0,
+    patrolTimer: Math.random() * 6,
+    leashOrigin: { x, y: 0, z },
+    state: 'idle',
+    poison: null,
+    pacifiedUntil: 0,
+    discordUntil: 0,
+    discordAmount: 0,
+    provokedTargetId: null,
+    position: { x, y: 0, z },
+    facing: createFacingState(0),
+    blocksMovement: true,
+    lootTable:
+      enemyType === 'Undead'
+        ? [
+            { itemId: 'bones', min: 1, max: 3, chance: 0.9 },
+            { itemId: 'cracked_shield', min: 1, max: 1, chance: 0.35 },
+            { itemId: 'mana_potion', min: 1, max: 1, chance: 0.2 },
+            { itemId: 'map_fragment', min: 1, max: 1, chance: 0.18 }
+          ]
+        : [
+            { itemId: 'health_potion', min: 1, max: 2, chance: 0.45 },
+            { itemId: 'leather', min: 1, max: 3, chance: 0.8 },
+            { itemId: 'silver_ring', min: 1, max: 1, chance: 0.12 },
+            { itemId: 'map_fragment', min: 1, max: 1, chance: 0.1 }
+          ],
+    goldDrop: enemyType === 'Undead' ? [6, 14] : [12, 24]
+  };
+};
 
 const resource = (placement: ResourcePlacement): ResourceNodeEntity => {
   const definition = resourceNodeDefs[placement.resourceId];
@@ -508,6 +532,43 @@ export function createInitialEntities(): Record<string, Entity> {
       gold: 0
     } as Entity,
     {
+      id: 'cache_town_fountain_loose_stone',
+      kind: 'container',
+      area: 'town',
+      name: 'Loose Fountain Stone',
+      position: { x: -1, y: 0, z: 2 },
+      blocksMovement: false,
+      locked: false,
+      opened: false,
+      hidden: true,
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'map_fragment', quantity: 1 },
+        { itemId: 'ginseng', quantity: 2 }
+      ],
+      gold: 5
+    } as Entity,
+    {
+      id: 'cache_bank_ledger_niche',
+      kind: 'container',
+      area: 'bank',
+      name: 'Ledger Wall Niche',
+      position: { x: -5, y: 0, z: -1 },
+      blocksMovement: false,
+      locked: false,
+      opened: false,
+      hidden: true,
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'vendor_contract', quantity: 1 },
+        { itemId: 'parchment_scroll', quantity: 2 },
+        { itemId: 'lockpick', quantity: 1 }
+      ],
+      gold: 8
+    } as Entity,
+    {
       id: 'cart_road_broken_supply',
       kind: 'container',
       area: 'road',
@@ -566,12 +627,14 @@ export function createInitialEntities(): Record<string, Entity> {
       id: 'cache_road_hidden',
       kind: 'container',
       area: 'road',
-      name: 'Hidden Road Cache',
+      name: 'Old Bandit Stash',
       position: { x: 8, y: 0, z: 4 },
       blocksMovement: false,
       locked: true,
       opened: false,
       hidden: true,
+      ownerId: 'bandits',
+      accessRule: 'private',
       lockDifficulty: 24,
       trap: {
         armed: true,
@@ -582,7 +645,9 @@ export function createInitialEntities(): Record<string, Entity> {
       loot: [
         { itemId: 'lockpick', quantity: 2 },
         { itemId: 'repair_kit', quantity: 1 },
-        { itemId: 'map_fragment', quantity: 1 }
+        { itemId: 'map_fragment', quantity: 1 },
+        { itemId: 'vendor_contract', quantity: 1 },
+        { itemId: 'treasure_map_display_kit', quantity: 1 }
       ],
       gold: 18
     } as Entity,
@@ -667,7 +732,8 @@ export function createInitialEntities(): Record<string, Entity> {
       loot: [
         { itemId: 'glimmer_gem', quantity: 1 },
         { itemId: 'mana_potion', quantity: 1 },
-        { itemId: 'recall_rune', quantity: 1 }
+        { itemId: 'recall_rune', quantity: 1 },
+        { itemId: 'treasure_map_display_kit', quantity: 1 }
       ],
       gold: 55,
       requiredSpellId: 'detect_magic'
@@ -710,9 +776,29 @@ export function createInitialEntities(): Record<string, Entity> {
       loot: [
         { itemId: 'rough_treasure_map', quantity: 1 },
         { itemId: 'vendor_contract', quantity: 1 },
-        { itemId: 'repair_kit', quantity: 1 }
+        { itemId: 'repair_kit', quantity: 1 },
+        { itemId: 'treasure_map_display_kit', quantity: 1 }
       ],
       gold: 70
+    } as Entity,
+    {
+      id: 'secret_crypt_false_door',
+      kind: 'container',
+      area: 'crypt',
+      name: 'False Crypt Door',
+      position: { x: -2, y: 0, z: 9 },
+      blocksMovement: true,
+      locked: true,
+      opened: false,
+      hidden: true,
+      lockDifficulty: 0,
+      trap: null,
+      loot: [
+        { itemId: 'crypt_lore_clue', quantity: 1 },
+        { itemId: 'glimmer_gem', quantity: 1 }
+      ],
+      gold: 12,
+      requiredSpellId: 'dispel_field'
     } as Entity,
     {
       id: 'crate_plot_starter_resources',
@@ -794,15 +880,15 @@ export function createInitialEntities(): Record<string, Entity> {
       gold: 0
     } as Entity,
     ...resourcePlacements.map(resource),
-    enemy('enemy_skel_1', 'crypt', 'Skeletal Warrior', 'Undead', 5, 1, 0, 40, [5, 9]),
-    enemy('enemy_skel_2', 'crypt', 'Skeletal Warrior', 'Undead', 5, 5, -2, 40, [5, 9]),
-    enemy('enemy_skel_3', 'crypt', 'Skeletal Warrior', 'Undead', 6, 3, 5, 48, [6, 10]),
-    enemy('enemy_cultist_1', 'crypt', 'Mage Cultist', 'Cultist', 7, -3, 4, 46, [5, 8], 'mage'),
-    enemy('enemy_bone_captain', 'crypt', 'Crypt Bone Captain', 'Undead', 8, 8, 3, 78, [8, 13]),
-    enemy('enemy_bandit_1', 'road', 'Highway Bandit', 'Bandit', 4, 2, -2, 56, [5, 9]),
-    enemy('enemy_bandit_2', 'road', 'Bandit Archer', 'Bandit', 4, 5, 1, 46, [4, 8], 'archer'),
-    enemy('enemy_brigand_1', 'road', 'Brigand Swordsman', 'Bandit', 6, 7, -2, 70, [7, 11]),
-    enemy('enemy_wolf_1', 'forest', 'Grey Wolf', 'Beast', 4, -4, 2, 36, [4, 8], 'beast')
+    enemy('enemy_skel_1', 'crypt', 'Skeletal Warrior', 'Undead', 5, 1, 0, 40, [5, 9], 'melee', 'grunt'),
+    enemy('enemy_skel_2', 'crypt', 'Skeletal Patrolman', 'Undead', 5, 5, -2, 40, [5, 9], 'melee', 'grunt'),
+    enemy('enemy_skel_3', 'crypt', 'Shield Skeleton', 'Undead', 6, 3, 5, 48, [5, 9], 'melee', 'guard'),
+    enemy('enemy_cultist_1', 'crypt', 'Mage Cultist', 'Cultist', 7, -3, 4, 46, [5, 8], 'mage', 'caster'),
+    enemy('enemy_bone_captain', 'crypt', 'Crypt Bone Captain', 'Undead', 8, 8, 3, 78, [8, 12], 'melee', 'brute'),
+    enemy('enemy_bandit_1', 'road', 'Highway Bandit', 'Bandit', 4, 2, -2, 56, [5, 9], 'melee', 'grunt'),
+    enemy('enemy_bandit_2', 'road', 'Bandit Archer', 'Bandit', 4, 5, 1, 46, [4, 8], 'archer', 'archer'),
+    enemy('enemy_brigand_1', 'road', 'Brigand Swordsman', 'Bandit', 6, 7, -2, 70, [7, 10], 'melee', 'brute'),
+    enemy('enemy_wolf_1', 'forest', 'Grey Wolf', 'Beast', 4, -4, 2, 36, [4, 8], 'beast', 'skirmisher')
   ].forEach((entity) => {
     entities[entity.id] = entity;
   });
@@ -916,6 +1002,12 @@ export function createInitialGameState(): GameState {
         aggressionCount: 0,
         murderCount: 0,
         finesOwed: 0,
+        merchantTrust: 10,
+        guardTrust: 10,
+        mageTrust: 8,
+        healerTrust: 8,
+        smithTrust: 8,
+        guardAttention: 0,
         warningAcknowledged: {},
         lastCrimeAt: -999
       },
@@ -1024,9 +1116,12 @@ export function createInitialGameState(): GameState {
       skillProfessionFilter: 'all',
       professionAtlasZoom: 1,
       professionAtlasSearch: '',
+      professionAtlasShowFuture: true,
       selectedProfessionNodeId: null,
+      activeProfessionContractId: null,
       pinnedProfessionGoalId: null,
       pinnedRumorId: null,
+      pinnedWorkOrderId: null,
       mapWaypoint: null,
       minimapMode: 'standard',
       mapHiddenLayers: [],
@@ -1074,6 +1169,7 @@ export function createInitialGameState(): GameState {
       placedBuildings: [],
       housing: createInitialHousingState(),
       discoveredAreas: ['town'],
+      partyMemberIds: [],
       resourceTiles: createInitialResourceTiles(),
       magicFields: [],
       recallMark: null,
@@ -1085,10 +1181,12 @@ export function createInitialGameState(): GameState {
         minute: 0,
         phase: 'night',
         visibilityModifier: 0.62,
-        stealthModifier: 1.18
+        stealthModifier: 1.18,
+        dangerModifier: 1.1
       },
       activeEvents: [],
       discoveredRumorIds: [],
+      resolvedEventLog: [],
       resourcePressure: {},
       economy: createInitialEconomyState(),
       treasure: createInitialTreasureState(),

@@ -77,8 +77,8 @@ export const housingTierDefinitions: HousingTierDefinition[] = [
   },
   {
     tier: 3,
-    name: 'Homestead Later',
-    description: 'Future vendor stalls, guest permissions, larger gardens, and advanced logistics hooks.',
+    name: 'Homestead',
+    description: 'Advanced stations, herb planters, trophy identity, and reserved hooks for later vendor stalls and guest permissions.',
     placementLimit: 48,
     requirements: {
       items: [
@@ -116,7 +116,7 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
   resource_crate: {
     pieceId: 'resource_crate',
     functionType: 'storage',
-    minTier: 1,
+    minTier: 0,
     storage: { slots: 10, maxWeight: 90, acceptedItemTypes: ['resource'] }
   },
   reagent_shelf: {
@@ -131,6 +131,12 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     minTier: 1,
     storage: { slots: 4, maxWeight: 36, acceptedItemTypes: ['weapon', 'tool'] }
   },
+  tool_rack_home: {
+    pieceId: 'tool_rack_home',
+    functionType: 'storage',
+    minTier: 1,
+    storage: { slots: 6, maxWeight: 28, acceptedItemTypes: ['tool'] }
+  },
   armor_stand: {
     pieceId: 'armor_stand',
     functionType: 'storage',
@@ -140,7 +146,7 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
   basic_workbench: {
     pieceId: 'basic_workbench',
     functionType: 'crafting',
-    minTier: 1,
+    minTier: 0,
     stationTypes: ['carpentry', 'tinkering']
   },
   carpenter_bench_home: {
@@ -166,6 +172,12 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     functionType: 'crafting',
     minTier: 2,
     stationTypes: ['scribe']
+  },
+  advanced_workshop_home: {
+    pieceId: 'advanced_workshop_home',
+    functionType: 'crafting',
+    minTier: 3,
+    stationTypes: ['carpentry', 'tinkering', 'fletching', 'forge']
   },
   cooking_hearth_home: {
     pieceId: 'cooking_hearth_home',
@@ -219,6 +231,11 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     functionType: 'boundary',
     minTier: 1
   },
+  lantern_chandelier_home: {
+    pieceId: 'lantern_chandelier_home',
+    functionType: 'utility',
+    minTier: 2
+  },
   herb_planter_home: {
     pieceId: 'herb_planter_home',
     functionType: 'garden',
@@ -230,6 +247,12 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     functionType: 'garden',
     minTier: 1,
     garden: { yieldItemId: 'carrot', quantity: 2, cooldown: 96 }
+  },
+  homestead_herb_planter: {
+    pieceId: 'homestead_herb_planter',
+    functionType: 'garden',
+    minTier: 3,
+    garden: { yieldItemId: 'nightshade', quantity: 2, cooldown: 120 }
   },
   skull_trophy_home: {
     pieceId: 'skull_trophy_home',
@@ -254,6 +277,12 @@ export const housingPieceDefinitions: Record<string, HousingPieceDefinition> = {
     functionType: 'trophy',
     minTier: 1,
     trophy: 'Treasure clue display'
+  },
+  trophy_wall_home: {
+    pieceId: 'trophy_wall_home',
+    functionType: 'trophy',
+    minTier: 3,
+    trophy: 'Homestead trophy room'
   },
   small_trophy_hook: {
     pieceId: 'small_trophy_hook',

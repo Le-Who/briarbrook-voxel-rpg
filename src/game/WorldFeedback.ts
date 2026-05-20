@@ -1,4 +1,5 @@
 import { itemDefs } from '../data/items';
+import { resolveResourceDefinition } from '../data/resources';
 import type { ContainerEntity, Entity, GameState, ResourceKind, ResourceNodeEntity } from './types';
 
 export type WorldCursorKind = 'default' | 'move' | 'harvest' | 'mine' | 'fish' | 'attack' | 'talk' | 'inspect' | 'loot' | 'danger' | 'build';
@@ -160,10 +161,10 @@ export function resourceActionLabel(state: GameState, entity: ResourceNodeEntity
   const tool = selectedToolItemId(state);
   if (!toolTargetsResourceKind(tool, resourceKindForNode(entity.resourceType))) return null;
   if (entity.protected) return { title: 'Protected Tree', detail: 'Town tree is protected.' };
-  if (entity.depleted && entity.resourceType === 'tree') return { title: 'Tree recovering', detail: 'Try another tree.' };
+  if (entity.depleted && entity.resourceType === 'tree') return { title: 'Depleted', detail: 'Try another tree.' };
   const toolName = itemDefs[tool as string]?.name ?? tool;
-  if (entity.resourceType === 'tree') return { title: 'Tree - Chop', detail: `${toolName} ready` };
-  if (entity.resourceType === 'ore') return { title: 'Mine rock face', detail: `${toolName} ready` };
+  if (entity.resourceType === 'tree') return { title: `${resolveResourceDefinition(entity).name} — Chop`, detail: `${toolName} ready` };
+  if (entity.resourceType === 'ore') return { title: `${resolveResourceDefinition(entity).name} — Mine`, detail: `${toolName} ready` };
   if (entity.resourceType === 'herb') return { title: 'Forage herbs', detail: `${toolName} ready` };
   return { title: 'Use tool', detail: `${toolName} ready` };
 }

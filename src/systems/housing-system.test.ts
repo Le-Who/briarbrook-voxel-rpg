@@ -3,9 +3,9 @@ import { createInitialGameState } from '../game/GameState';
 import { AreaManager } from '../world/AreaManager';
 import { beginMoveLastBuilding, placeBuilding, updateBuildGhost } from './BuildingSystem';
 import { buildPieces } from '../data/items';
-import { getHousingPieceDefinition } from '../data/housing';
+import { getHousingPieceDefinition, housingTierDefinitions } from '../data/housing';
 import { addItem, getItemCount } from './InventorySystem';
-import { claimStarterPlot, depositSelectedToHousingStorage, housingStorages, selectedHousingStorage, undoLastHousingPlacement, upgradeHousingTier, withdrawFromHousingStorage } from './HousingSystem';
+import { canUpgradeHousing, claimStarterPlot, currentHousingTier, depositSelectedToHousingStorage, homeCraftDurationMultiplier, homePreparationSummary, housingStorages, selectedHousingStorage, undoLastHousingPlacement, upgradeHousingTier, withdrawFromHousingStorage } from './HousingSystem';
 import { startCraft } from './CraftingSystem';
 
 function setupHousing() {
@@ -31,6 +31,16 @@ function placePiece(pieceId: string, x: number, z: number) {
 }
 
 describe('housing workshop progression', () => {
+  it('defines a full camp to homestead ladder and complete functional object set', () => {
+    expect(housingTierDefinitions.map((tier) => tier.name)).toEqual(['Camp', 'Workshop Plot', 'Cottage', 'Homestead']);
+    expect(getHousingPieceDefinition('tool_rack_home')).toMatchObject({ minTier: 1, functionType: 'storage' });
+    expect(getHousingPieceDefinition('tool_rack_home').storage?.acceptedItemTypes).toEqual(['tool']);
+    expect(getHousingPieceDefinition('advanced_workshop_home')).toMatchObject({ minTier: 3, functionType: 'crafting' });
+    expect(getHousingPieceDefinition('homestead_herb_planter')).toMatchObject({ minTier: 3, functionType: 'garden' });
+    expect(getHousingPieceDefinition('trophy_wall_home')).toMatchObject({ minTier: 3, functionType: 'trophy' });
+    expect(getHousingPieceDefinition('lantern_chandelier_home')).toMatchObject({ minTier: 2, functionType: 'utility' });
+  });
+
   it('defines tier 0 camp identity pieces and tier 1 workshop storage', () => {
     expect(getHousingPieceDefinition('crate')).toMatchObject({ minTier: 0, functionType: 'storage' });
     expect(getHousingPieceDefinition('crate').storage?.slots).toBeGreaterThanOrEqual(4);
@@ -106,6 +116,66 @@ describe('housing workshop progression', () => {
 
     startCraft(state, 'saw_boards', 1);
     expect(state.craftQueue).toHaveLength(1);
+  });
+
+  it('allows homestead upgrade while reserving vendor stalls and guest permissions for later systems', () => {
+    const { state } = setupHousing();
+    const plot = state.world.housing.plots.plot_briarbrook_starter;
+    plot.tier = 2;
+    state.player.gold = 500;
+    addItem(state.player.inventory, 'boards', 28);
+    addItem(state.player.inventory, 'iron_bar', 16);
+    addItem(state.player.inventory, 'vendor_contract', 1);
+    state.world.economy.workOrders.slice(0, 3).forEach((order) => {
+      order.status = 'complete';
+    });
+
+    expect(canUpgradeHousing(state)).toMatchObject({ ok: true });
+    expect(upgradeHousingTier(state)).toBe(true);
+    expect(currentHousingTier(state).name).toBe('Homestead');
+    expect(plot.permissions).toEqual({ ownerCanBuild: true });
+  });
+
+  it('summarizes return-home preparation and keeps home station bonuses modest', () => {
+    const { state, areaManager } = setupHousing();
+    const plot = state.world.housing.plots.plot_briarbrook_starter;
+    plot.tier = 1;
+    for (const [itemId, quantity] of [
+      ['wood', 40],
+      ['stone_block', 20],
+      ['logs', 12],
+      ['ginseng', 4],
+      ['leather', 4],
+      ['clean_cloth', 4],
+      ['torch', 2],
+      ['parchment_scroll', 2]
+    ] as const) {
+      addItem(state.player.inventory, itemId, quantity);
+    }
+    for (const [pieceId, x, z] of [
+      ['bedroll_home', -3, 4],
+      ['resource_crate', -2, 4],
+      ['basic_workbench', -1, 4],
+      ['tool_rack_home', 0, 4],
+      ['herb_planter_home', 1, 4],
+      ['home_marker', 2, 4],
+      ['small_trophy_hook', 3, 4]
+    ] as const) {
+      state.buildMode.selectedPieceId = pieceId;
+      updateBuildGhost(state, areaManager, { x, y: 0, z });
+      expect(placeBuilding(state, areaManager), `${pieceId}: ${state.buildMode.message}`).toBe(true);
+    }
+
+    const summary = homePreparationSummary(state);
+    expect(summary.reasons).toEqual(expect.arrayContaining(['Rest before next trip', 'Craft and repair at home', 'Stage resources and tools', 'Harvest modest garden supplies', 'Recall to home anchor', 'Display trophies']));
+    expect(summary.storageSlots).toBeGreaterThanOrEqual(10);
+    expect(summary.stationTypes).toContain('carpentry');
+    expect(summary.gardenCount).toBe(1);
+    expect(summary.trophyCount).toBe(1);
+    expect(summary.stationBonusPercent).toBeGreaterThan(0);
+    expect(summary.stationBonusPercent).toBeLessThanOrEqual(8);
+    expect(homeCraftDurationMultiplier(state, 'carpentry')).toBeLessThan(1);
+    expect(homeCraftDurationMultiplier(state, 'carpentry')).toBeGreaterThanOrEqual(0.92);
   });
 
   it('blocks undo while storage contains items, then safely refunds after emptying', () => {

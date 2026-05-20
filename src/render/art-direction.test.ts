@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import * as Materials from './Materials';
 import { areaAmbient } from './Materials';
 import { createInitialRenderStats, estimateRenderFrameMs, renderPerformanceBudget, renderStatsWithinBudget } from './RenderBudgets';
 import { VoxelKit, type VoxelBuilderOptions } from './VoxelKit';
@@ -42,11 +43,75 @@ describe('art direction consolidation', () => {
     }
   });
 
+  it('exposes the shared prompt-110 art kit as reusable voxel builders', () => {
+    const kit = createTestKit();
+    const builderMethods = [
+      'cobblestonePathBuilder',
+      'timberWallBuilder',
+      'roofOverhangBuilder',
+      'marketStallBuilder',
+      'fountainBuilder',
+      'fenceBuilder',
+      'lampPostBuilder',
+      'crateBarrelStackBuilder',
+      'flowerBushBuilder',
+      'treeBuilder',
+      'stumpBuilder',
+      'oreVeinBuilder',
+      'mineEntranceBuilder',
+      'cryptWallBuilder',
+      'cryptFloorBuilder',
+      'dungeonColumnBuilder',
+      'forgeBuilder',
+      'anvilBuilder',
+      'toolRackBuilder',
+      'bankShelfBuilder',
+      'chestBuilder',
+      'bankCounterBuilder',
+      'buildModeGhostBuilder',
+      'bridgeBuilder',
+      'dockBuilder'
+    ];
+
+    for (const method of builderMethods) {
+      expect(typeof (kit as unknown as Record<string, unknown>)[method], method).toBe('function');
+      const group = (kit as unknown as Record<string, (options: VoxelBuilderOptions) => THREE.Group>)[method]({
+        seed: 110,
+        variation: method,
+        theme: method.includes('crypt') ? 'crypt' : 'town',
+        wear: 0.25,
+        damage: 0.2,
+        colorVariation: 0.03,
+        metadata: { visualFoundation: method }
+      });
+      expect(meshCount(group), method).toBeGreaterThan(0);
+      expect(group.userData.metadata).toEqual({ visualFoundation: method });
+    }
+  });
+
   it('keeps area ambient palettes distinct and mood-directed', () => {
     expect(areaAmbient.town.intensity).toBeGreaterThan(areaAmbient.crypt.intensity);
     expect(areaAmbient.forest.fog).not.toBe(areaAmbient.road.fog);
     expect(areaAmbient.housing.bg).not.toBe(areaAmbient.crypt.bg);
     expect(new Set(Object.values(areaAmbient).map((entry) => entry.bg)).size).toBeGreaterThan(4);
+  });
+
+  it('defines prompt-110 lighting presets with bounded dynamic lights', () => {
+    const presets = (Materials as unknown as { visualLightingPresets?: Record<string, { area: string; phase: string; dynamicLightBudget: number; mood: string }> }).visualLightingPresets;
+
+    expect(Object.keys(presets ?? {})).toEqual([
+      'briarbrook-day',
+      'road-day-dusk',
+      'forest-day',
+      'crypt-readable',
+      'smithy-forge',
+      'bank-warm',
+      'housing-build'
+    ]);
+    Object.values(presets ?? {}).forEach((preset) => {
+      expect(preset.mood.length).toBeGreaterThan(10);
+      expect(preset.dynamicLightBudget).toBeLessThanOrEqual(3);
+    });
   });
 
   it('tracks render budget fields and flags over-budget scenes', () => {

@@ -21,6 +21,60 @@ interface VoxelKitContext {
 export class VoxelKit {
   constructor(private context: VoxelKitContext) {}
 
+  cobblestonePathBuilder(options: VoxelBuilderOptions & { width?: number; depth?: number } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const width = Math.max(1, Math.round(options.width ?? 3));
+    const depth = Math.max(1, Math.round(options.depth ?? 3));
+    const palette = options.theme === 'crypt' ? ['#343331', '#42403c', '#2b2b29'] : ['#716d64', '#827c70', '#5f5b53', '#908878'];
+    for (let x = 0; x < width; x += 1) {
+      for (let z = 0; z < depth; z += 1) {
+        const hash = this.hash(x, z, options.seed);
+        this.context.box(
+          g,
+          x - (width - 1) / 2,
+          0.045 + (hash % 3) * 0.004,
+          z - (depth - 1) / 2,
+          0.92,
+          0.09,
+          0.92,
+          this.mat(`kit-cobble-${hash % palette.length}`, palette[hash % palette.length], options),
+          { ry: (hash % 4) * 0.05 }
+        );
+      }
+    }
+    return this.scaled(g, options);
+  }
+
+  timberWallBuilder(options: VoxelBuilderOptions & { length?: number } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const length = Math.max(1, Math.round(options.length ?? 3));
+    const plaster = this.mat('kit-wall-plaster', options.theme === 'bank' ? '#a58f71' : '#b8a88c', options);
+    const timber = this.mat('kit-wall-timber', '#5b331b', options);
+    for (let i = 0; i < length; i += 1) {
+      const x = i - (length - 1) / 2;
+      this.context.box(g, x, 0.92, 0, 0.88, 1.45, 0.26, i % 2 ? plaster : timber);
+      this.context.box(g, x, 1.68, -0.02, 0.92, 0.14, 0.32, timber);
+    }
+    return this.scaled(g, options);
+  }
+
+  roofOverhangBuilder(options: VoxelBuilderOptions & { width?: number; depth?: number } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const width = Math.max(2, Math.round(options.width ?? 4));
+    const depth = Math.max(2, Math.round(options.depth ?? 3));
+    const roofColors = ['#7a3c19', '#85451f', '#6e3518'];
+    for (let x = 0; x < width; x += 1) {
+      for (let z = 0; z < depth; z += 1) {
+        const hash = this.hash(x, z, options.seed);
+        const y = 0.18 + Math.max(0, 0.16 - Math.abs(z - (depth - 1) / 2) * 0.05);
+        const tile = this.context.box(g, x - (width - 1) / 2, y, z - (depth - 1) / 2, 0.96, 0.22, 0.96, this.context.material(`kit-roof-overhang-${hash % 3}`, roofColors[hash % 3]));
+        tile.userData.roof = true;
+      }
+    }
+    this.context.box(g, 0, 0.43, 0, width + 0.6, 0.14, 0.16, this.context.material('kit-roof-overhang-ridge', '#4a2514')).userData.roof = true;
+    return this.scaled(g, options);
+  }
+
   timberHouseBuilder(options: VoxelBuilderOptions & { width?: number; depth?: number; banner?: boolean } = {}): THREE.Group {
     const g = new THREE.Group();
     const width = Math.max(3, Math.round(options.width ?? 4));
@@ -106,6 +160,55 @@ export class VoxelKit {
     return this.scaled(g, options);
   }
 
+  fountainBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const stone = this.mat('kit-fountain-stone', '#8c8a82', options);
+    const darkStone = this.mat('kit-fountain-shadow', '#5f5e58', options);
+    const water = this.context.material('kit-fountain-water', '#3b8fb6', { transparent: true, opacity: 0.78 });
+    this.context.box(g, 0, 0.18, 0, 2.2, 0.36, 2.2, stone);
+    this.context.box(g, 0, 0.42, 0, 1.55, 0.2, 1.55, water);
+    this.context.box(g, 0, 0.86, 0, 0.42, 0.9, 0.42, darkStone);
+    this.context.box(g, 0, 1.38, 0, 0.7, 0.18, 0.7, stone);
+    return this.scaled(g, options);
+  }
+
+  crateBarrelStackBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const wood = this.mat('kit-crate-wood', '#6a421f', options);
+    const dark = this.mat('kit-crate-dark', '#4f321d', options);
+    const band = this.context.material('kit-barrel-band', '#8d8a80', { metalness: 0.2 });
+    this.context.box(g, -0.32, 0.24, 0, 0.56, 0.48, 0.56, wood);
+    this.context.box(g, 0.32, 0.2, -0.12, 0.45, 0.4, 0.45, dark, { ry: 0.2 });
+    this.context.box(g, 0.34, 0.48, -0.12, 0.5, 0.08, 0.5, band);
+    if (options.props !== false) this.context.box(g, -0.34, 0.52, 0.02, 0.42, 0.06, 0.08, this.context.material('kit-crate-lash', '#2f2117'), { ry: 0.4 });
+    return this.scaled(g, options);
+  }
+
+  flowerBushBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const seed = options.seed ?? 0;
+    const leaf = this.mat('kit-bush-leaf', seed % 2 ? '#456d32' : '#577d38', options);
+    const flowerA = this.context.material('kit-flower-light', '#f0ead4');
+    const flowerB = this.context.material('kit-flower-accent', options.color ?? '#d9544f');
+    for (let i = 0; i < 5; i += 1) {
+      const hash = this.hash(i, seed, seed + 3);
+      const x = ((hash % 7) - 3) * 0.09;
+      const z = (((hash / 7) % 7) - 3) * 0.09;
+      this.context.box(g, x, 0.12 + i * 0.01, z, 0.22, 0.2, 0.22, leaf);
+      if (i % 2 === 0) this.context.box(g, x, 0.28, z, 0.08, 0.08, 0.08, i % 4 === 0 ? flowerB : flowerA);
+    }
+    return this.scaled(g, options);
+  }
+
+  stumpBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const bark = this.mat('kit-stump-bark', '#6c4323', options);
+    const cut = this.context.material('kit-stump-cut', '#b88a52');
+    this.context.box(g, 0, 0.22, 0, 0.54, 0.44, 0.54, bark, { ry: (options.seed ?? 0) * 0.08 });
+    this.context.box(g, 0, 0.47, 0, 0.5, 0.08, 0.5, cut);
+    return this.scaled(g, options);
+  }
+
   treeBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
     const g = new THREE.Group();
     const seed = options.seed ?? 0;
@@ -159,6 +262,27 @@ export class VoxelKit {
     this.context.box(g, -0.22, 0.47, 0.18, 0.26, 0.18, 0.22, this.context.material(`kit-ore-${color}`, color, { emissive: color, emissiveIntensity: 0.15 }));
     this.context.box(g, 0.28, 0.38, -0.16, 0.22, 0.16, 0.22, this.context.material(`kit-ore2-${color}`, color, { emissive: color, emissiveIntensity: 0.12 }));
     return this.scaled(g, options);
+  }
+
+  mineEntranceBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const rock = this.mat('kit-mine-rock', '#5a5853', options);
+    const dark = this.context.material('kit-mine-dark', '#11100f');
+    const wood = this.mat('kit-mine-wood', '#6a421f', options);
+    this.context.box(g, 0, 0.6, 0, 3, 1.2, 1, rock);
+    this.context.box(g, 0, 0.55, -0.15, 1.4, 1.1, 0.5, dark);
+    this.context.box(g, 0, 1.25, -0.55, 2.5, 0.22, 0.22, wood);
+    this.context.box(g, -1.05, 0.65, -0.46, 0.22, 1.1, 0.22, wood);
+    this.context.box(g, 1.05, 0.65, -0.46, 0.22, 1.1, 0.22, wood);
+    return this.scaled(g, options);
+  }
+
+  cryptWallBuilder(options: VoxelBuilderOptions & { length?: number; orientation?: 'x' | 'z' } = {}): THREE.Group {
+    return this.stoneWallBuilder({ ...options, theme: 'crypt', damage: Math.max(options.damage ?? 0, 0.32) });
+  }
+
+  cryptFloorBuilder(options: VoxelBuilderOptions & { width?: number; depth?: number } = {}): THREE.Group {
+    return this.cobblestonePathBuilder({ ...options, theme: 'crypt', width: options.width ?? 3, depth: options.depth ?? 3 });
   }
 
   dungeonColumnBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
@@ -222,6 +346,61 @@ export class VoxelKit {
     if (options.props !== false) this.context.box(g, -0.7, 0.8, 0.35, 0.24, 0.12, 0.24, this.context.material('kit-hot-ingot', '#ff8a2e', { emissive: '#ff5c1f', emissiveIntensity: 0.8 }));
     return this.scaled(g, options);
   }
+
+  anvilBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const metal = this.context.material('kit-anvil-metal', '#777c80', { metalness: 0.25 });
+    this.context.box(g, 0, 0.2, 0, 0.9, 0.24, 0.46, metal);
+    this.context.box(g, -0.28, 0.44, 0, 0.38, 0.24, 0.34, metal);
+    this.context.box(g, 0.26, 0.48, 0, 0.62, 0.16, 0.28, metal);
+    this.context.box(g, 0.64, 0.48, 0, 0.22, 0.1, 0.2, metal);
+    return this.scaled(g, options);
+  }
+
+  toolRackBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const wood = this.mat('kit-tool-rack-wood', '#5b331b', options);
+    const metal = this.context.material('kit-tool-rack-metal', '#a7aaa7', { metalness: 0.22 });
+    this.context.box(g, 0, 0.85, 0, 1.45, 0.14, 0.12, wood);
+    this.context.box(g, -0.55, 0.48, 0, 0.1, 0.88, 0.08, metal, { rz: 0.25 });
+    this.context.box(g, 0, 0.52, 0, 0.1, 0.8, 0.08, metal);
+    this.context.box(g, 0.55, 0.48, 0, 0.1, 0.88, 0.08, metal, { rz: -0.25 });
+    return this.scaled(g, options);
+  }
+
+  bankShelfBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
+    const g = new THREE.Group();
+    const wood = this.mat('kit-bank-shelf-wood', '#5a351d', options);
+    const paper = this.context.material('kit-bank-paper', '#d7bf8d');
+    this.context.box(g, 0, 0.7, 0, 1.5, 1.4, 0.28, wood);
+    for (let i = 0; i < 3; i += 1) this.context.box(g, 0, 0.3 + i * 0.38, -0.18, 1.36, 0.08, 0.2, wood);
+    this.context.box(g, -0.35, 0.54, -0.34, 0.32, 0.18, 0.12, paper, { rz: 0.1 });
+    this.context.box(g, 0.34, 0.95, -0.34, 0.28, 0.2, 0.12, this.context.material('kit-bank-book-red', '#8a2b31'));
+    return this.scaled(g, options);
+  }
+
+  bankCounterBuilder(options: VoxelBuilderOptions & { width?: number } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const width = Math.max(2, Math.round(options.width ?? 4));
+    const wood = this.mat('kit-bank-counter', '#5a351d', options);
+    const top = this.context.material('kit-bank-counter-top', '#7b4b29');
+    this.context.box(g, 0, 0.45, 0, width, 0.9, 0.72, wood);
+    this.context.box(g, 0, 0.94, -0.04, width + 0.2, 0.12, 0.88, top);
+    this.context.box(g, -width * 0.25, 1.04, -0.12, 0.5, 0.04, 0.28, this.context.material('kit-counter-ledger', '#d7bf8d'), { ry: -0.2 });
+    return this.scaled(g, options);
+  }
+
+  buildModeGhostBuilder(options: VoxelBuilderOptions & { valid?: boolean } = {}): THREE.Group {
+    const g = new THREE.Group();
+    const color = options.color ?? (options.valid === false ? '#e84a4a' : '#60d871');
+    const ghost = this.context.material(`kit-build-ghost-${color}`, color, { transparent: true, opacity: 0.42, emissive: color, emissiveIntensity: 0.12 });
+    this.context.box(g, 0, 0.1, 0, 2.2, 0.04, 2.2, ghost);
+    this.context.box(g, -0.85, 0.7, -0.85, 0.22, 1.2, 0.22, ghost);
+    this.context.box(g, 0.85, 0.7, -0.85, 0.22, 1.2, 0.22, ghost);
+    this.context.box(g, 0, 1.34, -0.85, 2.1, 0.18, 0.22, ghost);
+    return this.scaled(g, options);
+  }
+
 
   fenceBuilder(options: VoxelBuilderOptions = {}): THREE.Group {
     const g = new THREE.Group();

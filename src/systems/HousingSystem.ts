@@ -6,6 +6,20 @@ import { addSystemMessage } from './ChatSystem';
 import { calculateDerivedStats } from './EquipmentSystem';
 import { addItem, getItemCount, removeItems, stackWeight } from './InventorySystem';
 
+export interface HomePreparationSummary {
+  tierName: string;
+  storageSlots: number;
+  storageWeightLimit: number;
+  stationTypes: StationType[];
+  hasRestPoint: boolean;
+  hasRecallAnchor: boolean;
+  gardenCount: number;
+  trophyCount: number;
+  lightingCount: number;
+  stationBonusPercent: number;
+  reasons: string[];
+}
+
 export function getOwnedHousingPlot(state: GameState): HousingPlotState | null {
   const plotId = state.world.housing.ownedPlotId;
   return plotId ? state.world.housing.plots[plotId] ?? null : null;
@@ -57,7 +71,6 @@ export function canUpgradeHousing(state: GameState): { ok: boolean; message: str
   if (!plot) return { ok: false, message: 'Claim the starter plot first.', next: null };
   const next = nextHousingTier(state);
   if (!next) return { ok: false, message: 'This is the highest planned tier for now.', next };
-  if (next.tier === 3) return { ok: false, message: 'Homestead tier is reserved for the later multiplayer economy pass.', next };
   if (state.player.gold < next.requirements.gold) return { ok: false, message: `Upgrade needs ${next.requirements.gold} gold.`, next };
   if (!hasRequirementItems(state, next.requirements.items)) return { ok: false, message: `Upgrade needs ${formatRequirements(next.requirements.items)}.`, next };
   if (next.requirements.completedQuestId && !state.player.completedQuestIds.includes(next.requirements.completedQuestId)) {
@@ -148,6 +161,52 @@ export function homeCraftStations(state: GameState): StationType[] {
     getHousingPieceDefinition(building.pieceId).stationTypes?.forEach((station) => stations.add(station));
   });
   return Array.from(stations);
+}
+
+export function homePreparationSummary(state: GameState): HomePreparationSummary {
+  const tier = currentHousingTier(state);
+  const storages = housingStorages(state);
+  const stationTypes = homeCraftStations(state);
+  const placed = state.world.placedBuildings.filter((building) => building.area === 'housing');
+  const definitions = placed.map((building) => getHousingPieceDefinition(building.pieceId));
+  const hasRestPoint = definitions.some((definition) => definition.utility === 'rest');
+  const plot = getOwnedHousingPlot(state);
+  const hasRecallAnchor = Boolean(plot?.homeAnchor) || definitions.some((definition) => definition.utility === 'home_anchor');
+  const gardenCount = definitions.filter((definition) => definition.functionType === 'garden').length;
+  const trophyCount = definitions.filter((definition) => definition.functionType === 'trophy').length;
+  const lightingCount = placed.filter((building) => ['torch', 'lamp_post_home', 'lantern_chandelier_home', 'campfire_home'].includes(building.pieceId)).length;
+  const storageSlots = storages.reduce((sum, storage) => sum + storage.inventory.capacity, 0);
+  const storageWeightLimit = storages.reduce((sum, storage) => sum + storage.maxWeight, 0);
+  const stagingPieceCount = placed.filter((building) => ['resource_crate', 'reagent_shelf', 'weapon_rack', 'tool_rack_home', 'armor_stand'].includes(building.pieceId)).length;
+  const stationBonusPercent = Math.min(8, (stationTypes.length ? 2 : 0) + Math.min(3, stagingPieceCount) + (lightingCount ? 1 : 0) + (trophyCount ? 1 : 0));
+  const reasons: string[] = [];
+  if (hasRestPoint) reasons.push('Rest before next trip');
+  if (stationTypes.length) reasons.push('Craft and repair at home');
+  if (storageSlots > 0 || stagingPieceCount > 0) reasons.push('Stage resources and tools');
+  if (gardenCount) reasons.push('Harvest modest garden supplies');
+  if (hasRecallAnchor) reasons.push('Recall to home anchor');
+  if (trophyCount) reasons.push('Display trophies');
+  if (lightingCount) reasons.push('Keep the workshop lit');
+  return {
+    tierName: tier.name,
+    storageSlots,
+    storageWeightLimit,
+    stationTypes,
+    hasRestPoint,
+    hasRecallAnchor,
+    gardenCount,
+    trophyCount,
+    lightingCount,
+    stationBonusPercent,
+    reasons
+  };
+}
+
+export function homeCraftDurationMultiplier(state: GameState, stationType: StationType): number {
+  if (state.player.currentArea !== 'housing') return 1;
+  if (!homeCraftStations(state).includes(stationType)) return 1;
+  const bonus = homePreparationSummary(state).stationBonusPercent;
+  return Math.max(0.92, Number((1 - bonus / 100).toFixed(2)));
 }
 
 export function housingStorages(state: GameState): HousingStorageState[] {

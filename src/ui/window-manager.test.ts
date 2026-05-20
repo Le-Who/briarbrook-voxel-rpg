@@ -5,6 +5,7 @@ import {
   isEditableTargetDescriptor,
   parseHotbarSourceText,
   sanitizeStoredLayout,
+  serviceStackWindowRects,
   windowDefinitions,
   windowLayerFor,
   windowQaWarningsForManagedWindows,
@@ -58,6 +59,25 @@ describe('window layout helpers', () => {
     expect(rect.y).toBe(8);
     expect(rect.width).toBe(504);
     expect(rect.y + rect.height).toBeLessThanOrEqual(720 - 96);
+  });
+
+  it('clamps the smithy crafting window to phone width for service reference captures', () => {
+    const rect = defaultWindowRect('crafting', { width: 640, height: 732 }, { width: 390, height: 844 });
+
+    expect(rect.x).toBe(8);
+    expect(rect.width).toBe(374);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(844 - 96);
+  });
+
+  it('stacks bank and inventory service windows on phone viewports without overlap', () => {
+    const rects = serviceStackWindowRects({ width: 390, height: 844 });
+    expect(rects).not.toBeNull();
+    expect(rects?.bank.x).toBe(8);
+    expect(rects?.inventory.x).toBe(8);
+    expect(rects?.bank.width).toBe(374);
+    expect(rects?.inventory.width).toBe(374);
+    expect((rects?.bank.y ?? 0) + (rects?.bank.height ?? 0)).toBeLessThanOrEqual(rects?.inventory.y ?? 0);
+    expect((rects?.inventory.y ?? 0) + (rects?.inventory.height ?? 0)).toBeLessThanOrEqual(844 - 96);
   });
 
   it('clamps saved layout entries before applying persisted positions', () => {

@@ -29,9 +29,21 @@ describe('world feedback policy', () => {
     state.ui.activeHotbarSlot = 6;
     const label = worldLabelForEntity(state, tree, { hoveredEntityId: tree.id, distanceToPlayer: 1 });
 
-    expect(label?.title).toBe('Tree - Chop');
+    expect(label?.title).toBe('Oak Tree — Chop');
     expect(label?.detail).toBe('Iron Axe ready');
     expect(worldCursorKindForHover(state, { entity: tree })).toBe('harvest');
+  });
+
+  it('uses short reference prompts for mine hover feedback', () => {
+    const state = createInitialGameState();
+    const copper = state.entities.res_copper_1 as ResourceNodeEntity;
+
+    state.ui.activeHotbarSlot = 7;
+    const label = worldLabelForEntity(state, copper, { hoveredEntityId: copper.id, distanceToPlayer: 1 });
+
+    expect(label?.title).toBe('Copper Vein — Mine');
+    expect(label?.detail).toBe('Iron Pickaxe ready');
+    expect(worldCursorKindForHover(state, { entity: copper })).toBe('mine');
   });
 
   it('uses explicit inspect and danger feedback for containers', () => {

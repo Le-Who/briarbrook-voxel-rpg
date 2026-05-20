@@ -1,6 +1,6 @@
 import { stationLabels } from '../data/recipes';
 import { createInitialContentValidationState } from '../game/GameState';
-import type { AreaId, ContentValidationState, Entity, QuestObjective, RecipeRequirement } from '../game/types';
+import type { AreaId, ContentValidationState, EconomyOrderCategory, Entity, QuestObjective, RecipeRequirement, Vec3 } from '../game/types';
 import { createContentRegistry, type ContentRegistry } from './ContentRegistry';
 
 interface ValidationContext {
@@ -16,7 +16,33 @@ interface ValidationContext {
   resourceIds: Set<string>;
   entityIds: Set<string>;
   visualPrefabIds: Set<string>;
+  professionIds: Set<string>;
+  masteryIds: Set<string>;
+  economyCategories: Set<string>;
 }
+
+const economyCategories: EconomyOrderCategory[] = [
+  'smithy',
+  'healer',
+  'mage',
+  'guard',
+  'carpenter',
+  'tavern',
+  'banker',
+  'metal',
+  'wood',
+  'healing',
+  'reagents',
+  'food',
+  'combat',
+  'banking',
+  'building',
+  'treasure',
+  'housing',
+  'misc'
+];
+
+const mapWaypointSources = new Set(['manual', 'objective', 'rumor', 'treasure']);
 
 export function validateContent(registry: ContentRegistry = createContentRegistry(), checkedAt = 0): ContentValidationState {
   const context: ValidationContext = {
@@ -31,7 +57,10 @@ export function validateContent(registry: ContentRegistry = createContentRegistr
     buildPieceIds: new Set(registry.buildPieces.map((piece) => piece.id)),
     resourceIds: new Set(Object.keys(registry.resources)),
     entityIds: new Set(Object.keys(registry.entities)),
-    visualPrefabIds: new Set(registry.visualPrefabs.map((prefab) => prefab.id))
+    visualPrefabIds: new Set(registry.visualPrefabs.map((prefab) => prefab.id)),
+    professionIds: new Set(registry.professions.clusters.map((profession) => profession.id)),
+    masteryIds: new Set(registry.professions.milestones.map((milestone) => milestone.id)),
+    economyCategories: new Set(economyCategories)
   };
 
   checkDuplicateIds(context, 'areas', Object.values(registry.areas).map((area) => area.id));
@@ -40,10 +69,15 @@ export function validateContent(registry: ContentRegistry = createContentRegistr
   checkDuplicateIds(context, 'recipes', registry.recipes.map((recipe) => recipe.id));
   checkDuplicateIds(context, 'spells', Object.values(registry.spells).map((spell) => spell.id));
   checkDuplicateIds(context, 'skills', registry.skills.map((skill) => skill.id));
+  checkDuplicateIds(context, 'profession clusters', registry.professions.clusters.map((profession) => profession.id));
+  checkDuplicateIds(context, 'profession milestones', registry.professions.milestones.map((milestone) => milestone.id));
+  checkDuplicateIds(context, 'profession contracts', registry.professions.contracts.map((contract) => contract.id));
   checkDuplicateIds(context, 'resources', Object.values(registry.resources).map((resource) => resource.id));
   checkDuplicateIds(context, 'resource placements', registry.resourcePlacements.map((placement) => placement.id));
   checkDuplicateIds(context, 'quests', Object.values(registry.quests).map((quest) => quest.id));
   checkDuplicateIds(context, 'entities', Object.values(registry.entities).map((entity) => entity.id));
+  checkDuplicateIds(context, 'living world events', registry.events.map((event) => event.type));
+  checkDuplicateIds(context, 'map markers', registry.mapMarkers.map((marker) => marker.id));
   checkDuplicateIds(context, 'work orders', registry.economy.workOrders.map((order) => order.id));
   checkDuplicateIds(context, 'market orders', registry.economy.marketOrders.map((order) => order.id));
   checkDuplicateIds(context, 'housing tiers', registry.housing.tiers.map((tier) => String(tier.tier)));
@@ -58,8 +92,11 @@ export function validateContent(registry: ContentRegistry = createContentRegistr
   validateBuildPieces(context);
   validateRecipes(context);
   validateSpells(context);
+  validateProfessions(context);
   validateResources(context);
   validateEntities(context);
+  validateEvents(context);
+  validateMapMarkers(context);
   validateQuests(context);
   validateEconomy(context);
   validateHousing(context);
@@ -103,6 +140,9 @@ function validateItems(context: ValidationContext): void {
   const requiredVisualItems = new Set(['axe', 'pickaxe', 'torch', 'bandage', 'arrow']);
   Object.entries(context.registry.items).forEach(([key, item]) => {
     if (key !== item.id) context.errors.push(`item "${key}" has mismatched id "${item.id}"`);
+    if (!item.name.trim()) context.errors.push(`item ${item.id} is missing required name`);
+    if (!item.icon?.shape || !item.icon.primary) context.errors.push(`item ${item.id} is missing icon descriptor`);
+    if (item.maxStack <= 0 || item.weight < 0 || item.value < 0) context.errors.push(`item ${item.id} has invalid stack, weight, or value`);
     if (item.requiredAmmo) requireItem(context, item.requiredAmmo, `item ${item.id}.requiredAmmo`);
     if (item.buildPieceId && !context.buildPieceIds.has(item.buildPieceId)) {
       context.errors.push(`item ${item.id}.buildPieceId references missing build piece "${item.buildPieceId}"`);
@@ -202,22 +242,104 @@ function validateHotbarDefaults(context: ValidationContext): void {
 
 function validateRecipes(context: ValidationContext): void {
   context.registry.recipes.forEach((recipe) => {
+    if (!recipe.name.trim()) context.errors.push(`recipe ${recipe.id} is missing required name`);
     requireSkill(context, recipe.skill, `recipe ${recipe.id}.skill`);
     if (!stationLabels[recipe.stationType]) context.errors.push(`recipe ${recipe.id} has invalid station "${recipe.stationType}"`);
     recipe.inputs.forEach((input) => requireItemQuantity(context, input, `recipe ${recipe.id}.inputs`));
+    recipe.requirements.forEach((requirement) => requireItemQuantity(context, requirement, `recipe ${recipe.id}.requirements`));
     recipe.outputs.forEach((output) => requireItemQuantity(context, output, `recipe ${recipe.id}.outputs`));
     requireItem(context, recipe.outputItemId, `recipe ${recipe.id}.outputItemId`);
     if (recipe.toolRequired) requireItem(context, recipe.toolRequired, `recipe ${recipe.id}.toolRequired`);
+    if (recipe.outputQuantity <= 0 || recipe.duration < 0 || recipe.level < 0) context.errors.push(`recipe ${recipe.id} has invalid output, duration, or level`);
   });
 }
 
 function validateSpells(context: ValidationContext): void {
   Object.entries(context.registry.spells).forEach(([key, spell]) => {
     if (key !== spell.id) context.errors.push(`spell "${key}" has mismatched id "${spell.id}"`);
+    if (!spell.displayName.trim() || !spell.description.trim()) context.errors.push(`spell ${spell.id} is missing display text`);
+    if (!spell.iconDescriptor?.shape || !spell.iconDescriptor.primary) context.errors.push(`spell ${spell.id} is missing icon descriptor`);
     requireSkill(context, 'Magery', `spell ${spell.id}.school`);
     spell.reagents.forEach((reagent) => requireItemQuantity(context, reagent, `spell ${spell.id}.reagents`));
-    if (spell.manaCost < 0 || spell.castTime < 0 || spell.cooldown < 0) context.errors.push(`spell ${spell.id} has negative timing or cost`);
+    if (spell.manaCost < 0 || spell.castTime < 0 || spell.cooldown < 0 || spell.circle <= 0 || spell.range < 0) {
+      context.errors.push(`spell ${spell.id} has invalid timing, circle, range, or cost`);
+    }
   });
+}
+
+function validateProfessions(context: ValidationContext): void {
+  context.registry.professions.clusters.forEach((profession) => {
+    if (!profession.title.trim() || !profession.summary.trim() || !profession.suggestedGoal.trim()) {
+      context.errors.push(`profession ${profession.id} is missing required title, summary, or suggested goal`);
+    }
+    profession.skills.forEach((skill) => requireSkill(context, skill, `profession ${profession.id}.skills`));
+
+    checkDuplicateIds(context, `profession ${profession.id} nodes`, profession.nodes.map((node) => node.id));
+    const nodeIds = new Set(profession.nodes.map((node) => node.id));
+    profession.nodes.forEach((node) => validateProfessionNode(context, profession.id, node));
+    profession.edges.forEach((edge) => {
+      if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+        context.errors.push(`profession ${profession.id} edge ${edge.from} -> ${edge.to} references missing node`);
+      }
+      if (!edge.label.trim()) context.warnings.push(`profession ${profession.id} edge ${edge.from} -> ${edge.to} has no label`);
+    });
+  });
+
+  context.registry.professions.milestones.forEach((milestone) => {
+    if (!context.professionIds.has(milestone.professionId)) context.errors.push(`mastery ${milestone.id} references missing profession "${milestone.professionId}"`);
+    if (!milestone.title.trim() || !milestone.description.trim() || !milestone.reward.trim() || !milestone.unlockMessage.trim()) {
+      context.errors.push(`mastery ${milestone.id} is missing required display or reward text`);
+    }
+    milestone.requirements.forEach((requirement) => validateMasteryRequirement(context, `mastery ${milestone.id}.requirements`, requirement));
+    milestone.visibleWhen.forEach((requirement) => validateMasteryRequirement(context, `mastery ${milestone.id}.visibleWhen`, requirement));
+  });
+
+  context.registry.professions.contracts.forEach((contract) => {
+    if (!context.professionIds.has(contract.professionId)) context.errors.push(`profession contract ${contract.id} references missing profession "${contract.professionId}"`);
+    if (!contract.title.trim() || !contract.teaches.trim()) context.errors.push(`profession contract ${contract.id} is missing required title or teaching text`);
+    contract.skills.forEach((skill) => requireSkill(context, skill, `profession contract ${contract.id}.skills`));
+    contract.objectives.forEach((objective) => {
+      if (!objective.id.trim() || !objective.label.trim()) context.errors.push(`profession contract ${contract.id} has objective missing id or label`);
+      if (objective.required <= 0) context.errors.push(`profession contract ${contract.id}.${objective.id} has invalid requirement`);
+      objective.skills.forEach((skill) => requireSkill(context, skill, `profession contract ${contract.id}.${objective.id}.skills`));
+    });
+  });
+}
+
+function validateProfessionNode(context: ValidationContext, professionId: string, node: ContentRegistry['professions']['clusters'][number]['nodes'][number]): void {
+  if (!node.label.trim() || !node.description.trim()) context.errors.push(`profession ${professionId} node ${node.id} is missing required label or description`);
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) context.errors.push(`profession ${professionId} node ${node.id} has invalid graph coordinates`);
+  if (!node.ref) return;
+
+  if (node.type === 'skill') requireSkill(context, node.ref, `profession ${professionId} node ${node.id}`);
+  if (node.type === 'tool') requireItem(context, node.ref, `profession ${professionId} node ${node.id}`);
+  if (node.type === 'spell' && !context.spellIds.has(node.ref)) context.errors.push(`profession ${professionId} node ${node.id} references missing spell "${node.ref}"`);
+  if (node.type === 'recipe' && !context.recipeIds.has(node.ref)) context.errors.push(`profession ${professionId} node ${node.id} references missing recipe "${node.ref}"`);
+  if (node.type === 'resource' && !context.resourceIds.has(node.ref) && !context.itemIds.has(node.ref)) {
+    context.errors.push(`profession ${professionId} node ${node.id} references missing resource or item "${node.ref}"`);
+  }
+  if (node.type === 'output' && !context.itemIds.has(node.ref) && !context.recipeIds.has(node.ref)) {
+    context.errors.push(`profession ${professionId} node ${node.id} references missing output item or recipe "${node.ref}"`);
+  }
+  if (node.type === 'station' && !stationLabels[node.ref as keyof typeof stationLabels] && !context.buildPieceIds.has(node.ref)) {
+    context.errors.push(`profession ${professionId} node ${node.id} references missing station or build piece "${node.ref}"`);
+  }
+  if (node.type === 'milestone' && !context.masteryIds.has(node.ref)) context.errors.push(`profession ${professionId} node ${node.id} references missing mastery milestone "${node.ref}"`);
+}
+
+function validateMasteryRequirement(context: ValidationContext, owner: string, requirement: ContentRegistry['professions']['milestones'][number]['requirements'][number]): void {
+  if (requirement.type === 'skill') {
+    requireSkill(context, requirement.skillId, owner);
+    if (requirement.value < 0) context.errors.push(`${owner} has invalid skill value ${requirement.value}`);
+  }
+  if (requirement.type === 'quest' && !context.registry.quests[requirement.questId]) context.errors.push(`${owner} references missing quest "${requirement.questId}"`);
+  if (requirement.type === 'spellKnown' && !context.spellIds.has(requirement.spellId)) context.errors.push(`${owner} references missing spell "${requirement.spellId}"`);
+  if (requirement.type === 'recipeCrafted' && !context.recipeIds.has(requirement.recipeId)) context.errors.push(`${owner} references missing recipe "${requirement.recipeId}"`);
+  if (requirement.type === 'itemOwned') requireItemQuantity(context, requirement, owner);
+  if (requirement.type === 'areaDiscovered') requireArea(context, requirement.areaId, owner);
+  if (requirement.type === 'secretFound' && !context.registry.treasure.secrets[requirement.secretId]) context.errors.push(`${owner} references missing secret "${requirement.secretId}"`);
+  if (requirement.type === 'workOrdersCompleted' && requirement.count <= 0) context.errors.push(`${owner} has invalid work order count ${requirement.count}`);
+  if (requirement.type === 'housingPlaced' && requirement.count <= 0) context.errors.push(`${owner} has invalid housing count ${requirement.count}`);
 }
 
 function validateResources(context: ValidationContext): void {
@@ -307,18 +429,72 @@ function validateQuestObjective(context: ValidationContext, questId: string, obj
 
 function validateEconomy(context: ValidationContext): void {
   context.registry.economy.workOrders.forEach((order) => {
+    validateEconomyCategory(context, order.category, `work order ${order.id}.category`);
     requireItem(context, order.itemId, `work order ${order.id}.itemId`);
     requireSkill(context, order.skill, `work order ${order.id}.skill`);
     if (order.issuerNpcId && !context.entityIds.has(order.issuerNpcId)) context.errors.push(`work order ${order.id} references missing issuer "${order.issuerNpcId}"`);
     order.requiredItems?.forEach((requirement) => requireItemQuantity(context, requirement, `work order ${order.id}.requiredItems`));
     order.rewardItems?.forEach((reward) => requireItemQuantity(context, reward, `work order ${order.id}.rewardItems`));
+    order.rewardVoucherItems?.forEach((reward) => requireItemQuantity(context, reward, `work order ${order.id}.rewardVoucherItems`));
+    order.rewardRecipeIds?.forEach((recipeId) => {
+      if (!context.recipeIds.has(recipeId)) context.errors.push(`work order ${order.id}.rewardRecipeIds references missing recipe "${recipeId}"`);
+    });
+    if (order.rewardDiscount) {
+      validateEconomyCategory(context, order.rewardDiscount.category, `work order ${order.id}.rewardDiscount.category`);
+      if (!order.rewardDiscount.label.trim() || order.rewardDiscount.percent <= 0 || order.rewardDiscount.percent > 100 || order.rewardDiscount.duration <= 0) {
+        context.errors.push(`work order ${order.id}.rewardDiscount has invalid label, percent, or duration`);
+      }
+    }
     order.rewardSkillHints?.forEach((skill) => requireSkill(context, skill, `work order ${order.id}.rewardSkillHints`));
     if (order.quantity <= 0 || order.rewardGold < 0) context.errors.push(`work order ${order.id} has invalid quantity or reward`);
   });
   context.registry.economy.marketOrders.forEach((order) => {
+    validateEconomyCategory(context, order.category, `market order ${order.id}.category`);
     requireItem(context, order.itemId, `market order ${order.id}.itemId`);
     if (order.issuerId?.startsWith('npc_') && !context.entityIds.has(order.issuerId)) context.errors.push(`market order ${order.id} references missing issuer "${order.issuerId}"`);
     if (order.quantity <= 0 || order.unitPrice <= 0) context.errors.push(`market order ${order.id} has invalid quantity or unit price`);
+  });
+  context.registry.economy.unlockedRecipeIds.forEach((recipeId) => {
+    if (!context.recipeIds.has(recipeId)) context.errors.push(`economy.unlockedRecipeIds references missing recipe "${recipeId}"`);
+  });
+  context.registry.economy.activeDiscounts.forEach((discount) => {
+    validateEconomyCategory(context, discount.category, `economy discount ${discount.id}.category`);
+    if (!discount.label.trim() || discount.percent <= 0 || discount.percent > 100 || discount.expiresAt <= discount.startedAt) {
+      context.errors.push(`economy discount ${discount.id} has invalid label, percent, or timing`);
+    }
+  });
+  context.registry.economy.demandSignals.forEach((signal) => {
+    if (!context.registry.events.some((event) => event.type === signal.eventType)) context.errors.push(`economy demand signal ${signal.id} references missing event "${signal.eventType}"`);
+    signal.affected.forEach((category) => validateEconomyCategory(context, category, `economy demand signal ${signal.id}.affected`));
+  });
+}
+
+function validateEvents(context: ValidationContext): void {
+  context.registry.events.forEach((event) => {
+    if (!event.title.trim() || !event.rumor.trim() || !event.visibleChange.trim() || !event.cleanup.trim()) {
+      context.errors.push(`event ${event.type} is missing required display, rumor, or cleanup text`);
+    }
+    requireArea(context, event.area, `event ${event.type}.area`);
+    event.affectedLocations.forEach((areaId) => requireArea(context, areaId, `event ${event.type}.affectedLocations`));
+    if (event.duration <= 0) context.errors.push(`event ${event.type} has invalid duration`);
+    validateVec3(context, event.position, `event ${event.type}.position`);
+    event.economyImpact.forEach((impact) => {
+      if (!context.economyCategories.has(impact) && !context.itemIds.has(impact)) {
+        context.warnings.push(`event ${event.type}.economyImpact "${impact}" is not a known economy category or item id`);
+      }
+    });
+    if (!event.rumorSources.length || !event.gameplayHooks.length || !event.triggerConditions.length) {
+      context.warnings.push(`event ${event.type} has sparse authoring hooks`);
+    }
+  });
+}
+
+function validateMapMarkers(context: ValidationContext): void {
+  context.registry.mapMarkers.forEach((marker) => {
+    requireArea(context, marker.areaId, `map marker ${marker.id}.areaId`);
+    if (!marker.label.trim()) context.errors.push(`map marker ${marker.id} is missing required label`);
+    validateVec3(context, marker.position, `map marker ${marker.id}.position`);
+    if (!mapWaypointSources.has(marker.source)) context.errors.push(`map marker ${marker.id} has invalid source "${marker.source}"`);
   });
 }
 
@@ -366,4 +542,12 @@ function requireSkill(context: ValidationContext, skillId: string, owner: string
 
 function requireArea(context: ValidationContext, areaId: AreaId | string, owner: string): void {
   if (!context.areaIds.has(areaId)) context.errors.push(`${owner} references missing area "${areaId}"`);
+}
+
+function validateEconomyCategory(context: ValidationContext, category: string | undefined, owner: string): void {
+  if (category && !context.economyCategories.has(category)) context.errors.push(`${owner} references missing economy category "${category}"`);
+}
+
+function validateVec3(context: ValidationContext, position: Vec3, owner: string): void {
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)) context.errors.push(`${owner} has invalid coordinates`);
 }

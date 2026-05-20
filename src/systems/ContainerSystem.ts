@@ -21,6 +21,12 @@ export function interactContainer(state: GameState, container: ContainerEntity):
     return;
   }
   if (protectedContainerNotice(state, container)) return;
+  if (container.requiredSpellId === 'dispel_field') {
+    const warning = `${container.name} is sealed by a magical barrier. Detect Magic can identify it; Dispel Field can remove it.`;
+    state.ui.prompt = warning;
+    addSystemMessage(state, warning);
+    return;
+  }
   if (container.trap?.armed && container.trap.detected) {
     const warning = 'The lock is trapped. Detect Hidden revealed a dart mechanism.';
     state.ui.prompt = warning;
@@ -110,6 +116,23 @@ export function revealMagicalContainers(state: GameState, method: SecretRevealMe
     attemptSkillUse(state, 'Detect Hidden', { verb: 'detect', difficulty: 24, success: true, relatedSkills: ['Item Identification'] });
   }
   return revealed;
+}
+
+export function dispelContainerBarrier(state: GameState, target: TargetRef): boolean {
+  const container = target?.kind === 'entity' ? state.entities[target.entityId] : null;
+  if (!container || container.kind !== 'container') return false;
+  if (container.requiredSpellId !== 'dispel_field') return false;
+  container.requiredSpellId = undefined;
+  container.locked = false;
+  container.hidden = false;
+  if (container.trap) container.trap.detected = true;
+  revealSecretsNear(state, { method: 'spell', origin: container.position, radius: 1.5 });
+  attemptSkillUse(state, 'Item Identification', { verb: 'identify', difficulty: 34, success: true, targetId: container.id, relatedSkills: ['Magery', 'Detect Hidden'] });
+  addFloatingText(state, 'Seal Broken', container.position, '#dbe7ff');
+  addSystemMessage(state, `${container.name}: magical seal broken.`);
+  state.ui.prompt = 'The magical barrier collapses.';
+  emitAudioHook('spell_impact', { id: container.id, area: container.area, position: container.position });
+  return true;
 }
 
 function openContainer(state: GameState, container: ContainerEntity): void {

@@ -1,33 +1,45 @@
 export type ReleaseCandidateGateId =
+  | 'internal-alpha-scope'
   | 'movement-lock'
   | 'portal-stuck'
+  | 'cpu-acceptable'
+  | 'tooltip-stability'
   | 'save-load'
   | 'ui-reset'
+  | 'movement-modes-persist'
   | 'spellbook'
   | 'inventory-equipment'
   | 'hotbar'
+  | 'profession-atlas'
   | 'first-hour-route'
   | 'normal-mode-dev-buttons'
   | 'crash-free-session'
   | 'known-issues'
   | 'feedback-loop'
+  | 'telemetry-summary'
   | 'scope-freeze';
 
 export type ReleaseCandidateGateSeverity = 'blocker' | 'major';
 
 export interface ReleaseCandidateGateInput {
+  internalAlphaScope: boolean;
   noKnownMovementLock: boolean;
   noCommonPortalStuckBug: boolean;
+  cpuAcceptable: boolean;
+  noTooltipFlicker: boolean;
   stableSaveLoad: boolean;
   uiResetWorks: boolean;
+  movementModesPersist: boolean;
   spellbookUsable: boolean;
   inventoryEquipmentStateVisible: boolean;
   hotbarAssignmentWorks: boolean;
+  professionAtlasUsable: boolean;
   firstHourRoutePlayable: boolean;
   noDevButtonsInNormalMode: boolean;
   crashFreeSixtyMinuteSession: boolean;
   knownIssuesDocumented: boolean;
   feedbackLoopReady: boolean;
+  telemetrySummaryReady: boolean;
   scopeFrozen: boolean;
 }
 
@@ -54,6 +66,13 @@ const gateDefinitions: Array<{
   nextStep: string;
 }> = [
   {
+    id: 'internal-alpha-scope',
+    label: 'Internal alpha scope matches prompt',
+    inputKey: 'internalAlphaScope',
+    severity: 'blocker',
+    nextStep: 'Keep the tester build to one region, first-hour route, MVP depth systems, housing Tier 0-1, readable combat, and stable UI/performance.'
+  },
+  {
     id: 'movement-lock',
     label: 'No known movement lock',
     inputKey: 'noKnownMovementLock',
@@ -68,6 +87,20 @@ const gateDefinitions: Array<{
     nextStep: 'Run portal transitions and fallback recovery until no common stuck case remains.'
   },
   {
+    id: 'cpu-acceptable',
+    label: 'CPU acceptable',
+    inputKey: 'cpuAcceptable',
+    severity: 'blocker',
+    nextStep: 'Run the perf/UI gate and browser smoke; fix frame, draw-call, or DOM churn regressions before testers receive the build.'
+  },
+  {
+    id: 'tooltip-stability',
+    label: 'No tooltip flicker',
+    inputKey: 'noTooltipFlicker',
+    severity: 'blocker',
+    nextStep: 'Run tooltip stability and DOM rendering budget checks; tooltip anchors must not remount repeatedly during common UI use.'
+  },
+  {
     id: 'save-load',
     label: 'Stable save/load',
     inputKey: 'stableSaveLoad',
@@ -80,6 +113,13 @@ const gateDefinitions: Array<{
     inputKey: 'uiResetWorks',
     severity: 'blocker',
     nextStep: 'Open, drag, scroll, resize, reset layout, then confirm windows recover without flicker or stuck scroll.'
+  },
+  {
+    id: 'movement-modes-persist',
+    label: 'Movement modes persist',
+    inputKey: 'movementModesPersist',
+    severity: 'blocker',
+    nextStep: 'Switch keyboard, mouse, and hybrid movement modes, save/load, and confirm the selected mode survives migration.'
   },
   {
     id: 'spellbook',
@@ -101,6 +141,13 @@ const gateDefinitions: Array<{
     inputKey: 'hotbarAssignmentWorks',
     severity: 'blocker',
     nextStep: 'Assign an item, spell, tool, and action to hotbar slots, then activate them by key.'
+  },
+  {
+    id: 'profession-atlas',
+    label: 'Profession Atlas usable',
+    inputKey: 'professionAtlasUsable',
+    severity: 'blocker',
+    nextStep: 'Open Skills, use the Profession Atlas tab, select nodes, pin goals, and confirm the graph stays readable.'
   },
   {
     id: 'first-hour-route',
@@ -128,7 +175,7 @@ const gateDefinitions: Array<{
     label: 'Known issues documented',
     inputKey: 'knownIssuesDocumented',
     severity: 'blocker',
-    nextStep: 'Keep KNOWN_ISSUES.md current with issue, severity, workaround, and playtest blocker status.'
+    nextStep: 'Keep INTERNAL_ALPHA_NOTES.md current with known issues, severity, workaround, and playtest blocker status.'
   },
   {
     id: 'feedback-loop',
@@ -138,11 +185,18 @@ const gateDefinitions: Array<{
     nextStep: 'Prepare survey questions, bug report template, and debug/telemetry export instructions.'
   },
   {
+    id: 'telemetry-summary',
+    label: 'Telemetry summary ready',
+    inputKey: 'telemetrySummaryReady',
+    severity: 'major',
+    nextStep: 'Document which telemetry counters testers should export and how to attach them to feedback.'
+  },
+  {
     id: 'scope-freeze',
     label: 'Scope frozen for playtest',
     inputKey: 'scopeFrozen',
     severity: 'major',
-    nextStep: 'Reject major systems until the external playtest is complete; allow only blocker fixes and low-risk tuning.'
+    nextStep: 'Reject major systems until the internal alpha test is complete; allow only blocker fixes and low-risk tuning.'
   }
 ];
 
@@ -166,7 +220,7 @@ export function evaluateReleaseCandidateGate(input: ReleaseCandidateGateInput): 
 
 export function formatReleaseCandidateGateSummary(report: ReleaseCandidateGateReport): string {
   if (report.ready) {
-    return `External playtest candidate is ready. ${report.passed.length} gate(s) passed.`;
+    return `Internal alpha release candidate is ready. ${report.passed.length} gate(s) passed.`;
   }
 
   const blockers = report.failed.filter((gate) => gate.severity === 'blocker').length;

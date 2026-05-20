@@ -6,6 +6,7 @@ export function updateSocialNpcs(state: GameState, dt: number): void {
   if (state.player.currentArea !== 'town') return;
   for (const entity of Object.values(state.entities)) {
     if (entity.kind !== 'social' || entity.area !== 'town') continue;
+    if (entity.companion || state.world.partyMemberIds.includes(entity.id)) continue;
     const phase = state.clock * 0.35 + entity.id.length;
     const dx = Math.sin(phase) * dt * 0.08;
     const dz = Math.cos(phase * 0.8) * dt * 0.08;

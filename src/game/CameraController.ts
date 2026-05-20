@@ -63,6 +63,21 @@ export class CameraController {
 
   update(state: GameState, dt = 1 / 60, visualPlayerPosition?: Vec3): void {
     const player = visualPlayerPosition ?? state.player.position;
+    if (state.dev.screenshotParity.active) {
+      const parity = state.dev.screenshotParity;
+      const focus = parity.camera.focus ?? player;
+      this.focus.set(focus.x, focus.y + 0.1, focus.z);
+      this.offset.set(parity.camera.offset.x, parity.camera.offset.y, parity.camera.offset.z);
+      this.desiredZoom = THREE.MathUtils.clamp(parity.camera.zoom, 11, 24);
+      this.zoom = this.desiredZoom;
+      this.applyProjection();
+      this.camera.position.copy(this.focus).add(this.offset);
+      this.camera.lookAt(this.focus);
+      this.initialized = true;
+      this.snapRequested = false;
+      this.lastArea = state.player.currentArea;
+      return;
+    }
     const baseFocus = new THREE.Vector3(player.x, player.y + 0.1, player.z);
     const velocity = state.player.movement.velocity;
     const speed = Math.hypot(velocity.x, velocity.z);
