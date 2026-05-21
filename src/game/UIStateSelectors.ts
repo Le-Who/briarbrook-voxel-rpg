@@ -33,8 +33,8 @@ const managedWindowIds: ManagedWindowId[] = ['inventory', 'spellbook', 'skills',
 const actionBindingIds = new Set(['attack', 'ranged', 'utility', 'hide', 'defend', 'interact', 'build']);
 
 const defaultWindowLayouts: Record<ManagedWindowId, UIWindowLayout> = {
-  inventory: { x: 900, y: 88, width: 270, height: 520 },
-  spellbook: { x: 420, y: 94, width: 560, height: 520 },
+  inventory: { x: 1078, y: 220, width: 270, height: 410 },
+  spellbook: { x: 304, y: 68, width: 760, height: 596 },
   skills: { x: 84, y: 90, width: 470, height: 520 },
   journal: { x: 330, y: 96, width: 620, height: 500 },
   market: { x: 300, y: 110, width: 720, height: 480 },

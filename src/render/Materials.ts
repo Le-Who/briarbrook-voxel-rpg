@@ -62,7 +62,7 @@ export const areaAmbient: Record<AreaId, { bg: string; fog: string; hemi: string
   bank: { bg: '#120f0a', fog: '#16120d', hemi: '#c69b66', sun: '#ffd38a', intensity: 1.35 },
   blacksmith: { bg: '#17100c', fog: '#20130d', hemi: '#c8874f', sun: '#ff9f4a', intensity: 1.55 },
   forest: { bg: '#162413', fog: '#24411f', hemi: '#cce6a3', sun: '#edf2b4', intensity: 1.66 },
-  crypt: { bg: '#050505', fog: '#0b0b0d', hemi: '#514a43', sun: '#d37a43', intensity: 0.62 },
+  crypt: { bg: '#070707', fog: '#111112', hemi: '#6a5d50', sun: '#d9894f', intensity: 0.78 },
   road: { bg: '#171a16', fog: '#28271f', hemi: '#d4b27f', sun: '#f3a964', intensity: 1.24 },
   housing: { bg: '#17251e', fog: '#263b30', hemi: '#e1d5a3', sun: '#ffde9b', intensity: 1.7 }
 };

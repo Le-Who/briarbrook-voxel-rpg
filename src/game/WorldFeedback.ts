@@ -127,7 +127,10 @@ export function worldLabelForEntity(
 
   if (entity.kind === 'resource') {
     const action = resourceActionLabel(state, entity);
-    if (state.gathering?.entityId === entity.id) return { title: state.gathering.actionLabel, detail: 'Working...', className: 'resource-label inspector-label action-label' };
+    if (state.gathering?.entityId === entity.id) {
+      const progress = state.gathering.duration > 0 ? Math.max(0, Math.min(100, 100 - (state.gathering.remaining / state.gathering.duration) * 100)) : 0;
+      return { title: state.gathering.actionLabel, detail: `${Math.round(progress)}%`, className: 'resource-label inspector-label action-label' };
+    }
     if (!hovered || !action) return null;
     return { title: action.title, detail: action.detail, className: 'resource-label inspector-label action-label' };
   }

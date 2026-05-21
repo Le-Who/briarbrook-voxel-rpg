@@ -100,16 +100,16 @@ export const reactWindowDefinitions: Record<ReactWindowId, ReactWindowDefinition
   status: contract('status', 'Status', 'docked', { x: 12, y: 12, width: 320, height: 180 }, { persistsLayout: false, resizable: false, draggable: false, collapsible: false, closeBehavior: 'disabled', escBehavior: 'ignore', zLayer: 80 }),
   target: contract('target', 'Target', 'docked', { x: 1032, y: 16, width: 320, height: 140 }, { persistsLayout: false, resizable: false, draggable: false, collapsible: false, closeBehavior: 'disabled', escBehavior: 'ignore', zLayer: 82 }),
   inventory: contract('inventory', 'Inventory', 'floating', { x: 1078, y: 260, width: 270, height: 410 }, { minWidth: 232, minHeight: 280, maxWidth: 520, maxHeight: 620, resizable: true, hiddenInCombat: true }),
-  bank: contract('bank', 'Bank', 'floating', { x: 760, y: 238, width: 290, height: 390 }, { minWidth: 250, minHeight: 260, maxWidth: 560, maxHeight: 620, resizable: true, hiddenInCombat: true, hiddenInPlanning: true }),
+  bank: contract('bank', 'Bank', 'floating', { x: 690, y: 238, width: 290, height: 390 }, { minWidth: 250, minHeight: 260, maxWidth: 560, maxHeight: 620, resizable: true, hiddenInCombat: true, hiddenInPlanning: true }),
   hotbar: contract('hotbar', 'Hotbar', 'docked', { x: 344, y: 634, width: 590, height: 54 }, { persistsLayout: false, resizable: false, draggable: false, collapsible: false, closeBehavior: 'disabled', escBehavior: 'ignore', safeAreaPolicy: 'viewport', zLayer: 90 }),
-  spellbook: contract('spellbook', 'Spellbook', 'floating', { x: 396, y: 88, width: 620, height: 540 }, { minWidth: 520, minHeight: 360, maxWidth: 940, maxHeight: 680, resizable: true }),
+  spellbook: contract('spellbook', 'Spellbook', 'floating', { x: 304, y: 68, width: 760, height: 596 }, { minWidth: 620, minHeight: 420, maxWidth: 980, maxHeight: 680, resizable: true }),
   crafting: contract('crafting', 'Crafting', 'floating', { x: 356, y: 96, width: 700, height: 530 }, { minWidth: 520, minHeight: 420, maxWidth: 980, maxHeight: 680, resizable: true, hiddenInCombat: true, hiddenInPlanning: true }),
   market: contract('market', 'Market', 'floating', { x: 350, y: 100, width: 730, height: 510 }, { minWidth: 560, minHeight: 360, maxWidth: 1040, maxHeight: 680, resizable: true, hiddenInCombat: true, hiddenInPlanning: true }),
   journal: contract('journal', 'Journal', 'floating', { x: 330, y: 84, width: 720, height: 540 }, { minWidth: 520, minHeight: 360, maxWidth: 980, maxHeight: 680, resizable: true }),
   professionAtlas: contract('professionAtlas', 'Profession Atlas', 'workspace', { x: 96, y: 56, width: 1160, height: 600 }, { minWidth: 720, minHeight: 460, maxWidth: 1280, maxHeight: 760, draggable: false, resizable: true, closeBehavior: 'close', escBehavior: 'close', hiddenInCombat: true, zLayer: 1200 }),
   adventureMap: contract('adventureMap', 'Adventure Map', 'workspace', { x: 110, y: 58, width: 1120, height: 590 }, { minWidth: 700, minHeight: 440, maxWidth: 1240, maxHeight: 740, draggable: false, resizable: true, closeBehavior: 'close', escBehavior: 'close', hiddenInCombat: true, zLayer: 1190 }),
   build: contract('build', 'Build', 'floating', { x: 12, y: 116, width: 370, height: 540 }, { minWidth: 340, minHeight: 380, maxWidth: 520, maxHeight: 680, resizable: true, hiddenInCombat: true, hiddenInPlanning: true }),
-  chat: contract('chat', 'Chat', 'floating', { x: 12, y: 410, width: 380, height: 250 }, { minWidth: 280, minHeight: 150, maxWidth: 640, maxHeight: 460, resizable: true }),
+  chat: contract('chat', 'Chat', 'floating', { x: 12, y: 410, width: 430, height: 310 }, { minWidth: 320, minHeight: 180, maxWidth: 640, maxHeight: 500, resizable: true }),
   help: contract('help', 'Help', 'modal', { x: 420, y: 78, width: 460, height: 520 }, { minWidth: 360, minHeight: 320, maxWidth: 680, maxHeight: 680, resizable: true, zLayer: 1300 }),
   settings: contract('settings', 'Settings', 'modal', { x: 430, y: 84, width: 500, height: 560 }, { minWidth: 380, minHeight: 360, maxWidth: 720, maxHeight: 680, resizable: true, zLayer: 1310 }),
   tooltip: contract('tooltip', 'Tooltip', 'overlay', { x: 0, y: 0, width: 320, height: 160 }, { persistsLayout: false, resizable: false, draggable: false, collapsible: false, closeBehavior: 'hide', escBehavior: 'ignore', safeAreaPolicy: 'viewport', zLayer: 1800 }),
@@ -266,7 +266,7 @@ function defaultRectFor(id: ReactWindowId, viewport: ReactViewport): ReactWindow
   }
   if (id === 'hotbar') return { x: Math.round((viewport.width - def.defaultRect.width) / 2), y: viewport.height - 78, width: def.defaultRect.width, height: def.defaultRect.height };
   if (id === 'inventory') return { ...def.defaultRect, x: viewport.width - def.defaultRect.width - 18, y: viewport.height - HOTBAR_SAFE_BOTTOM - def.defaultRect.height - 10 };
-  if (id === 'chat') return { ...def.defaultRect, y: viewport.height - HOTBAR_SAFE_BOTTOM - def.defaultRect.height - 62 };
+  if (id === 'chat') return { ...def.defaultRect, y: viewport.height - HOTBAR_SAFE_BOTTOM - def.defaultRect.height - 10 };
   return { ...def.defaultRect };
 }
 

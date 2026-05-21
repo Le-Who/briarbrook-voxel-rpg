@@ -46,6 +46,19 @@ describe('LoopGovernor', () => {
     expect(moved.dirtyFlags.minimapDirty).toBe(true);
   });
 
+  it('marks UI dirty when a context menu opens over a React panel', () => {
+    const state = createInitialGameState();
+    closePanels(state);
+    const governor = new LoopGovernor();
+    governor.decide(0, state, { pendingActions: false, documentHidden: false });
+
+    state.ui.contextMenu = { target: { kind: 'inventory', owner: 'inventory', slot: 0 }, x: 100, y: 120 };
+    const decision = governor.decide(50, state, { pendingActions: false, documentHidden: false });
+
+    expect(decision.runUi).toBe(true);
+    expect(decision.dirtyFlags.tooltipDirty).toBe(true);
+  });
+
   it('treats active player movement as gameplay even with helper panels open', () => {
     const state = createInitialGameState();
     state.ui.panels.inventory = true;

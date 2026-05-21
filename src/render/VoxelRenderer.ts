@@ -61,9 +61,9 @@ export const runtimeDynamicLightPlans: Partial<Record<AreaId, RuntimeDynamicLigh
     [6, 2, -6, '#ffc062', 0.8, 8]
   ],
   crypt: [
-    [-8, 1.8, -4, '#ff8e39', 1.5, 8],
-    [5, 1.8, -6, '#ff8e39', 1.5, 8],
-    [0, 1.5, 10, '#ff8e39', 1.0, 7]
+    [-10, 1.8, 5, '#ff9b3f', 1.25, 9],
+    [0, 1.7, -8, '#7ad7ff', 0.95, 9],
+    [7, 1.8, 7, '#ffb15f', 1.2, 9]
   ],
   road: [
     [1, 2, 2, '#ffb45f', 1.1, 8],
@@ -77,6 +77,7 @@ export const runtimeDynamicLightPlans: Partial<Record<AreaId, RuntimeDynamicLigh
 };
 
 const MAX_PICK_MESHES_PER_ENTITY = 2;
+const PLAYER_HERO_MODEL_URL = new URL('../../assets/exported/models/player_hero.glb', import.meta.url).href;
 
 export function selectPrimaryPickTargetIndexes(volumes: number[], maxTargets = MAX_PICK_MESHES_PER_ENTITY): number[] {
   return volumes
@@ -116,6 +117,7 @@ export class VoxelRenderer {
   private roofZones: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
   private litKey: string | null = null;
   private lastRaycastCandidateCount = 0;
+  private playerHeroModelPromise: Promise<THREE.Object3D | null> | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private areaManager: AreaManager) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -312,7 +314,7 @@ export class VoxelRenderer {
 
   private updateEntities(state: GameState): void {
     const visible = new Set<string>();
-    const playerRecord = this.ensureEntity('player', 'player', () => this.makeCharacter('#6d4a2c', '#2f5841', '#d0d0c8', false));
+    const playerRecord = this.ensureEntity('player', 'player', () => this.makePlayerCharacter());
     this.updatePlayerEquipmentVisuals(playerRecord.group, state);
     const playerMoving = state.player.actionState.kind === 'moving' || Math.hypot(state.player.movement.velocity.x, state.player.movement.velocity.z) > 0.08;
     const playerVisual = this.visualPlayerSample(state);
@@ -672,7 +674,7 @@ export class VoxelRenderer {
   private getGroundMaterial(areaId: AreaId, x: number, z: number): THREE.Material {
     if (areaId === 'crypt') return this.variedMaterial('crypt-floor', ['#282826', '#2e2d2b', '#242424', '#34302c'], x, z);
     if (areaId === 'bank' || areaId === 'blacksmith') return this.variedMaterial('interior-stone', ['#5d564d', '#665f54', '#56514b', '#6b6255'], x, z);
-    if (areaId === 'road' && Math.abs(z - x * 0.08) < 3) return this.variedMaterial('road-cobble', ['#777368', '#837f72', '#6f6c63', '#8a8375'], x, z);
+    if (areaId === 'road' && (Math.abs(z - x * 0.08) < 3.4 || (x > -8 && x < 9 && z > -5 && z < 5))) return this.variedMaterial('road-cobble', ['#777368', '#837f72', '#6f6c63', '#8a8375'], x, z);
     if (areaId === 'town' && x < -13 && z > 14) return this.mats.get('river', '#214f6c', { transparent: true, opacity: 0.82 });
     if (
       areaId === 'town' &&
@@ -686,7 +688,7 @@ export class VoxelRenderer {
     }
     if (areaId === 'housing' && z > 6) return this.mats.get('water', '#235d7c', { transparent: true, opacity: 0.82, roughness: 0.35 });
     if (areaId === 'housing' && Math.abs(x) < 7 && Math.abs(z) < 6) return this.variedMaterial('plot-grass', ['#607f3d', '#658a42', '#557638', '#6f9148'], x, z);
-    if (areaId === 'forest' && Math.abs(x) < 2 && z > 4 && z < 10) return this.variedMaterial('forest-path', ['#746a4d', '#6a6045', '#7e724f', '#5f5942'], x, z);
+    if (areaId === 'forest' && this.isForestPathTile(x, z)) return this.variedMaterial('forest-path', ['#746a4d', '#6a6045', '#7e724f', '#5f5942'], x, z);
     if (areaId === 'forest' && z < -10 && x > -2 && x < 14) return this.variedMaterial('forest-rock', ['#67645d', '#5f5c56', '#706d65', '#57534e'], x, z);
     if (areaId === 'forest') return this.variedMaterial('forest-grass', ['#496c35', '#52763c', '#426330', '#5a7b42'], x, z);
     return this.variedMaterial('grass', ['#647f43', '#6c8a49', '#5d7740', '#718d4d'], x, z);
@@ -699,6 +701,25 @@ export class VoxelRenderer {
 
   private tileHash(x: number, z: number): number {
     return Math.abs(Math.floor(Math.sin(x * 127.1 + z * 311.7) * 10000));
+  }
+
+  private isForestPathTile(x: number, z: number): boolean {
+    const nearSegment = (ax: number, az: number, bx: number, bz: number, width: number) => {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const lengthSq = dx * dx + dz * dz;
+      const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / lengthSq));
+      const px = ax + dx * t;
+      const pz = az + dz * t;
+      return Math.hypot(x - px, z - pz) <= width;
+    };
+    return (
+      nearSegment(0, 11, 0, 5, 1.7) ||
+      nearSegment(0, 5, 7, -5, 1.8) ||
+      nearSegment(0, 5, 11, 4, 1.85) ||
+      nearSegment(0, 6, -9, 8, 1.45) ||
+      (z < -10 && x > -2 && x < 14)
+    );
   }
 
   private decorateTerrainTile(areaId: AreaId, x: number, z: number, height: number): void {
@@ -842,56 +863,110 @@ export class VoxelRenderer {
   }
 
   private buildTown(): void {
-    this.house(-9, -5, 4, 3, true);
-    this.house(5, -7, 5, 3, false);
-    this.house(9, 1, 4, 3, false);
-    this.house(-12, 6, 5, 4, true);
+    this.townBuildingBlockout();
+    this.townPlazaCore();
+    this.townServiceStreet();
+    this.townMarketStreet();
+    this.townWaterfrontEdge();
+    this.townExitMarkers();
+    this.townPavingMosaic();
+    this.townRouteGrounding();
+    this.townSquareReferenceDressing();
+    this.townEdgeDressing();
+  }
+
+  private townBuildingBlockout(): void {
+    this.house(-9, -6, 4, 3, true);
+    this.house(4, -7, 5, 3, false);
+    this.house(8, 1, 5, 4, false);
+    this.house(-13, 5, 4, 6, true);
     this.house(-20, -9, 5, 4, false);
     this.house(-18, -3, 5, 4, true);
     this.house(14, -10, 5, 4, true);
     this.house(15, 6, 5, 4, false);
     this.house(17, 12, 4, 3, false);
-    this.marketStall(7, 3, '#2c6bb8');
-    this.marketStall(-7, 3, '#a8483d');
-    this.marketStall(3, 8, '#3e8f52');
-    this.marketStall(-15, 10, '#c1a24a');
-    this.fountain(0, 0);
-    this.dock(-11, 9);
-    this.dock(-17, 15);
-    this.boat(-18, 16);
-    this.sign(2, 8, 'Briarbrook');
-    for (const service of briarbrookTownSquareReference.serviceEntrances) {
-      this.sign(service.signPosition.x, service.signPosition.z, service.label);
-      this.servicePlaque(service.servicePosition.x, service.servicePosition.z, service.accent);
-    }
-    for (const exit of briarbrookTownSquareReference.exitSigns) {
-      this.sign(exit.position.x, exit.position.z, exit.label);
-      this.routeStone(exit.position.x, exit.position.z, exit.accent);
-    }
-    this.forgeSmokeMarker(6, -3);
     this.wallLine(-21, -13, -21, 15);
     this.wallLine(-21, 15, -15, 15);
     this.wallLine(21, -12, 21, 13);
     this.wallLine(13, 15, 21, 15);
+  }
+
+  private townPlazaCore(): void {
+    this.fountain(0, 0);
+    this.sign(2, 8, 'Briarbrook');
+    for (const [x, z, accent] of [
+      [-4, -2, '#dfd8b1'],
+      [4, -1, '#cd584c'],
+      [-4, 4, '#6f87d4'],
+      [4, 4, '#e8bf4b']
+    ] as Array<[number, number, string]>) {
+      this.plazaPlanter(x, z, accent);
+    }
+    for (const bench of briarbrookTownSquareReference.dressing.benches) this.bench(bench.position.x, bench.position.z);
     for (const lamp of briarbrookTownSquareReference.dressing.lamps) this.lantern(lamp.position.x, lamp.position.z);
+  }
+
+  private townServiceStreet(): void {
+    for (const service of briarbrookTownSquareReference.serviceEntrances) {
+      this.sign(service.signPosition.x, service.signPosition.z, service.label);
+      this.servicePlaque(service.servicePosition.x, service.servicePosition.z, service.accent);
+    }
+    this.forgeSmokeMarker(6, -3);
     this.gardenPatch(-3, -10);
-    this.gardenPatch(12, 10);
-    this.cookingFire(-18, -5);
     this.alchemyTable(-16, 0);
     this.scribeDesk(15, -6);
+    this.worktable(-12, 2, '#a66b2e');
+    this.crates(-8, -1);
+    this.sack(-7.2, -0.6);
+    this.crates(5, -2.2);
+    this.sack(5.8, -1.95);
+    for (const [x, z] of [
+      [-10, -6],
+      [9, 0],
+      [-18, -3]
+    ] as Array<[number, number]>) {
+      this.flowerBox(x, z);
+    }
+  }
+
+  private townMarketStreet(): void {
+    this.marketStall(7, 3, '#2c6bb8');
+    this.marketStall(10, 5, '#efe6c8');
+    this.marketStall(4, 8, '#3e8f52');
+    this.marketStall(-7, 3, '#a8483d');
+    for (const stack of briarbrookTownSquareReference.dressing.marketStacks) this.marketStack(stack.position.x, stack.position.z);
+    this.cart(10, 8, '#7f4a24');
     this.loom(15, 8);
     this.worktable(18, 10, '#8f5f2a');
-    this.worktable(-12, 2, '#a66b2e');
     this.tinkerBench(13, 12);
     this.crates(6, 5);
     this.sack(7.1, 5.25);
+    this.crates(10, 2.5);
+    this.sack(9.4, 2.8);
+    this.flowerBox(15, 6);
+  }
+
+  private townWaterfrontEdge(): void {
+    this.marketStall(-15, 10, '#c1a24a');
+    this.dock(-11, 9);
+    this.dock(-17, 15);
+    this.boat(-18, 16);
+    this.well(-6, 8);
+    this.cart(-14, -6, '#7f4a24');
+    this.gardenPatch(12, 10);
+    this.cookingFire(-18, -5);
     this.crates(-8, 5);
     this.sack(-6.9, 4.75);
-    this.well(-6, 8);
-    this.cart(10, 8, '#7f4a24');
-    this.cart(-14, -6, '#7f4a24');
-    for (const bench of briarbrookTownSquareReference.dressing.benches) this.bench(bench.position.x, bench.position.z);
-    this.townSquareReferenceDressing();
+  }
+
+  private townExitMarkers(): void {
+    for (const exit of briarbrookTownSquareReference.exitSigns) {
+      this.sign(exit.position.x, exit.position.z, exit.label);
+      this.routeStone(exit.position.x, exit.position.z, exit.accent);
+    }
+  }
+
+  private townEdgeDressing(): void {
     for (const [x, z] of [
       [-9, -2],
       [5, -4],
@@ -899,94 +974,90 @@ export class VoxelRenderer {
       [-16, 10],
       [18, 8],
       [-18, -8]
-    ]) {
+    ] as Array<[number, number]>) {
       this.barrel(x, z);
       this.sack(x + 0.65, z + 0.25);
-    }
-    for (const [x, z] of [
-      [-10, -6],
-      [9, 0],
-      [15, 6],
-      [-18, -3]
-    ]) {
-      this.flowerBox(x, z);
     }
   }
 
   private buildBankInterior(): void {
     this.interiorShell('#49301d', '#796c5b');
-    this.counter(-2, -1, 5);
+    this.counter(-2.5, -1.2, 6);
     this.bankServiceDressing();
-    this.chest(2, -1);
+    this.bankCustomerLane();
+    this.chest(2.8, -1.8);
+    this.chest(-3.8, -1.9);
     this.banner(3, -4);
-    this.rug(0, 2, '#1e486e');
-    this.crates(-5, 1);
-    this.crates(5, 3);
+    this.banner(-3.8, -4);
+    this.rug(0, 2.35, '#1e486e');
+    this.crates(-5.2, 0.9);
+    this.crates(5.0, 2.8);
     this.barrel(-5.8, 2.3);
     this.sack(4.6, 4.2);
-    this.lantern(-4, -3);
-    this.lantern(5, -2);
+    this.ledgerDesk(-2.8, 3.8);
+    this.ledgerDesk(3.0, 3.6);
+    this.lantern(-4.8, -3.2);
+    this.lantern(4.8, -3.2);
+    this.lantern(-5.2, 4.2);
+    this.lantern(5.2, 4.1);
   }
 
   private buildSmithy(): void {
     this.interiorShell('#4c2f1d', '#75695e');
-    this.forge(2, -2);
+    this.forge(2.4, -2.4);
     this.smithyServiceDressing();
-    this.anvil(0, 1);
+    this.anvil(0, 0.8);
     this.oreBins(-5, -2);
-    this.toolRack(-4, -4);
-    this.toolRack(5, 1);
+    this.oreBins(3.9, 3.2);
+    this.toolRack(-4.8, -4);
+    this.toolRack(5, 0.7);
     this.banner(-2, -4);
-    this.worktable(-3, 3, '#a9773b');
+    this.worktable(-3.2, 3.1, '#a9773b');
+    this.worktable(4.5, -4.0, '#b96b31');
+    this.quenchTub(1.2, 2.8);
+    this.weaponStand(-1.6, -3.4);
     this.barrel(5, 3);
     this.sack(-5.4, -3.2);
     this.lantern(-5, 4);
     this.lantern(5, -3);
+    this.lantern(0, -4.3);
   }
 
   private buildForest(): void {
-    this.mineEntrance(7, -8);
-    this.mineTrack(6.2, -5.8);
-    this.oreCluster(5, -2, '#9ba5a3');
-    this.oreCluster(-7, 3, '#b77745');
-    this.oreCluster(8, -3, '#9ba5a3');
-    this.oreCluster(12, -7, '#b77745');
-    this.rockScatter(6, -5);
-    this.rockScatter(9, -7);
-    this.brokenWeapon(6, -9);
-    for (let z = 2; z <= 12; z += 1) this.streamTile(-5 + Math.sin(z * 0.7) * 1.2, z);
-    this.bridge(0, 6);
-    this.bridge(-5, 8);
-    this.sign(0, 12, 'Briarbrook');
-    this.sign(7, -6, 'Mine');
-    this.torchPost(6, -6);
-    this.gardenPatch(-9, 8);
-    this.gardenPatch(3, 9);
-    for (const [x, z] of [
-      [-13, -5],
-      [-10, 3],
-      [-2, -8],
-      [2, 2],
-      [10, 6],
-      [14, 2]
-    ]) {
-      this.stump(x, z);
-      this.mushrooms(x + 0.8, z + 0.4);
-    }
-    this.logPile(-7, -7);
-    this.logPile(10, -1);
-    this.rockScatter(-13, 5);
-    this.rockScatter(12, -9);
-    this.fallenBranch(-2, 10);
-    this.fallenBranch(6, 5);
-    this.bushPatch(-12, 10);
-    this.bushPatch(11, 8);
-    for (const clue of adventureReferencePlan.forest.dressing.forageClues) this.forageClue(clue.x, clue.z);
+    this.forestPathNetwork();
+    this.forestMineApproach();
+    this.forestGatheringClearing();
+    this.forestBridgeAndTownRoad();
+    this.forestUnderstoryDressing();
     this.flowers();
   }
 
   private buildCrypt(): void {
     this.cryptWalls();
+    this.cryptEntranceThreshold();
+    this.cryptCentralCombatChamber();
+    this.cryptSecretReliquary();
+    this.cryptAltarNiche();
+    this.cryptFloorBreakupAndRubble();
+    this.cryptReferenceDressing();
+  }
+
+  private cryptEntranceThreshold(): void {
+    this.cryptDoorMarker(-9, 4);
+    this.wallLine(-12, -4, -7, -4);
+    this.torchPost(-11, 5);
+    this.torchPost(-7, 4);
+    this.torchPool(-9, 4);
+    this.chain(-13, 6);
+    this.chain(-13, 2);
+    this.crackedWall(-14.8, 5.5);
+    this.rubble(-12, 2);
+    this.rubble(-8, 7);
+    this.bones(-10, 6);
+    this.cryptFloorRune(-9, 3);
+  }
+
+  private cryptCentralCombatChamber(): void {
     for (const [x, z] of [
       [-4, -4],
       [2, -5],
@@ -997,70 +1068,248 @@ export class VoxelRenderer {
       [-10, -4],
       [10, 2],
       [4, 8]
-    ]) {
-      this.column(x, z);
-    }
-    for (const [x, z] of [
-      [-8, -4],
-      [-5, 6],
-      [5, -6],
-      [8, 4],
-      [-12, 9],
-      [12, -8],
-      [0, 10]
-    ]) {
+    ] as Array<[number, number]>) this.column(x, z);
+    this.wallLine(8, 2, 13, 2);
+    this.wallLine(2, 8, 7, 8);
+    for (const [x, z] of adventureReferencePlan.crypt.lighting.torchPools.map((pool) => [pool.x, pool.z] as [number, number])) {
       this.torchPost(x, z);
+      this.torchPool(x, z);
     }
+    this.sarcophagus(3, -7);
+    this.tomb(-6, -8);
     this.bones(-1, 4);
     this.bones(8, 7);
     this.bones(-9, -7);
     this.blood(5, 3);
-    this.blood(11, 8);
-    this.wallLine(-12, -4, -7, -4);
-    this.wallLine(8, 2, 13, 2);
-    this.wallLine(2, 8, 7, 8);
-    this.chest(11, 9);
-    this.chest(-12, -8);
-    this.tomb(-6, -8);
-    this.tomb(7, 9);
-    this.rubble(-11, 2);
-    this.rubble(12, -4);
     this.candle(-2, -2);
     this.candle(3, 6);
-    this.crackedWall(-14.8, 2);
-    this.crackedWall(14.8, -6);
-    this.chain(-13, -9);
-    this.chain(13, 9);
     this.brokenWeapon(1, 6);
     this.brokenWeapon(-8, -2);
-    this.cryptDoorMarker(-9, 4);
-    this.cryptReferenceDressing();
+  }
+
+  private cryptSecretReliquary(): void {
+    this.cryptPedestal(7, 7);
+    this.candle(6.2, 6.2);
+    this.candle(7.8, 6.2);
+    this.candle(7.2, 8.1);
+    this.hiddenNiche(-12, 6);
+    this.cryptLever(-13, 6);
+    this.falseCryptDoor(-2, 9);
+    this.crackedWall(-14.8, 6);
+    this.crackedWall(-2, 12.4);
+    this.rubble(-12, 8);
+    this.rubble(11, 8);
+    this.chest(12, -8);
+    this.cryptPedestal(12, -8);
+    this.chain(13, 9);
+    this.bones(11, -7);
+  }
+
+  private cryptAltarNiche(): void {
+    this.cryptAltar(0, -8);
+    this.sarcophagus(-3, -8);
+    this.tomb(3, -9);
+    this.candle(-1.2, -6.8);
+    this.candle(1.2, -6.8);
+    this.cryptFloorRune(0, -6);
+    this.rubble(-4, -10);
+    this.rubble(4, -7);
+    this.chain(-13, -9);
+  }
+
+  private cryptFloorBreakupAndRubble(): void {
+    for (const [x, z] of [
+      [-4, 2],
+      [2, -2],
+      [7, 5],
+      [-10, 7],
+      [11, -2],
+      [-6, -1],
+      [6, 0],
+      [0, 5],
+      [-2, 10]
+    ] as Array<[number, number]>) this.crackedFloorCluster(x, z);
+    for (const [x, z] of [
+      [-11, 2],
+      [12, -4],
+      [-3, 7],
+      [9, -1],
+      [2, 10]
+    ] as Array<[number, number]>) this.rubble(x, z);
   }
 
   private buildRoad(): void {
-    this.house(-11, -5, 4, 3, true);
-    this.checkpointGate(-8, 1);
-    this.wallLine(-12, 6, 12, 6);
-    this.wallLine(-12, 9, 12, 9);
-    this.torchPost(1, 2);
-    this.torchPost(-5, -1);
-    this.torchPost(7, 4);
-    this.torchPost(-1, -5);
+    this.roadRiverEdge();
+    this.roadCombatLane();
+    this.roadCheckpointEdge();
+    this.roadCombatPocketDressing();
+    this.roadReferenceDressing();
+  }
+
+  private roadRiverEdge(): void {
+    this.waterEdge(8);
+    this.bridge(6, 8);
+    for (const [x, z] of [
+      [3, 7],
+      [8, 7],
+      [11, 6],
+      [-8, 7],
+      [-12, 7]
+    ] as Array<[number, number]>) {
+      this.rockScatter(x, z);
+      this.bushPatch(x + 0.5, z - 0.55);
+    }
+    this.lowFence(-13, 7, -5, 7);
+    this.lowFence(4, 7, 12, 7);
+    this.lowFence(-13, 10, 13, 10);
+  }
+
+  private roadCombatLane(): void {
+    this.roadPavingBreakup();
+    for (const lamp of adventureReferencePlan.road.dressing.lanternPosts) this.torchPost(lamp.x, lamp.z);
     this.torchPost(4, -2);
-    this.sign(-7, 1, 'Town Gate');
+    this.torchPost(-8, 3);
+    this.wagonTracks(-4, -3);
+    this.wagonTracks(1, -1);
+    this.wagonTracks(6, 2);
     this.sign(9, -4, 'Old Bridge');
     this.sign(2, -6, 'Bandit Warning');
-    this.wagonTracks(-2, -3);
-    this.wagonTracks(4, -2);
-    this.bushPatch(-9, 5);
-    this.bushPatch(6, 5);
-    this.logPile(-11, 4);
-    this.bones(7, -3);
+    this.lowFence(-11, -6, -3, -6);
+    this.lowFence(7, -5, 12, -4);
+  }
+
+  private roadCheckpointEdge(): void {
+    this.checkpointGate(-8, 1);
+    this.sign(-7, 1, 'Town Gate');
+    this.crates(-10, 2.6);
+    this.sack(-9.2, 2.9);
     this.barrel(-6, 2.4);
-    this.streamTile(6, 8);
-    this.bridge(6, 8);
-    this.waterEdge(9);
-    this.roadReferenceDressing();
+    this.logPile(-11, 4);
+    this.bushPatch(-9, 5);
+    this.roadsideStoneWall(-12, -5, -8, -3);
+  }
+
+  private roadCombatPocketDressing(): void {
+    for (const pocket of adventureReferencePlan.road.combatPockets) {
+      this.routeStone(pocket.x, pocket.z, '#8a8375');
+    }
+    this.bushPatch(6, 5);
+    this.bushPatch(10, -3);
+    this.bushPatch(-5, -5);
+    this.logPile(9, 1);
+    this.bones(7, -3);
+    this.brokenWeapon(3, -1);
+    this.rockScatter(-2, 4);
+    this.rockScatter(12, -1);
+  }
+
+  private roadPavingBreakup(): void {
+    const highlights: BoxInstance[] = [];
+    const ruts: BoxInstance[] = [];
+    const stones = adventureReferencePlan.road.dressing.roadStones;
+    for (let x = -12; x <= 12; x += 1) {
+      for (let z = -6; z <= 6; z += 1) {
+        if (Math.abs(z - x * 0.08) > 3.4 && !stones.some((stone) => Math.hypot(stone.x - x, stone.z - z) <= 2.6)) continue;
+        const hash = this.tileHash(x * 5, z * 7);
+        if (hash % 2 === 0) highlights.push({ x: x + ((hash % 5) - 2) * 0.05, y: 0.04, z: z + ((hash % 7) - 3) * 0.04, ry: (hash % 8) * 0.22 });
+        if (hash % 5 === 0) ruts.push({ x, y: 0.055, z: z + 0.12, ry: 0.1 + (hash % 3) * 0.04 });
+      }
+    }
+    this.instancedBoxes(this.staticGroup, 'road-paving-highlight', '#928b7d', 0.48, 0.035, 0.18, highlights);
+    this.instancedBoxes(this.staticGroup, 'road-rut-dark', '#4f3c2a', 0.72, 0.03, 0.07, ruts);
+  }
+
+  private roadsideStoneWall(x1: number, z1: number, x2: number, z2: number): void {
+    const steps = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+    const stone = this.mats.get('roadside-stone-wall', '#6e6a62');
+    for (let i = 0; i <= steps; i += 1) {
+      const t = steps === 0 ? 0 : i / steps;
+      const x = Math.round(THREE.MathUtils.lerp(x1, x2, t));
+      const z = Math.round(THREE.MathUtils.lerp(z1, z2, t));
+      this.box(this.staticGroup, x, 0.25, z, 0.86, 0.32, 0.42, stone, { ry: (i % 3) * 0.1 });
+    }
+  }
+
+  private forestPathNetwork(): void {
+    const pathMarkers: BoxInstance[] = [];
+    for (const path of adventureReferencePlan.forest.pathNetwork) {
+      const steps = Math.max(Math.abs(path.to.x - path.from.x), Math.abs(path.to.z - path.from.z), 1);
+      for (let i = 0; i <= steps; i += 1) {
+        const t = i / steps;
+        const x = THREE.MathUtils.lerp(path.from.x, path.to.x, t);
+        const z = THREE.MathUtils.lerp(path.from.z, path.to.z, t);
+        const hash = this.tileHash(Math.round(x) * 3, Math.round(z) * 5);
+        if (hash % 2 === 0) pathMarkers.push({ x: x + ((hash % 3) - 1) * 0.1, y: 0.045, z: z + ((hash % 5) - 2) * 0.06, ry: (hash % 10) * 0.16 });
+      }
+    }
+    this.instancedBoxes(this.staticGroup, 'forest-path-pebble', '#8a7a56', 0.42, 0.035, 0.15, pathMarkers);
+  }
+
+  private forestMineApproach(): void {
+    this.mineEntrance(7, -8);
+    this.mineTrack(6.2, -5.8);
+    this.oreCluster(5, -2, '#9ba5a3');
+    this.oreCluster(8, -3, '#9ba5a3');
+    this.oreCluster(12, -7, '#b77745');
+    this.rockScatter(6, -5);
+    this.rockScatter(9, -7);
+    this.rockScatter(11, -9);
+    this.torchPost(6, -6);
+    this.sign(7, -6, 'Mine');
+    this.crates(5.2, -7.2);
+    this.sack(4.4, -6.8);
+    this.cart(9.8, -6.2, '#6e4a25');
+    this.brokenWeapon(6, -9);
+  }
+
+  private forestGatheringClearing(): void {
+    this.oreCluster(-7, 3, '#b77745');
+    this.logPile(10, -1);
+    this.logPile(9, 6);
+    this.stump(10, 6);
+    this.mushrooms(10.8, 6.4);
+    this.bushPatch(13, 2);
+    this.bushPatch(8, 6);
+    this.forageClue(11, 5.5);
+    this.fallenBranch(6, 5);
+  }
+
+  private forestBridgeAndTownRoad(): void {
+    for (let z = 2; z <= 12; z += 1) this.streamTile(-5 + Math.sin(z * 0.7) * 1.2, z);
+    this.bridge(0, 6);
+    this.bridge(-5, 8);
+    this.sign(0, 12, 'Briarbrook');
+    this.torchPost(-1, 9);
+    this.torchPost(2, 6);
+    this.lowFence(-4, 8, -1, 8);
+    this.lowFence(2, 8, 6, 8);
+  }
+
+  private forestUnderstoryDressing(): void {
+    this.gardenPatch(-9, 8);
+    this.gardenPatch(3, 9);
+    for (const [x, z] of [
+      [-13, -5],
+      [-10, 3],
+      [-2, -8],
+      [2, 2],
+      [14, 2],
+      [-14, 10],
+      [-6, 12],
+      [15, -2]
+    ] as Array<[number, number]>) {
+      this.stump(x, z);
+      this.mushrooms(x + 0.8, z + 0.4);
+    }
+    this.logPile(-7, -7);
+    this.rockScatter(-13, 5);
+    this.rockScatter(12, -9);
+    this.fallenBranch(-2, 10);
+    this.bushPatch(-12, 10);
+    this.bushPatch(11, 8);
+    this.bushPatch(-6, -10);
+    this.bushPatch(4, 11);
+    for (const clue of adventureReferencePlan.forest.dressing.forageClues) this.forageClue(clue.x, clue.z);
   }
 
   private buildHousingPlot(): void {
@@ -1069,15 +1318,21 @@ export class VoxelRenderer {
     this.wallLine(-8, -7, -8, 7);
     this.wallLine(8, -7, 8, 7);
     this.plotBoundaryFence();
+    this.plotBuildGrid();
     this.dock(-9, 8);
     this.boat(-5, 9);
     this.house(10, -6, 4, 3, false);
     this.bench(-5, -5);
-    this.gardenPatch(-2, 3);
-    this.worktable(4, -4, '#d9bd89');
+    this.gardenPatch(-3.2, 3.2);
+    this.gardenPatch(-1.4, 3.6);
+    this.worktable(3.9, -4, '#d9bd89');
+    this.utilityStaging(4.7, 2.8);
+    this.buildGhostMarker(-1.8, 0.7);
     this.lantern(-6, -2);
+    this.lantern(5.6, 0.3);
     this.barrel(-7, 6);
     this.crates(6, -6);
+    this.crates(4.9, 4.8);
     this.flowerBox(9, -7);
     this.plotMarker(0, 0);
   }
@@ -1107,6 +1362,30 @@ export class VoxelRenderer {
     const rail = this.mats.get('plot-fence-rail', '#7b4d2b');
     this.box(this.staticGroup, x, 0.45, z, horizontal ? length : 0.12, 0.12, horizontal ? 0.12 : length, rail);
     this.box(this.staticGroup, x, 0.24, z, horizontal ? length : 0.12, 0.1, horizontal ? 0.1 : length, rail);
+  }
+
+  private plotBuildGrid(): void {
+    const grid = this.mats.get('plot-build-grid', '#8ee0a1', { transparent: true, opacity: 0.42 });
+    for (let x = -4; x <= 4; x += 2) this.box(this.staticGroup, x, 0.055, 0.5, 0.05, 0.04, 8.3, grid);
+    for (let z = -3; z <= 4; z += 2) this.box(this.staticGroup, 0, 0.06, z, 8.8, 0.04, 0.05, grid);
+  }
+
+  private utilityStaging(x: number, z: number): void {
+    this.worktable(x, z, '#d9bd89');
+    this.crates(x + 1.0, z + 0.35);
+    this.barrel(x - 1.0, z + 0.2);
+    this.box(this.staticGroup, x - 0.35, 0.8, z - 0.16, 0.42, 0.08, 0.28, this.mats.get('plot-tool-head', '#aeb4ad', { metalness: 0.25 }), { ry: -0.2 });
+    this.box(this.staticGroup, x + 0.34, 0.84, z + 0.08, 0.16, 0.34, 0.12, this.mats.get('plot-hammer', '#5a3920'), { rz: 0.35 });
+  }
+
+  private buildGhostMarker(x: number, z: number): void {
+    const valid = this.mats.get('build-ghost-valid', '#8ee0a1', { transparent: true, opacity: 0.48 });
+    const edge = this.mats.get('build-ghost-edge', '#e6f7cc', { transparent: true, opacity: 0.72 });
+    this.box(this.staticGroup, x, 0.09, z, 1.4, 0.08, 1.4, valid);
+    this.box(this.staticGroup, x, 0.18, z - 0.72, 1.48, 0.1, 0.08, edge);
+    this.box(this.staticGroup, x, 0.18, z + 0.72, 1.48, 0.1, 0.08, edge);
+    this.box(this.staticGroup, x - 0.72, 0.18, z, 0.08, 0.1, 1.48, edge);
+    this.box(this.staticGroup, x + 0.72, 0.18, z, 0.08, 0.1, 1.48, edge);
   }
 
   private makeEntity(entity: Entity): THREE.Group {
@@ -1147,6 +1426,7 @@ export class VoxelRenderer {
       return group;
     }
     if (entity.kind === 'container') {
+      if (entity.name.includes('Board')) return this.makeNoticeBoard(entity.name.includes('Market') ? '#2f5d93' : '#7a4a24');
       return this.kit.chestBuilder({ locked: entity.locked, trapped: Boolean(entity.trap?.armed), colorVariation: 0.04 });
     }
     if (entity.kind === 'portal') {
@@ -1155,6 +1435,24 @@ export class VoxelRenderer {
       return group;
     }
     return new THREE.Group();
+  }
+
+  private makeNoticeBoard(accent: string): THREE.Group {
+    const group = new THREE.Group();
+    const post = this.mats.get('notice-board-post', '#5f3b20');
+    const face = this.mats.get(`notice-board-face-${accent}`, '#7c5834');
+    const trim = this.mats.get(`notice-board-trim-${accent}`, accent, { emissive: accent, emissiveIntensity: 0.08 });
+    const paper = this.mats.get('notice-board-paper', '#d8c7a0');
+    this.box(group, -0.46, 0.62, 0, 0.13, 1.24, 0.13, post);
+    this.box(group, 0.46, 0.62, 0, 0.13, 1.24, 0.13, post);
+    this.box(group, 0, 1.08, -0.03, 1.26, 0.74, 0.12, face);
+    this.box(group, 0, 1.5, -0.04, 1.36, 0.12, 0.14, trim);
+    this.box(group, 0, 0.66, -0.04, 1.36, 0.1, 0.14, trim);
+    this.box(group, -0.28, 1.16, -0.11, 0.36, 0.3, 0.04, paper);
+    this.box(group, 0.24, 1.08, -0.11, 0.42, 0.26, 0.04, paper);
+    this.box(group, 0.04, 0.88, -0.12, 0.5, 0.06, 0.04, trim);
+    this.box(group, 0, 0.08, 0, 1.34, 0.08, 0.44, this.mats.get('notice-board-base', '#4a3424'));
+    return group;
   }
 
   private updatePlayerEquipmentVisuals(player: THREE.Group, state: GameState): void {
@@ -1168,10 +1466,10 @@ export class VoxelRenderer {
       visual.color,
       visual.actionVisual ?? ''
     ].join(':')).join('|');
-    if (player.userData.equipmentVisualKey === key) return;
+    const existing = player.getObjectByName('equipment-visuals');
+    if (player.userData.equipmentVisualKey === key && existing) return;
     player.userData.equipmentVisualKey = key;
 
-    const existing = player.getObjectByName('equipment-visuals');
     if (existing) {
       player.remove(existing);
       this.disposeObject(existing);
@@ -1286,6 +1584,69 @@ export class VoxelRenderer {
     }
 
     this.box(parent, 0, 0, 0, 0.18, 0.18, 0.18, wood);
+  }
+
+  private makePlayerCharacter(): THREE.Group {
+    const group = this.makeCharacter('#6d4a2c', '#2f5841', '#d0d0c8', false);
+    group.name = 'player-character';
+    group.userData.playerHeroModelStatus = 'fallback';
+    void this.loadPlayerHeroModel().then((model) => {
+      if (!model || group.userData.playerHeroModelStatus === 'runtime-model') return;
+      const entityId = group.userData.entityId;
+      const runtimeModel = this.cloneRuntimeModel(model);
+      runtimeModel.name = 'player-hero-runtime-model';
+      runtimeModel.traverse((child) => {
+        child.userData.entityId = entityId;
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          child.userData.runtimeAssetMesh = true;
+        }
+      });
+      this.clearGroup(group);
+      group.add(runtimeModel);
+      group.userData.playerHeroModelStatus = 'runtime-model';
+      group.userData.equipmentVisualKey = null;
+      this.markPrimaryPickTargets(group);
+    });
+    return group;
+  }
+
+  private loadPlayerHeroModel(): Promise<THREE.Object3D | null> {
+    if (!this.playerHeroModelPromise) {
+      this.playerHeroModelPromise = import('three/examples/jsm/loaders/GLTFLoader.js')
+        .then(({ GLTFLoader }) => new GLTFLoader().loadAsync(PLAYER_HERO_MODEL_URL))
+        .then((gltf) => {
+          gltf.scene.name = 'player-hero-template';
+          gltf.scene.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+          return gltf.scene;
+        })
+        .catch(() => null);
+    }
+    return this.playerHeroModelPromise;
+  }
+
+  private cloneRuntimeModel(model: THREE.Object3D): THREE.Object3D {
+    const clone = model.clone(true);
+    clone.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      child.geometry = child.geometry.clone();
+      child.geometry.userData.runtimeAssetGeometry = true;
+      child.material = Array.isArray(child.material)
+        ? child.material.map((material) => {
+            const cloned = material.clone();
+            cloned.userData.runtimeAssetMaterial = true;
+            return cloned;
+          })
+        : child.material.clone();
+      if (!Array.isArray(child.material)) child.material.userData.runtimeAssetMaterial = true;
+    });
+    return clone;
   }
 
   private animatePlayerEquipmentVisuals(player: THREE.Group, state: GameState): void {
@@ -1932,7 +2293,88 @@ export class VoxelRenderer {
     }
   }
 
+  private townRouteGrounding(): void {
+    const line = (fromX: number, fromZ: number, toX: number, toZ: number, count: number, wobble = 0.12): BoxInstance[] => {
+      const points: BoxInstance[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const t = count === 1 ? 0 : i / (count - 1);
+        const x = THREE.MathUtils.lerp(fromX, toX, t);
+        const z = THREE.MathUtils.lerp(fromZ, toZ, t);
+        const offset = ((i % 3) - 1) * wobble;
+        points.push({ x: x + offset, y: 0.035, z: z - offset * 0.4, ry: (i % 5) * 0.18 });
+      }
+      return points;
+    };
+    const plazaRing: BoxInstance[] = [];
+    for (let i = 0; i < 16; i += 1) {
+      const angle = (i / 16) * Math.PI * 2;
+      plazaRing.push({ x: Math.cos(angle) * 3.15, y: 0.04, z: Math.sin(angle) * 3.15, ry: angle });
+    }
+    this.instancedBoxes(this.staticGroup, 'town-route-plaza-cobbles', '#8d8272', 0.44, 0.05, 0.28, plazaRing);
+    this.instancedBoxes(this.staticGroup, 'town-route-service-cobbles', '#8f806c', 0.48, 0.045, 0.3, [
+      ...line(-8.2, -1.6, -2.4, -1.2, 7),
+      ...line(2.2, -1.2, 6.4, -2.7, 6)
+    ]);
+    this.instancedBoxes(this.staticGroup, 'town-route-market-cobbles', '#9b855a', 0.5, 0.045, 0.32, [
+      ...line(2.8, 1.4, 7.5, 5.1, 7),
+      ...line(6.8, 5.9, 12.4, 5.2, 6)
+    ]);
+    this.instancedBoxes(this.staticGroup, 'town-route-exit-cobbles', '#837969', 0.46, 0.045, 0.28, [
+      ...line(0, 3.5, 0, 12.5, 10),
+      ...line(3.5, 3.0, 12.2, 4.2, 9),
+      ...line(-2.8, 3.0, -13.5, 11.4, 11)
+    ]);
+    this.instancedBoxes(this.staticGroup, 'town-route-waterfront-cobbles', '#6e8792', 0.44, 0.045, 0.3, line(-14.5, 11.0, -17.2, 14.2, 5));
+  }
+
+  private plazaPlanter(x: number, z: number, accent: string): void {
+    const wood = this.mats.get('plaza-planter-wood', '#6a4428');
+    const soil = this.mats.get('plaza-planter-soil', '#3f2f20');
+    this.box(this.staticGroup, x, 0.09, z, 1.45, 0.14, 0.74, soil);
+    this.box(this.staticGroup, x, 0.18, z - 0.42, 1.55, 0.22, 0.12, wood);
+    this.box(this.staticGroup, x, 0.18, z + 0.42, 1.55, 0.22, 0.12, wood);
+    this.box(this.staticGroup, x - 0.82, 0.18, z, 0.12, 0.22, 0.82, wood);
+    this.box(this.staticGroup, x + 0.82, 0.18, z, 0.12, 0.22, 0.82, wood);
+    this.flowerBed(x, z, accent);
+  }
+
+  private townPavingMosaic(): void {
+    const highlights: BoxInstance[] = [];
+    const seams: BoxInstance[] = [];
+    const guideAnchors = briarbrookTownSquareReference.dressing.pathGuides.map((guide) => guide.position);
+    for (let x = -13; x <= 14; x += 1) {
+      for (let z = -6; z <= 13; z += 1) {
+        const nearGuide = guideAnchors.some((guide) => Math.hypot(guide.x - x, guide.z - z) <= 4.6);
+        const inPlaza = Math.abs(x) <= 6 && z >= -4 && z <= 8;
+        const inMarket = x >= 3 && x <= 13 && z >= 2 && z <= 9;
+        const inService = z <= 0 && x >= -10 && x <= 8;
+        const inFerry = x <= -8 && z >= 7;
+        if (!nearGuide && !inPlaza && !inMarket && !inService && !inFerry) continue;
+        const hash = this.tileHash(x * 3, z * 5);
+        if (hash % 2 === 0) {
+          highlights.push({
+            x: x + ((hash % 5) - 2) * 0.045,
+            y: 0.035,
+            z: z + ((hash % 7) - 3) * 0.035,
+            ry: (hash % 12) * 0.13
+          });
+        }
+        if (hash % 3 === 0) {
+          seams.push({
+            x: x + ((hash % 3) - 1) * 0.08,
+            y: 0.052,
+            z: z - ((hash % 4) - 1.5) * 0.07,
+            ry: hash % 2 ? Math.PI * 0.5 : 0
+          });
+        }
+      }
+    }
+    this.instancedBoxes(this.staticGroup, 'town-paving-highlight', '#9b9383', 0.5, 0.035, 0.16, highlights);
+    this.instancedBoxes(this.staticGroup, 'town-paving-seam', '#4d4941', 0.62, 0.025, 0.045, seams);
+  }
+
   private townSquareReferenceDressing(): void {
+    for (const tree of briarbrookTownSquareReference.dressing.shadeTrees) this.tree(tree.position.x, tree.position.z, 0.86);
     for (const bed of briarbrookTownSquareReference.dressing.flowerBeds) this.flowerBed(bed.position.x, bed.position.z, bed.accent ?? '#dfd8b1');
     for (const banner of briarbrookTownSquareReference.dressing.banners) this.civicBanner(banner.position.x, banner.position.z, banner.accent ?? '#1f5a95');
     for (const stack of briarbrookTownSquareReference.dressing.marketStacks) this.marketStack(stack.position.x, stack.position.z);
@@ -2020,11 +2462,25 @@ export class VoxelRenderer {
   private bankServiceDressing(): void {
     this.bankShelf(-4.9, -4.2, 0);
     this.bankShelf(4.9, -4.2, 0);
+    this.bankShelf(0, -4.35, 0);
     this.bankShelf(-5.1, 3.8, Math.PI);
     this.ledgerStack(-1.1, -0.55);
     this.ledgerStack(1.2, -0.55);
     this.secureChestStack(4.4, 0.4);
     this.secureChestStack(-4.4, 3.4);
+  }
+
+  private bankCustomerLane(): void {
+    const brass = this.mats.get('bank-queue-brass', '#c8a455', { metalness: 0.25 });
+    const rope = this.mats.get('bank-queue-rope', '#8f6230');
+    for (const x of [-2.4, 0, 2.4]) {
+      this.box(this.staticGroup, x, 0.38, 1.05, 0.12, 0.76, 0.12, brass);
+      this.box(this.staticGroup, x, 0.38, 3.35, 0.12, 0.76, 0.12, brass);
+    }
+    this.box(this.staticGroup, -1.2, 0.72, 1.05, 2.4, 0.08, 0.08, rope);
+    this.box(this.staticGroup, 1.2, 0.72, 1.05, 2.4, 0.08, 0.08, rope);
+    this.box(this.staticGroup, -1.2, 0.72, 3.35, 2.4, 0.08, 0.08, rope);
+    this.box(this.staticGroup, 1.2, 0.72, 3.35, 2.4, 0.08, 0.08, rope);
   }
 
   private bankShelf(x: number, z: number, ry: number): void {
@@ -2038,6 +2494,13 @@ export class VoxelRenderer {
     this.box(this.staticGroup, x, 1.04, z, 0.76, 0.05, 0.44, paper, { ry: -0.18 });
     this.box(this.staticGroup, x - 0.12, 1.075, z, 0.06, 0.025, 0.34, ink, { ry: -0.18 });
     this.box(this.staticGroup, x + 0.12, 1.08, z - 0.05, 0.04, 0.025, 0.28, ink, { ry: -0.18 });
+  }
+
+  private ledgerDesk(x: number, z: number): void {
+    this.worktable(x, z, '#d7bf8d');
+    this.ledgerStack(x - 0.2, z - 0.05);
+    this.box(this.staticGroup, x + 0.52, 0.82, z + 0.18, 0.08, 0.34, 0.08, this.mats.get('bank-quill', '#efe7cf'), { rz: 0.42 });
+    this.box(this.staticGroup, x + 0.35, 0.75, z - 0.22, 0.28, 0.12, 0.28, this.mats.get('bank-inkwell', '#1d1711'));
   }
 
   private secureChestStack(x: number, z: number): void {
@@ -2074,7 +2537,7 @@ export class VoxelRenderer {
   }
 
   private smithyServiceDressing(): void {
-    this.forgeGlow(2, -2);
+    this.forgeGlow(2.4, -2.4);
     this.ingotCrates(-5.1, -0.6);
     this.ingotCrates(4.4, -1.1);
     this.repairBench(-2.5, 2.7);
@@ -2117,6 +2580,26 @@ export class VoxelRenderer {
     this.box(this.staticGroup, x - 0.35, 0.75, z, 0.44, 0.08, 0.32, leather, { ry: 0.18 });
     this.box(this.staticGroup, x + 0.34, 0.77, z - 0.08, 0.44, 0.08, 0.2, metal, { ry: -0.24 });
     this.box(this.staticGroup, x + 0.08, 0.86, z + 0.24, 0.1, 0.28, 0.1, this.mats.get('repair-bench-awl', '#d8c28a', { metalness: 0.2 }), { rz: 0.45 });
+  }
+
+  private quenchTub(x: number, z: number): void {
+    const iron = this.mats.get('quench-tub-band', '#5c5d59', { metalness: 0.25 });
+    const water = this.mats.get('quench-tub-water', '#2d6f83', { roughness: 0.25 });
+    const wood = this.mats.get('quench-tub-wood', '#6d4322');
+    this.box(this.staticGroup, x, 0.38, z, 1.05, 0.7, 0.72, wood);
+    this.box(this.staticGroup, x, 0.76, z, 0.92, 0.08, 0.58, water);
+    this.box(this.staticGroup, x, 0.44, z - 0.38, 1.1, 0.1, 0.08, iron);
+    this.box(this.staticGroup, x, 0.44, z + 0.38, 1.1, 0.1, 0.08, iron);
+  }
+
+  private weaponStand(x: number, z: number): void {
+    const wood = this.mats.get('weapon-stand-wood', '#5f3a1d');
+    const steel = this.mats.get('weapon-stand-steel', '#b7bbb6', { metalness: 0.35 });
+    this.box(this.staticGroup, x, 0.42, z, 1.2, 0.12, 0.18, wood);
+    this.box(this.staticGroup, x - 0.45, 0.86, z, 0.1, 0.88, 0.1, wood);
+    this.box(this.staticGroup, x + 0.45, 0.86, z, 0.1, 0.88, 0.1, wood);
+    this.box(this.staticGroup, x - 0.2, 1.0, z + 0.05, 0.08, 1.1, 0.08, steel, { rz: 0.28 });
+    this.box(this.staticGroup, x + 0.22, 1.0, z - 0.03, 0.08, 1.0, 0.08, steel, { rz: -0.22 });
   }
 
   private toolRack(x: number, z: number): void {
@@ -2503,6 +2986,49 @@ export class VoxelRenderer {
     this.candle(x + 0.75, z + 0.38);
   }
 
+  private cryptPedestal(x: number, z: number): void {
+    const base = this.mats.get('crypt-pedestal-base', '#44413d');
+    const trim = this.mats.get('crypt-pedestal-trim', '#8f7750', { metalness: 0.12, roughness: 0.65 });
+    this.box(this.staticGroup, x, 0.18, z, 2.15, 0.34, 1.55, base);
+    this.box(this.staticGroup, x, 0.43, z, 1.72, 0.16, 1.16, this.mats.get('crypt-pedestal-top', '#5d5952'));
+    this.box(this.staticGroup, x, 0.56, z - 0.58, 1.45, 0.08, 0.08, trim);
+    this.box(this.staticGroup, x, 0.56, z + 0.58, 1.45, 0.08, 0.08, trim);
+  }
+
+  private hiddenNiche(x: number, z: number): void {
+    const stone = this.mats.get('crypt-niche-stone', '#4b4844');
+    const dark = this.mats.get('crypt-niche-shadow', '#11100f');
+    this.box(this.staticGroup, x, 0.85, z, 1.45, 1.2, 0.28, stone);
+    this.box(this.staticGroup, x, 0.88, z - 0.16, 0.92, 0.72, 0.08, dark);
+    this.candle(x - 0.36, z - 0.32);
+    this.candle(x + 0.36, z - 0.32);
+    this.box(this.staticGroup, x, 1.35, z - 0.18, 0.38, 0.18, 0.22, this.mats.get('crypt-niche-skull', '#b8b09a'));
+  }
+
+  private cryptLever(x: number, z: number): void {
+    const metal = this.mats.get('crypt-lever-metal', '#6f6a61', { metalness: 0.35, roughness: 0.5 });
+    const handle = this.mats.get('crypt-lever-handle', '#8b5a2b');
+    this.box(this.staticGroup, x, 0.5, z, 0.55, 0.72, 0.22, this.mats.get('crypt-lever-plate', '#3b3936'));
+    this.box(this.staticGroup, x + 0.05, 0.88, z - 0.04, 0.12, 0.78, 0.12, metal, { rz: -0.5 });
+    this.box(this.staticGroup, x + 0.24, 1.2, z - 0.04, 0.22, 0.22, 0.22, handle);
+  }
+
+  private falseCryptDoor(x: number, z: number): void {
+    const stone = this.mats.get('false-crypt-door-stone', '#504d48');
+    const crack = this.mats.get('false-crypt-door-crack', '#141414');
+    this.box(this.staticGroup, x, 0.95, z, 1.5, 1.45, 0.22, stone);
+    this.box(this.staticGroup, x, 1.18, z - 0.14, 0.08, 0.94, 0.06, crack, { rz: 0.22 });
+    this.box(this.staticGroup, x - 0.34, 0.82, z - 0.16, 0.08, 0.46, 0.06, crack, { rz: -0.18 });
+    this.candle(x - 0.7, z - 0.4);
+  }
+
+  private cryptFloorRune(x: number, z: number): void {
+    const glow = this.mats.get('crypt-floor-rune-glow', '#7ad7ff', { emissive: '#4bbcff', emissiveIntensity: 0.28, transparent: true, opacity: 0.42 });
+    this.box(this.staticGroup, x, 0.065, z, 1.25, 0.035, 0.08, glow, { ry: 0.4 });
+    this.box(this.staticGroup, x, 0.068, z, 0.08, 0.035, 1.25, glow, { ry: 0.4 });
+    this.box(this.staticGroup, x, 0.071, z, 0.78, 0.035, 0.08, glow, { ry: -0.38 });
+  }
+
   private crackedFloorCluster(x: number, z: number): void {
     const crack = this.mats.get('crypt-floor-crack-deep', '#121212');
     this.box(this.staticGroup, x, 0.055, z, 0.9, 0.035, 0.06, crack, { ry: 0.4 });
@@ -2527,6 +3053,12 @@ export class VoxelRenderer {
     object.traverse((child) => {
       const mesh = child as THREE.Mesh;
       if (mesh.geometry && !mesh.geometry.userData.sharedBox) mesh.geometry.dispose();
+      if (mesh.material) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((material) => {
+          if (material.userData.runtimeAssetMaterial) material.dispose();
+        });
+      }
     });
   }
 

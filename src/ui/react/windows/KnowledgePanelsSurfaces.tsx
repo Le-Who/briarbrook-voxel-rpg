@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type ChangeEvent, type MouseEvent, type ReactElement } from 'react';
+import { useMemo, useState, type ChangeEvent, type MouseEvent, type ReactElement } from 'react';
 import { economyCategoryLabels, marketCategories } from '../../../data/economy';
 import { itemDefs } from '../../../data/items';
 import { recipes, stationLabels } from '../../../data/recipes';
@@ -12,10 +12,9 @@ import type { GameUICommandResult } from '../bridge/commands';
 import type { GameUISnapshot } from '../bridge/selectors';
 import { useReactPanelRender } from '../components/renderMetrics';
 import { useGameCommand, useGameSnapshot } from '../hooks/useGameSnapshot';
-import { reactWindowDefinitions, resolveReactWindowLayout, type ReactWindowId } from './windowManagerV2';
+import { useDraggableReactWindow } from './draggableWindow';
 
 type DispatchAction = (action: GameAction) => GameUICommandResult;
-type KnowledgePanelId = Extract<ReactWindowId, 'spellbook' | 'crafting' | 'market' | 'journal'>;
 type SpellRole = Exclude<SpellbookRoleFilter, 'all'>;
 
 const spellRoles: SpellbookRoleFilter[] = ['all', 'Damage', 'Healing', 'Utility', 'Travel', 'Support', 'Control', 'Debuff'];
@@ -45,6 +44,8 @@ export function KnowledgePanelsSurfaces({ snapshot, dispatchAction }: { snapshot
 function SpellbookWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   useReactPanelRender('spellbook');
   const known = useMemo(() => new Set(snapshot.spells.knownSpellIds), [snapshot.spells.knownSpellIds]);
+  const savedLayout = snapshot.windows.layouts.find((layout) => layout.id === 'spellbook')?.layout;
+  const drag = useDraggableReactWindow('spellbook', dispatchAction, savedLayout);
   const visible = Object.values(spellDefs).filter((spell) => spellVisible(spell, known, snapshot));
   const selected = visible.find((spell) => spell.id === snapshot.spells.selectedSpellId) ?? visible[0] ?? Object.values(spellDefs)[0];
   const selectedKnown = known.has(selected.id);
@@ -53,7 +54,10 @@ function SpellbookWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapsho
     <GameWindow
       className="bb-knowledge-window bb-react-spellbook"
       data-react-panel="spellbook"
-      style={windowStyle('spellbook')}
+      data-dense-menu-layout="spellbook"
+      style={drag.style}
+      headerProps={drag.headerProps}
+      {...drag.windowProps}
       title="Spellbook"
       subtitle={`${visible.length} spells`}
       actions={<IconButton label="Close spellbook" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'spellbook', open: false })}>x</IconButton>}
@@ -65,24 +69,26 @@ function SpellbookWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapsho
         </ActionFooter>
       }
     >
-      <PanelToolbar>
-        <input className="bb-react-search" aria-label="Search spellbook" value={snapshot.spells.search} placeholder="Search spells" onChange={(event) => dispatchChange(event, dispatchAction, (value) => ({ type: 'SET_SPELLBOOK_SEARCH', search: value }))} />
-        <PanelTabs tabs={knowledgeTabs} activeId={snapshot.spells.knowledgeFilter} onSelect={(id) => dispatchAction({ type: 'SET_SPELLBOOK_KNOWLEDGE_FILTER', filter: id as SpellbookKnowledgeFilter })} />
-        <select className="bb-react-select" aria-label="Spell circle" value={snapshot.spells.circleFilter} onChange={(event) => dispatchAction({ type: 'SET_SPELLBOOK_CIRCLE_FILTER', circle: event.target.value === 'all' ? 'all' : Number(event.target.value) })}>
-          <option value="all">All circles</option>
-          {spellCircles.map((circle) => <option value={circle} key={circle}>Circle {circle}</option>)}
-        </select>
-        <select className="bb-react-select" aria-label="Spell role" value={snapshot.spells.roleFilter} onChange={(event) => dispatchAction({ type: 'SET_SPELLBOOK_ROLE_FILTER', role: event.target.value as SpellbookRoleFilter })}>
-          {spellRoles.map((role) => <option value={role} key={role}>{role}</option>)}
-        </select>
-        <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_TOOLTIP_MODE', mode: snapshot.settings.tooltipMode === 'advanced' ? 'compact' : 'advanced' })}>{snapshot.settings.tooltipMode === 'advanced' ? 'Compact' : 'Advanced'}</button>
-      </PanelToolbar>
       <SplitPane
-        className="bb-split-pane--two"
+        className="bb-split-pane--two bb-spellbook-split"
         data-bb-layout="split-pane"
         start={
-          <ScrollArea className="bb-knowledge-list">
-            <div className="bb-spell-card-grid">
+          <ScrollArea className="bb-knowledge-list bb-spellbook-sidebar">
+            <div className="bb-spellbook-controls" data-bb-fixed="toolbar" data-spellbook-controls="left">
+              <input className="bb-react-search" aria-label="Search spellbook" value={snapshot.spells.search} placeholder="Search spells" onChange={(event) => dispatchChange(event, dispatchAction, (value) => ({ type: 'SET_SPELLBOOK_SEARCH', search: value }))} />
+              <div className="bb-spellbook-filter-row">
+                <select className="bb-react-select" aria-label="Spell circle" value={snapshot.spells.circleFilter} onChange={(event) => dispatchAction({ type: 'SET_SPELLBOOK_CIRCLE_FILTER', circle: event.target.value === 'all' ? 'all' : Number(event.target.value) })}>
+                  <option value="all">All circles</option>
+                  {spellCircles.map((circle) => <option value={circle} key={circle}>Circle {circle}</option>)}
+                </select>
+                <select className="bb-react-select" aria-label="Spell role" value={snapshot.spells.roleFilter} onChange={(event) => dispatchAction({ type: 'SET_SPELLBOOK_ROLE_FILTER', role: event.target.value as SpellbookRoleFilter })}>
+                  {spellRoles.map((role) => <option value={role} key={role}>{role}</option>)}
+                </select>
+              </div>
+              <PanelTabs className="bb-spellbook-knowledge-tabs" tabs={knowledgeTabs} activeId={snapshot.spells.knowledgeFilter} onSelect={(id) => dispatchAction({ type: 'SET_SPELLBOOK_KNOWLEDGE_FILTER', filter: id as SpellbookKnowledgeFilter })} />
+              <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_TOOLTIP_MODE', mode: snapshot.settings.tooltipMode === 'advanced' ? 'compact' : 'advanced' })}>{snapshot.settings.tooltipMode === 'advanced' ? 'Compact detail' : 'Advanced detail'}</button>
+            </div>
+            <div className="bb-spell-list" data-spell-list="compact-rows">
               {visible.map((spell) => <SpellCard key={spell.id} spell={spell} selected={spell.id === selected.id} known={known.has(spell.id)} dispatchAction={dispatchAction} />)}
             </div>
           </ScrollArea>
@@ -101,6 +107,7 @@ function SpellCard({ spell, selected, known, dispatchAction }: { spell: SpellDef
       type="button"
       className={`bb-spell-card ${selected ? 'is-selected' : ''} ${known ? 'is-known' : 'is-unknown'}`.trim()}
       data-spell-card={spell.id}
+      data-spell-row="summary"
       data-hotbar-source={known ? `spell:${spell.id}` : undefined}
       data-drag-kind={known ? 'spell' : undefined}
       data-source-window-id={known ? 'spellbook' : undefined}
@@ -109,27 +116,38 @@ function SpellCard({ spell, selected, known, dispatchAction }: { spell: SpellDef
       onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SELECT_SPELL', spellId: spell.id })}
     >
       {known ? <IconGlyph icon={spell.iconDescriptor} label={spell.displayName} category={spellIconCategory(spell)} /> : <span className="bb-locked-glyph">?</span>}
-      <span className="bb-spell-card__name">{known ? spell.displayName : 'Unknown Spell'}</span>
-      <Badge tone="info">C{spell.circle}</Badge>
-      <Badge tone={known ? 'success' : 'muted'}>{known ? 'Known' : 'Unknown'}</Badge>
-      <Badge tone="accent">{role}</Badge>
+      <span className="bb-spell-card__main">
+        <span className="bb-spell-card__name">{known ? spell.displayName : 'Unknown Spell'}</span>
+        <small>{role} - Circle {spell.circle} - {known ? 'Known' : 'Unknown'}</small>
+      </span>
+      <span className="bb-spell-card__stat">{known ? `${spell.castTime.toFixed(1)}s` : '--'}</span>
     </button>
   );
 }
 
 function SpellDetail({ spell, known, snapshot }: { spell: SpellDefinition; known: boolean; snapshot: GameUISnapshot }): ReactElement {
   return (
-    <DetailPane title={known ? spell.displayName : 'Unknown Spell'} data-spell-detail={spell.id}>
-      <ScrollArea>
-        <StatusRow label="Circle" value={spell.circle} />
-        <StatusRow label="Role" value={roleForSpell(spell)} />
-        <StatusRow label="Mana" value={`${snapshot.vitals.mana.toFixed(0)}/${spell.manaCost}`} />
-        <StatusRow label="Target" value={spell.targetType} />
-        <Text as="p" tone="muted">{known ? spell.description : 'This spell is not written in your spellbook yet.'}</Text>
-        <Text as="strong" tone="accent">Reagents</Text>
-        <div className="bb-requirement-list">
-          {spell.reagents.length ? spell.reagents.map((req) => <RequirementRow key={req.itemId} requirement={req} have={inventoryCount(snapshot, req.itemId)} multiplier={1} />) : <Text tone="success">No reagents</Text>}
+    <DetailPane title={known ? spell.displayName : 'Unknown Spell'} className="bb-spell-detail-pane" data-spell-detail={spell.id}>
+      <ScrollArea className="bb-detail-stack">
+        <div className="bb-detail-title-row" data-spell-detail-section="summary">
+          {known ? <IconGlyph icon={spell.iconDescriptor} label={spell.displayName} category={spellIconCategory(spell)} /> : <span className="bb-locked-glyph">?</span>}
+          <Text as="p" tone="muted">{known ? spell.description : 'This spell is not written in your spellbook yet.'}</Text>
         </div>
+        <div className="bb-spell-stat-grid" data-spell-detail-section="stats">
+          <StatusRow label="Circle" value={spell.circle} />
+          <StatusRow label="Role" value={roleForSpell(spell)} />
+          <StatusRow label="Mana" value={`${snapshot.vitals.mana.toFixed(0)}/${spell.manaCost}`} />
+          <StatusRow label="Cast" value={`${spell.castTime.toFixed(1)}s`} />
+          <StatusRow label="Cooldown" value={`${spell.cooldown.toFixed(1)}s`} />
+          <StatusRow label="Range" value={spell.range > 0 ? `${spell.range} blocks` : 'Self'} />
+          <StatusRow label="Target" value={spell.targetType} />
+        </div>
+        <section className="bb-detail-section" data-spell-detail-section="reagents">
+          <Text as="strong" tone="accent">Reagents</Text>
+          <div className="bb-requirement-list">
+            {spell.reagents.length ? spell.reagents.map((req) => <RequirementRow key={req.itemId} requirement={req} have={inventoryCount(snapshot, req.itemId)} multiplier={1} />) : <Text tone="success">No reagents</Text>}
+          </div>
+        </section>
       </ScrollArea>
     </DetailPane>
   );
@@ -137,6 +155,7 @@ function SpellDetail({ spell, known, snapshot }: { spell: SpellDefinition; known
 
 function CraftingWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   useReactPanelRender('crafting');
+  const drag = useDraggableReactWindow('crafting', dispatchAction);
   const station = snapshot.crafting.selectedStationType ?? 'all';
   const visible = recipes.filter((recipe) => station === 'all' || recipe.stationType === station);
   const selected = visible.find((recipe) => recipe.id === snapshot.crafting.selectedRecipeId) ?? visible[0] ?? recipes[0];
@@ -147,7 +166,10 @@ function CraftingWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot
     <GameWindow
       className="bb-knowledge-window bb-react-crafting"
       data-react-panel="crafting"
-      style={windowStyle('crafting')}
+      data-dense-menu-layout="crafting"
+      style={drag.style}
+      headerProps={drag.headerProps}
+      {...drag.windowProps}
       title={station === 'forge' ? 'Blacksmithing' : 'Crafting'}
       subtitle={`${visible.length} recipes`}
       actions={<IconButton label="Close crafting" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'crafting', open: false })}>x</IconButton>}
@@ -190,32 +212,42 @@ function CraftingWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot
 function CraftingDetail({ selected, outputIcon, outputLabel, snapshot, dispatchAction }: { selected: (typeof recipes)[number]; outputIcon: IconDescriptor; outputLabel: string; snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   const openWorkOrders = snapshot.market.workOrders.filter((order) => order.status === 'open').slice(0, 4);
   return (
-    <DetailPane title={selected.name}>
-      <ScrollArea>
+    <DetailPane title={selected.name} data-crafting-detail="true">
+      <ScrollArea className="bb-detail-stack">
         <div className="bb-detail-title-row">
           <IconGlyph icon={outputIcon} label={outputLabel} category={itemDefs[selected.outputItemId] ? itemIconCategory(itemDefs[selected.outputItemId]) : 'resource'} />
           <Text tone="muted">{outputLabel} - {selected.skill} {selected.minSkill}+</Text>
         </div>
-        <Text as="strong" tone="accent">Requirements</Text>
-        <div className="bb-requirement-list">
-          {selected.inputs.map((req) => <RequirementRow key={req.itemId} requirement={req} have={inventoryCount(snapshot, req.itemId)} multiplier={snapshot.crafting.quantity} />)}
-        </div>
-        <Text as="strong" tone="accent">Output</Text>
-        {selected.outputs.map((output) => <StatusRow key={output.itemId} label={itemDefs[output.itemId]?.name ?? output.itemId} value={`x${output.quantity * snapshot.crafting.quantity}`} />)}
-        <Text as="strong" tone="accent">Queue</Text>
-        {snapshot.crafting.queue.length ? snapshot.crafting.queue.map((job) => <StatusRow key={job.id} label={recipes.find((recipe) => recipe.id === job.recipeId)?.name ?? job.recipeId} value={`${Math.ceil(job.remaining)}s`} />) : <Text tone="muted">No active jobs</Text>}
-        <Text as="strong" tone="accent">Repairs</Text>
-        {Object.entries(snapshot.equipment).filter(([, stack]) => stack?.maxDurability).map(([slot, stack]) => (
-          <button type="button" className="bb-list-button" key={slot} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'REPAIR_EQUIPPED_ITEM', slot: slot as GameAction extends { type: 'REPAIR_EQUIPPED_ITEM'; slot: infer S } ? S : never })}>
-            <span>{itemDefs[stack!.itemId]?.name ?? stack!.itemId}</span><small>{stack!.durability ?? stack!.maxDurability}/{stack!.maxDurability}</small>
-          </button>
-        ))}
-        <Text as="strong" tone="accent">Work order delivery</Text>
-        {openWorkOrders.length ? openWorkOrders.map((order) => {
-          const required = order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }];
-          const ready = required.every((req) => accessibleCount(snapshot, req.itemId) >= req.quantity);
-          return <button type="button" className="bb-list-button" key={order.id} disabled={!ready} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'COMPLETE_WORK_ORDER', orderId: order.id })}><span>{order.title ?? order.requester}</span><small>{ready ? 'Ready' : 'Missing items'}</small></button>;
-        }) : <Text tone="muted">No open work orders</Text>}
+        <section className="bb-detail-section" data-crafting-detail-section="requirements">
+          <Text as="strong" tone="accent">Requirements</Text>
+          <div className="bb-requirement-list">
+            {selected.inputs.map((req) => <RequirementRow key={req.itemId} requirement={req} have={inventoryCount(snapshot, req.itemId)} multiplier={snapshot.crafting.quantity} />)}
+          </div>
+        </section>
+        <section className="bb-detail-section" data-crafting-detail-section="output">
+          <Text as="strong" tone="accent">Output</Text>
+          {selected.outputs.map((output) => <StatusRow key={output.itemId} label={itemDefs[output.itemId]?.name ?? output.itemId} value={`x${output.quantity * snapshot.crafting.quantity}`} />)}
+        </section>
+        <section className="bb-detail-section" data-crafting-detail-section="queue">
+          <Text as="strong" tone="accent">Queue</Text>
+          {snapshot.crafting.queue.length ? snapshot.crafting.queue.map((job) => <StatusRow key={job.id} label={recipes.find((recipe) => recipe.id === job.recipeId)?.name ?? job.recipeId} value={`${Math.ceil(job.remaining)}s`} />) : <Text tone="muted">No active jobs</Text>}
+        </section>
+        <section className="bb-detail-section" data-crafting-detail-section="repairs">
+          <Text as="strong" tone="accent">Repairs</Text>
+          {Object.entries(snapshot.equipment).filter(([, stack]) => stack?.maxDurability).map(([slot, stack]) => (
+            <button type="button" className="bb-list-button" key={slot} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'REPAIR_EQUIPPED_ITEM', slot: slot as GameAction extends { type: 'REPAIR_EQUIPPED_ITEM'; slot: infer S } ? S : never })}>
+              <span>{itemDefs[stack!.itemId]?.name ?? stack!.itemId}</span><small>{stack!.durability ?? stack!.maxDurability}/{stack!.maxDurability}</small>
+            </button>
+          ))}
+        </section>
+        <section className="bb-detail-section" data-crafting-detail-section="work-orders">
+          <Text as="strong" tone="accent">Work order delivery</Text>
+          {openWorkOrders.length ? openWorkOrders.map((order) => {
+            const required = order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }];
+            const ready = required.every((req) => accessibleCount(snapshot, req.itemId) >= req.quantity);
+            return <button type="button" className="bb-list-button" key={order.id} disabled={!ready} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'COMPLETE_WORK_ORDER', orderId: order.id })}><span>{order.title ?? order.requester}</span><small>{ready ? 'Ready' : 'Missing items'}</small></button>;
+          }) : <Text tone="muted">No open work orders</Text>}
+        </section>
       </ScrollArea>
     </DetailPane>
   );
@@ -223,12 +255,15 @@ function CraftingDetail({ selected, outputIcon, outputLabel, snapshot, dispatchA
 
 function MarketWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   useReactPanelRender('market');
+  const savedLayout = snapshot.windows.layouts.find((layout) => layout.id === 'market')?.layout;
+  const drag = useDraggableReactWindow('market', dispatchAction, savedLayout);
+  const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const workOrders = snapshot.market.workOrders.filter((order) => order.status === 'open');
   const marketOrders = snapshot.market.marketOrders.filter((order) => order.status === 'open');
-  const selectedWork = workOrders[0] ?? null;
+  const selectedWork = workOrders.find((order) => order.id === selectedWorkOrderId) ?? workOrders[0] ?? null;
 
   return (
-    <GameWindow className="bb-knowledge-window bb-react-market" data-react-panel="market" style={windowStyle('market')} title="Briarbrook Market Board" subtitle={`${workOrders.length} work orders`} actions={<IconButton label="Close market" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'market', open: false })}>x</IconButton>}>
+    <GameWindow className="bb-knowledge-window bb-react-market" data-react-panel="market" data-dense-menu-layout="market" style={drag.style} headerProps={drag.headerProps} {...drag.windowProps} title="Briarbrook Market Board" subtitle={`${workOrders.length} work orders`} actions={<IconButton label="Close market" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'market', open: false })}>x</IconButton>}>
       <PanelToolbar>
         <PanelTabs tabs={[{ id: 'work', label: 'Work Orders' }, { id: 'trade', label: 'Trade' }, { id: 'all', label: 'All' }]} activeId={snapshot.market.view} onSelect={(id) => dispatchAction({ type: 'SET_MARKET_VIEW', view: id as GameAction extends { type: 'SET_MARKET_VIEW'; view: infer V } ? V : never })} />
         <input className="bb-react-search" aria-label="Search market" value={snapshot.market.search} placeholder="Search market" onChange={(event) => dispatchChange(event, dispatchAction, (value) => ({ type: 'SET_MARKET_SEARCH', search: value }))} />
@@ -245,7 +280,11 @@ function MarketWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; 
               const required = order.requiredItems ?? [{ itemId: order.itemId, quantity: order.quantity }];
               const ready = required.every((req) => accessibleCount(snapshot, req.itemId) >= req.quantity);
               return (
-                <button className="bb-market-row" type="button" key={order.id}>
+                <button className={`bb-market-row ${selectedWork?.id === order.id ? 'is-selected' : ''}`.trim()} type="button" key={order.id} data-market-order={order.id} aria-pressed={selectedWork?.id === order.id} onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSelectedWorkOrderId(order.id);
+                }}>
                   <span>{order.title ?? order.requester}</span>
                   <Badge tone={ready ? 'success' : 'warning'}>{ready ? 'Ready' : 'Missing'}</Badge>
                   <small>{rewardLabel(order.rewardGold)}</small>
@@ -273,18 +312,25 @@ function WorkOrderDetail({ order, snapshot, dispatchAction }: { order: GameUISna
     <div className="bb-detail-stack">
       <StatusRow label="Requester" value={order.requester} />
       <StatusRow label="Reward" value={rewardLabel(order.rewardGold)} />
-      <Text as="strong" tone="accent">Requirements</Text>
-      {required.map((req) => <RequirementRow key={req.itemId} requirement={req} have={accessibleCount(snapshot, req.itemId)} multiplier={1} />)}
-      <button type="button" disabled={!ready} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'COMPLETE_WORK_ORDER', orderId: order.id })}>Deliver</button>
-      <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'PIN_WORK_ORDER', orderId: snapshot.journal.pinnedWorkOrderId === order.id ? null : order.id })}>{snapshot.journal.pinnedWorkOrderId === order.id ? 'Unpin' : 'Pin to Journal'}</button>
+      <section className="bb-detail-section" data-market-detail-section="requirements">
+        <Text as="strong" tone="accent">Requirements</Text>
+        {required.map((req) => <RequirementRow key={req.itemId} requirement={req} have={accessibleCount(snapshot, req.itemId)} multiplier={1} />)}
+      </section>
+      <div className="bb-detail-actions" data-market-detail-section="actions">
+        <button type="button" disabled={!ready} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'COMPLETE_WORK_ORDER', orderId: order.id })}>Deliver</button>
+        <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'PIN_WORK_ORDER', orderId: snapshot.journal.pinnedWorkOrderId === order.id ? null : order.id })}>{snapshot.journal.pinnedWorkOrderId === order.id ? 'Unpin' : 'Pin to Journal'}</button>
+      </div>
     </div>
   );
 }
 
 function JournalWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   useReactPanelRender('journal');
+  const savedLayout = snapshot.windows.layouts.find((layout) => layout.id === 'journal')?.layout;
+  const drag = useDraggableReactWindow('journal', dispatchAction, savedLayout);
   const entries = journalEntries(snapshot);
-  const selected = entries[0] ?? null;
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const selected = entries.find((entry) => entry.id === selectedEntryId) ?? entries[0] ?? null;
   const tabs = [
     { id: 'quests', label: 'Quests' },
     { id: 'rumors', label: 'Rumors' },
@@ -294,7 +340,7 @@ function JournalWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot;
   ];
 
   return (
-    <GameWindow className="bb-knowledge-window bb-react-journal" data-react-panel="journal" data-journal-layout="split" style={windowStyle('journal')} title="Journal" subtitle={snapshot.journal.tab} actions={<IconButton label="Close journal" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'journal', open: false })}>x</IconButton>}>
+    <GameWindow className="bb-knowledge-window bb-react-journal" data-react-panel="journal" data-dense-menu-layout="journal" data-journal-layout="split" style={drag.style} headerProps={drag.headerProps} {...drag.windowProps} title="Journal" subtitle={snapshot.journal.tab} actions={<IconButton label="Close journal" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'journal', open: false })}>x</IconButton>}>
       <SplitPane
         data-bb-layout="split-pane"
         start={
@@ -314,8 +360,17 @@ function JournalWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot;
           </DetailPane>
         }
       >
-        <ScrollArea className="bb-knowledge-list">
-          <DataList items={entries.map((entry) => ({ id: entry.id, label: entry.title, meta: entry.meta }))} />
+        <ScrollArea className="bb-knowledge-list" data-journal-entry-list="true">
+          <DataList items={entries.map((entry) => ({ id: entry.id, label: entry.title, meta: entry.meta }))} renderItem={(item) => (
+            <button className={item.id === selected?.id ? 'is-selected bb-list-button' : 'bb-list-button'} type="button" onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setSelectedEntryId(item.id);
+            }}>
+              <span>{item.label}</span>
+              {item.meta ? <small>{item.meta}</small> : null}
+            </button>
+          )} />
         </ScrollArea>
       </SplitPane>
     </GameWindow>
@@ -379,19 +434,6 @@ function rewardLabel(gold: number): string {
 }
 
 const fallbackIcon: IconDescriptor = { shape: 'bag', primary: '#8c4d24', secondary: '#ca8a4a' };
-
-function windowStyle(id: KnowledgePanelId): CSSProperties {
-  const viewport = typeof window === 'undefined' ? { width: 1366, height: 768 } : { width: window.innerWidth, height: window.innerHeight };
-  const rect = resolveReactWindowLayout(id, null, viewport);
-  return {
-    position: 'fixed',
-    left: rect.x,
-    top: rect.y,
-    width: rect.width,
-    height: rect.height,
-    zIndex: reactWindowDefinitions[id].zLayer
-  };
-}
 
 function dispatchClick(event: MouseEvent<HTMLElement>, dispatchAction: DispatchAction, action: GameAction): void {
   event.preventDefault();

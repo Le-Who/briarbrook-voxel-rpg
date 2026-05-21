@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent, type HTMLAttributes, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type HTMLAttributes, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react';
 import { buildPieces, itemDefs } from '../../../data/items';
 import { bindingSummary } from '../../../game/InputActionMap';
 import type { GameAction } from '../../../game/Actions';
@@ -25,8 +25,15 @@ const buildTabGroups: Array<{ id: BuildCategory; label: string; categories: Buil
   { id: 'Storage', label: 'Utility', categories: ['Storage', 'Crafting', 'Utility', 'Garden', 'Trophies'] }
 ];
 
-const chatTabs: ChatChannel[] = ['Local', 'Party', 'Guild', 'Global', 'System', 'Rumors'];
-const chatRetentionOptions = [40, 80, 120, 180, 240];
+const chatTabs: ChatChannel[] = ['Local', 'Party', 'Guild', 'Global', 'System'];
+const chatTabLabels: Record<ChatChannel, string> = {
+  Local: 'Local',
+  Party: 'Party',
+  Guild: 'Guild',
+  Global: 'Trade',
+  System: 'System',
+  Rumors: 'System'
+};
 const movementModes: MovementMode[] = ['keyboard', 'mouse', 'keyboardMouse'];
 const cameraSmoothingModes: CameraSmoothingMode[] = ['low', 'medium', 'high'];
 const frameRateModes: FrameRateCapMode[] = ['60', '120', 'custom'];
@@ -60,14 +67,14 @@ function BuildWorkspace({ snapshot, dispatchAction }: { snapshot: GameUISnapshot
   const footprint = `${selected.size.x} x ${selected.size.z}`;
 
   return (
-    <section className="bb-build-workspace" data-react-panel="build" data-ui-window="true" data-build-layout="dedicated" aria-label="Build Mode">
-      <PanelHeader
-        className="bb-build-header"
-        title="Build Mode"
-        subtitle={`${selected.name} - rotation ${snapshot.buildMode.rotation} deg`}
-        actions={<IconButton label="Close build mode" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_BUILD_MODE', active: false })}>x</IconButton>}
-      />
-      <aside className="bb-build-catalog" data-build-zone="catalog">
+    <section className="bb-build-workspace" data-react-panel="build" data-ui-window="true" data-build-layout="spatial" aria-label="Build Mode">
+      <aside className="bb-build-palette" data-build-zone="palette">
+        <PanelHeader
+          className="bb-build-palette-header"
+          title="Build Mode"
+          subtitle="Player Plot"
+          actions={<IconButton label="Close build mode" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_BUILD_MODE', active: false })}>x</IconButton>}
+        />
         <PanelTabs
           className="bb-build-tabs"
           tabs={buildTabGroups.map((group) => ({ id: group.id, label: group.label }))}
@@ -96,23 +103,24 @@ function BuildWorkspace({ snapshot, dispatchAction }: { snapshot: GameUISnapshot
           </div>
         </ScrollArea>
       </aside>
-      <main className="bb-build-placement" data-build-zone="placement">
-        <PanelToolbar className="bb-build-placement-help">
+      <main
+        className={`bb-build-world-overlay ${snapshot.buildMode.valid ? 'is-valid' : 'is-invalid'}`.trim()}
+        data-build-zone="world"
+        data-build-world-overlay="true"
+        data-build-ghost-projection="world"
+        data-build-footprint={footprint}
+        data-build-rotation={snapshot.buildMode.rotation}
+        data-build-snap-state={snapshot.buildMode.snapToGrid ? 'on' : 'off'}
+      >
+        <PanelToolbar className="bb-build-world-controls">
           <Badge tone={snapshot.buildMode.active ? 'success' : 'warning'}>{snapshot.buildMode.active ? 'Active' : 'Inactive'}</Badge>
-          <Text tone="muted">LMB place</Text>
-          <Text tone="muted">RMB or Z/C rotate</Text>
-          <Text tone="muted">X cancel</Text>
-          <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_BUILD_SNAP' })}>Snap {snapshot.buildMode.snapToGrid ? 'On' : 'Off'}</button>
+          <Text tone="muted">Place on the plot grid</Text>
+          <Text tone="muted">Footprint {footprint}</Text>
+          <Text tone="muted">Rotation {snapshot.buildMode.rotation} deg</Text>
         </PanelToolbar>
-        <div className="bb-build-grid-preview" aria-label="World placement grid">
-          {Array.from({ length: 35 }, (_, index) => (
-            <span className={index === 17 ? 'is-ghost' : ''} key={index} />
-          ))}
-        </div>
-        <div className="bb-build-placement-state">
-          <StatusRow label="Footprint" value={footprint} />
-          <StatusRow label="Ghost" value={`${snapshot.buildMode.ghostPosition.x.toFixed(1)}, ${snapshot.buildMode.ghostPosition.z.toFixed(1)}`} />
-          <StatusRow label="Current area" value={snapshot.player.currentArea} />
+        <div className="bb-build-world-state">
+          <Text as="strong" tone="accent">{selected.name}</Text>
+          <span>{snapshot.buildMode.snapToGrid ? 'Snap on' : 'Snap off'}</span>
           {warning ? (
             <div className="bb-build-warning" data-build-warning="true" role="status">
               {warning}
@@ -122,7 +130,7 @@ function BuildWorkspace({ snapshot, dispatchAction }: { snapshot: GameUISnapshot
           )}
         </div>
       </main>
-      <DetailPane className="bb-build-materials" data-build-zone="materials" title={selected.name}>
+      <DetailPane className="bb-build-inspector" data-build-zone="inspector" title={selected.name}>
         <ScrollArea>
           <Text as="p" size="sm" tone="muted">{selected.description}</Text>
           <StatusRow label="Category" value={selected.category} />
@@ -131,27 +139,19 @@ function BuildWorkspace({ snapshot, dispatchAction }: { snapshot: GameUISnapshot
           <div className="bb-build-cost-list">
             {selected.cost.map((cost) => <BuildCostRow key={cost.itemId} requirement={cost} snapshot={snapshot} />)}
           </div>
-          <Text as="strong" tone="accent">Inventory compact</Text>
-          <div className="bb-build-inventory-compact">
-            {snapshot.inventory.slots.filter(Boolean).slice(0, 10).map((stack) => {
-              const def = stack ? itemDefs[stack.itemId] : undefined;
-              return stack && def ? (
-                <span key={stack.uid} title={def.name}>
-                  <IconGlyph icon={def.icon} label={def.name} category={itemIconCategory(def)} />
-                  <b>{stack.quantity}</b>
-                </span>
-              ) : null;
-            })}
-          </div>
+          <StatusRow label="Footprint" value={footprint} />
+          <StatusRow label="Snap" value={snapshot.buildMode.snapToGrid ? 'On grid' : 'Free'} />
+          <StatusRow label="Rotation" value={`${snapshot.buildMode.rotation} deg`} />
+          <StatusRow label="Requirement" value={warning || 'Ready'} />
         </ScrollArea>
       </DetailPane>
       <ActionFooter className="bb-build-actions" data-build-zone="actions">
         <button type="button" className="primary" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'PLACE_BUILDING' })}>Place</button>
         <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'ROTATE_BUILDING', delta: 90 })}>Rotate</button>
         <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_BUILD_MODE', active: false })}>Cancel</button>
-        <span className="bb-react-footer-spacer" />
         <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'UNDO_LAST_BUILDING' })}>Undo</button>
         <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'BEGIN_MOVE_LAST_BUILDING' })}>Move Last</button>
+        <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_BUILD_SNAP' })}>Snap {snapshot.buildMode.snapToGrid ? 'On' : 'Off'}</button>
       </ActionFooter>
     </section>
   );
@@ -202,50 +202,37 @@ function ChatWindow({ snapshot, dispatchAction, effectiveMode, unreadCount }: { 
   const hiddenChannels = useMemo(() => new Set(snapshot.chat.hiddenChannels), [snapshot.chat.hiddenChannels]);
   const messages = useMemo(() => {
     const retained = snapshot.chat.messages.slice(-snapshot.chat.retention);
-    return retained.filter((message) => !hiddenChannels.has(message.channel) && message.channel === snapshot.chat.tab).slice(effectiveMode === 'compact' ? -32 : -80);
+    return retained.filter((message) => chatMessageMatchesTab(message, snapshot.chat.tab, hiddenChannels)).slice(effectiveMode === 'compact' ? -32 : -80);
   }, [effectiveMode, hiddenChannels, snapshot.chat.messages, snapshot.chat.retention, snapshot.chat.tab]);
   const drag = useDraggableRect('chat', dispatchAction);
+  const activeTab = chatTabs.includes(snapshot.chat.tab) ? snapshot.chat.tab : 'System';
+  const activeLabel = chatTabLabels[activeTab];
+  const style = chatWindowStyle(drag.style, effectiveMode, snapshot.chat.opacity);
 
   useEffect(() => {
     if (shouldStickToBottom.current && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [messages.length, snapshot.chat.tab]);
 
   return (
-    <section className={`bb-react-chat bb-react-chat--${effectiveMode}`} data-react-panel="chat" data-ui-window="true" data-chat-mode={snapshot.chat.mode} data-chat-autoscroll="bottom-only" style={{ ...drag.style, ['--chat-opacity' as string]: snapshot.chat.opacity }}>
-      <header className="bb-panel-header bb-react-chat-header" {...drag.headerProps}>
+    <section className={`bb-react-chat bb-react-chat--${effectiveMode}`} data-react-panel="chat" data-ui-window="true" data-chat-layout="player-chat" data-chat-mode={snapshot.chat.mode} data-chat-autoscroll="bottom-only" style={style}>
+      <header className="bb-panel-header bb-react-chat-header" data-bb-fixed="header" {...drag.headerProps}>
         <div className="bb-panel-header__title">
           <Text as="h2" size="lg" tone="accent">Chat</Text>
-          <Text size="sm" tone="muted">{snapshot.chat.tab}{unreadCount ? ` - ${unreadCount} unread` : ''}</Text>
+          <Text size="sm" tone="muted">{activeLabel}{unreadCount ? ` - ${unreadCount} unread` : ''}</Text>
         </div>
         <div className="bb-panel-header__actions" data-no-window-drag="true">
-          <ChatModeButton mode="expanded" label="Full" activeMode={snapshot.chat.mode} dispatchAction={dispatchAction} />
-          <ChatModeButton mode="compact" label="Compact" activeMode={snapshot.chat.mode} dispatchAction={dispatchAction} />
-          <ChatModeButton mode="combatHidden" label="Combat" activeMode={snapshot.chat.mode} dispatchAction={dispatchAction} />
-          <ChatModeButton mode="collapsed" label="-" activeMode={snapshot.chat.mode} dispatchAction={dispatchAction} />
+          <ChatModeButton mode={effectiveMode === 'expanded' ? 'compact' : 'expanded'} label={effectiveMode === 'expanded' ? 'Compact' : 'Expand'} activeMode={snapshot.chat.mode} dispatchAction={dispatchAction} />
+          <ChatModeButton mode="collapsed" label="-" activeMode={snapshot.chat.mode} dispatchAction={dispatchAction} ariaLabel="Collapse chat" />
         </div>
       </header>
       {snapshot.chat.showTabs ? (
         <PanelTabs
           className="bb-react-chat-tabs"
-          tabs={chatTabs.map((tab) => ({ id: tab, label: hiddenChannels.has(tab) ? `${tab} off` : tab }))}
-          activeId={snapshot.chat.tab}
+          tabs={chatTabs.map((tab) => ({ id: tab, label: chatTabLabels[tab] }))}
+          activeId={activeTab}
           onSelect={(id) => dispatchAction({ type: 'SET_CHAT_TAB', channel: id as ChatChannel })}
         />
       ) : null}
-      <PanelToolbar className="bb-react-chat-toolbar">
-        {chatTabs.map((tab) => (
-          <button className={hiddenChannels.has(tab) ? 'is-muted' : 'is-active'} type="button" key={tab} title={`${hiddenChannels.has(tab) ? 'Show' : 'Hide'} ${tab}`} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_CHAT_CHANNEL', channel: tab })}>
-            {tab.slice(0, 1)}
-          </button>
-        ))}
-        <label>
-          Opacity
-          <input type="range" min="0.45" max="1" step="0.05" value={snapshot.chat.opacity} onChange={(event) => dispatchChange(event, dispatchAction, (value) => ({ type: 'SET_CHAT_OPACITY', opacity: Number(value) }))} />
-        </label>
-        <select className="bb-react-select" aria-label="Chat message cap" value={snapshot.chat.retention} onChange={(event) => dispatchAction({ type: 'SET_CHAT_RETENTION', limit: Number(event.target.value) })}>
-          {chatRetentionOptions.map((option) => <option value={option} key={option}>{option}</option>)}
-        </select>
-      </PanelToolbar>
       <div
         className="bb-scroll-area bb-react-chat-log"
         ref={logRef}
@@ -261,8 +248,8 @@ function ChatWindow({ snapshot, dispatchAction, effectiveMode, unreadCount }: { 
         {messages.map((message) => <ChatLine key={message.id} message={message} />)}
         {messages.length === 0 ? <EmptyState title="No messages" description="This channel has no visible messages." /> : null}
       </div>
-      <form className="bb-react-chat-input" data-chat-focus="isolated" onSubmit={(event) => submitChat(event, inputRef, dispatchAction)}>
-        <input ref={inputRef} name="chat" autoComplete="off" aria-label="Chat message" onKeyDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} />
+      <form className="bb-react-chat-input" data-bb-fixed="footer" data-chat-focus="isolated" data-chat-input="true" onSubmit={(event) => submitChat(event, inputRef, dispatchAction)}>
+        <input ref={inputRef} name="chat" autoComplete="off" aria-label="Chat message" placeholder="Say something..." onKeyDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} />
         <button type="submit">Send</button>
       </form>
     </section>
@@ -356,17 +343,53 @@ function HelpSettingsWindow({ snapshot, dispatchAction }: { snapshot: GameUISnap
   );
 }
 
-function ChatModeButton({ mode, label, activeMode, dispatchAction }: { mode: ChatPanelMode; label: string; activeMode: ChatPanelMode; dispatchAction: DispatchAction }): ReactElement {
-  return <button className={activeMode === mode ? 'is-active' : ''} type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_CHAT_MODE', mode })}>{label}</button>;
+function ChatModeButton({ mode, label, activeMode, dispatchAction, ariaLabel }: { mode: ChatPanelMode; label: string; activeMode: ChatPanelMode; dispatchAction: DispatchAction; ariaLabel?: string }): ReactElement {
+  return <button className={activeMode === mode ? 'is-active' : ''} type="button" aria-label={ariaLabel ?? label} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_CHAT_MODE', mode })}>{label}</button>;
+}
+
+function chatWindowStyle(baseStyle: CSSProperties, mode: Exclude<ChatPanelMode, 'collapsed' | 'combatHidden'>, opacity: number): CSSProperties {
+  const next: CSSProperties = { ...baseStyle, ['--chat-opacity' as string]: opacity };
+  if (mode !== 'compact') return next;
+  const baseHeight = typeof baseStyle.height === 'number' ? baseStyle.height : Number(baseStyle.height) || 310;
+  const compactHeight = Math.min(baseHeight, 210);
+  const top = typeof baseStyle.top === 'number' ? baseStyle.top : Number(baseStyle.top);
+  next.height = compactHeight;
+  if (Number.isFinite(top)) next.top = top + Math.max(0, baseHeight - compactHeight);
+  return next;
 }
 
 function ChatLine({ message }: { message: ChatMessage }): ReactElement {
+  const tone = chatMessageTone(message);
   return (
-    <div className={`bb-react-chat-line bb-react-chat-line--${message.tone ?? 'normal'}`} data-chat-channel={message.channel}>
-      {message.speaker ? <span>{message.speaker}: </span> : null}
-      {message.text}
+    <div className={`bb-react-chat-line bb-react-chat-line--${tone}`} data-chat-channel={message.channel} data-chat-message-channel={message.channel} data-chat-message-tone={tone}>
+      <time>{chatTimestamp(message.createdAt)}</time>
+      <span>{message.speaker ? `${message.speaker}:` : chatTabLabels[message.channel]}</span>
+      <p>{message.text}</p>
     </div>
   );
+}
+
+function chatMessageMatchesTab(message: ChatMessage, tab: ChatChannel, hiddenChannels: Set<ChatChannel>): boolean {
+  if (hiddenChannels.has(message.channel)) return false;
+  if (tab === 'Local') return message.channel === 'Local' || message.channel === 'System' || message.channel === 'Rumors';
+  if (tab === 'System') return message.channel === 'System' || message.channel === 'Rumors';
+  if (tab === 'Rumors') return message.channel === 'Rumors' || message.channel === 'System';
+  return message.channel === tab;
+}
+
+function chatMessageTone(message: ChatMessage): NonNullable<ChatMessage['tone']> {
+  if (message.tone) return message.tone;
+  if (message.channel === 'Global') return 'trade';
+  if (message.channel === 'Party' || message.channel === 'Guild') return 'party';
+  if (message.channel === 'System' || message.channel === 'Rumors') return 'system';
+  return 'normal';
+}
+
+function chatTimestamp(createdAt: number): string {
+  const totalSeconds = Math.max(0, Math.floor(createdAt));
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const seconds = totalSeconds % 60;
+  return `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
 }
 
 function HelpRow({ label, value, ...props }: { label: string; value: string } & HTMLAttributes<HTMLDivElement>): ReactElement {
@@ -447,11 +470,6 @@ function dispatchClick(event: MouseEvent<HTMLElement>, dispatchAction: DispatchA
   event.preventDefault();
   event.stopPropagation();
   dispatchAction(action);
-}
-
-function dispatchChange(event: ChangeEvent<HTMLInputElement>, dispatchAction: DispatchAction, actionForValue: (value: string) => GameAction): void {
-  event.stopPropagation();
-  dispatchAction(actionForValue(event.target.value));
 }
 
 function useDraggableRect(id: ReactWindowId, dispatchAction: DispatchAction): { style: CSSProperties; headerProps: { onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void; onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void; onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void } } {

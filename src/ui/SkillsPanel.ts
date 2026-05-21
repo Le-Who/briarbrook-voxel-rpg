@@ -160,9 +160,9 @@ function renderSkillRow(state: GameState, definition: SkillDefinition, relevant:
     `Used by: ${professions || definition.group}`,
     `Supports: ${supportSummary(definition)}`,
     `Thresholds: ${thresholds.length ? thresholds.join(', ') : 'No current milestone threshold'}`,
-    trainable ? 'Trainability: implemented in this build.' : 'Trainability: future or support-only in this build.'
+    trainable ? 'Trainability: available now.' : 'Trainability: locked or support-only.'
   ].join('\n');
-  const status = recent ? 'Recent gain' : isRelevant ? 'Build-relevant' : trainable ? 'Trainable now' : definition.roles.includes('support') ? 'Support/future' : 'Future';
+  const status = recent ? 'Recent gain' : isRelevant ? 'Build-relevant' : trainable ? 'Trainable now' : definition.roles.includes('support') ? 'Support path' : 'Locked';
   const tooltipVersion = [state.ui.tooltipMode, definition.id, skill.value.toFixed(1), skill.mode, skill.lastGainAt, skill.lastSuccessfulUseAt, status].join(':');
   return `<div class="skill-row ledger-row ${isRelevant ? 'relevant' : ''} ${recent ? 'recent' : ''}" data-hotbar-source="skill:${attr(definition.id)}" data-drag-kind="skill" data-source-window-id="skills" data-skill-id="${attr(definition.id)}" data-display-name="${attr(definition.displayName)}" data-tooltip-id="skill:${attr(definition.id)}" data-tooltip-source="skills" data-tooltip-version="${attr(tooltipVersion)}" data-tooltip="${attr(tooltip)}" data-tooltip-advanced="${attr(advancedTooltip)}" title="${attr(tooltip)}">
     ${renderIcon(definition.icon, definition.displayName, skillIconCategory(definition))}
@@ -207,7 +207,7 @@ function renderProfessionAtlas(state: GameState): string {
 
   return `<div class="atlas-layout profession-atlas-redesign" data-atlas-selected="${attr(selectedNode?.id ?? '')}" data-future-visible="${showFuture ? 'true' : 'false'}" style="--profession:${selected.color}">
     <aside class="atlas-lenses" aria-label="Profession lenses">
-      <div class="atlas-info-banner"><b>Relationship Map</b><span>Not a passive tree: skills, tools, activities, outputs, services, milestones, profession contracts, and future loops.</span></div>
+      <div class="atlas-info-banner"><b>Relationship Map</b><span>Skills, tools, activities, outputs, services, milestones, profession contracts, and locked paths.</span></div>
       <div class="profession-filters">
         ${professionClusters
           .map((profession) => {
@@ -220,7 +220,7 @@ function renderProfessionAtlas(state: GameState): string {
     </aside>
     <main class="atlas-main" aria-label="${attr(selected.title)} relationship graph">
       <div class="atlas-toolbar">
-        <div class="atlas-title"><b>${selected.title}</b><span>${implementedCount}/${selected.nodes.length} implemented · ${selected.suggestedGoal}</span></div>
+        <div class="atlas-title"><b>${selected.title}</b><span>${implementedCount}/${selected.nodes.length} available · ${selected.suggestedGoal}</span></div>
         <input class="atlas-search" name="atlas-search" data-action="atlas-search" value="${attr(state.ui.professionAtlasSearch ?? '')}" placeholder="Search node" />
         <div class="atlas-zoom-controls" aria-label="Atlas zoom">
           <button data-atlas-zoom="-0.1" aria-label="Zoom out">-</button>
@@ -228,7 +228,7 @@ function renderProfessionAtlas(state: GameState): string {
           <button data-atlas-zoom="reset">Reset</button>
           <button data-atlas-zoom="0.1" aria-label="Zoom in">+</button>
         </div>
-        <button data-atlas-future="${showFuture ? 'hide' : 'show'}" class="${showFuture ? 'active' : ''}">${showFuture ? 'Hide Future' : 'Show Future'}</button>
+        <button data-atlas-future="${showFuture ? 'hide' : 'show'}" class="${showFuture ? 'active' : ''}">${showFuture ? 'Hide Locked' : 'Show Locked'}</button>
         <button data-pin-profession-goal="${selected.id}" class="${state.ui.pinnedProfessionGoalId === selected.id ? 'active' : ''}">Pin Lens</button>
       </div>
       <div class="atlas-stage-wrap" data-atlas-pan="scroll" tabindex="0">
@@ -259,7 +259,7 @@ function renderProfessionAtlas(state: GameState): string {
             .join('')}
         </div>
       </div>
-      ${renderAtlasLoopCards(visibleProfession, selectedNode, pathNodeIds, searchNodeIds, showFuture ? '' : `${futureNodes.map((node) => node.label).join(', ')} hidden`)}
+      ${renderAtlasLoopCards(visibleProfession, selectedNode, pathNodeIds, searchNodeIds, showFuture ? '' : `${futureNodes.map((node) => node.label).join(', ')} locked`)}
     </main>
     <aside class="atlas-node-detail" aria-live="polite">
       ${selectedNode ? renderAtlasDetail(state, visibleProfession, selectedNode, selectedPinned) : `<div class="atlas-empty-detail"><b>Select a profession lens to see its loop.</b></div>`}
@@ -322,11 +322,11 @@ const atlasKindMeta: Record<AtlasDisplayKind, { label: string; icon: string }> =
   output: { label: 'Output', icon: 'O' },
   service: { label: 'Service', icon: 'N' },
   milestone: { label: 'Milestone', icon: 'M' },
-  future: { label: 'Future', icon: '?' }
+  future: { label: 'Locked', icon: '?' }
 };
 
 function atlasNodeMeta(node: ProfessionNode): { kind: AtlasDisplayKind; label: string; icon: string } {
-  if (!atlasNodeImplemented(node)) return { kind: 'future', label: node.type === 'skill' ? 'Future skill' : 'Future', icon: '?' };
+  if (!atlasNodeImplemented(node)) return { kind: 'future', label: node.type === 'skill' ? 'Locked skill' : 'Locked', icon: '?' };
   if (node.type === 'skill') return { kind: 'skill', ...atlasKindMeta.skill };
   if (node.type === 'tool') return { kind: 'tool', ...atlasKindMeta.tool };
   if (node.type === 'resource') return { kind: 'resource', ...atlasKindMeta.resource };
@@ -409,7 +409,7 @@ function renderAtlasLoopCards(profession: ProfessionCluster, selectedNode: Profe
     return `<article class="${highlighted ? 'active' : ''}"><b>${attr(edge.label)}</b><span>${attr(from?.label ?? edge.from)} -> ${attr(to?.label ?? edge.to)}</span></article>`;
   });
   const searchSummary = searchNodeIds.size ? `<article class="search-result"><b>${searchNodeIds.size} search match${searchNodeIds.size === 1 ? '' : 'es'}</b><span>${profession.nodes.filter((node) => searchNodeIds.has(node.id)).map((node) => attr(node.label)).join(', ')}</span></article>` : '';
-  const hiddenSummary = hiddenFutureSummary ? `<article class="future-hidden"><b>Future hidden</b><span>${attr(hiddenFutureSummary)}</span></article>` : '';
+  const hiddenSummary = hiddenFutureSummary ? `<article class="future-hidden"><b>Locked paths hidden</b><span>${attr(hiddenFutureSummary)}</span></article>` : '';
   return `<div class="atlas-loop-list">${hiddenSummary}${searchSummary}${cards.join('')}</div>`;
 }
 
@@ -423,7 +423,7 @@ function renderAtlasDetail(state: GameState, profession: ProfessionCluster, node
   const progress = atlasProgress(state, node);
   const implemented = atlasNodeImplemented(node);
   return `<div class="atlas-detail-card atlas-kind-${meta.kind}">
-    <header><span>${meta.label}</span><b>${attr(node.label)}</b><small>${implemented ? 'Implemented / trainable where applicable' : 'Future / not yet trainable'}</small></header>
+    <header><span>${meta.label}</span><b>${attr(node.label)}</b><small>${implemented ? 'Available now' : 'Locked path'}</small></header>
     <p>${attr(node.description)}</p>
     <div class="atlas-detail-grid">
       <span>Trained by</span><b>${attr(trainedBy)}</b>
@@ -472,7 +472,7 @@ function atlasRequirements(node: ProfessionNode): string {
     const spell = spellDefs[node.ref];
     if (spell) return spell.reagents.length ? spell.reagents.map((requirement) => `${itemDefs[requirement.itemId]?.name ?? requirement.itemId} x${requirement.quantity}`).join(', ') : `Mana ${spell.manaCost}`;
   }
-  if (node.type === 'tool' && node.ref) return itemDefs[node.ref] ? `Own or equip ${itemDefs[node.ref].name}` : 'Future tool';
+  if (node.type === 'tool' && node.ref) return itemDefs[node.ref] ? `Own or equip ${itemDefs[node.ref].name}` : 'Locked tool';
   if (node.type === 'milestone' && node.ref) {
     const milestone = masteryMilestones.find((entry) => entry.id === node.ref);
     if (milestone) return milestone.requirements.map(describeRequirement).join(', ');
@@ -484,7 +484,7 @@ function atlasProgress(state: GameState, node: ProfessionNode): string {
   if (node.type === 'skill') {
     const skill = state.player.skills[node.ref ?? node.label];
     const value = skill?.value ?? skillDefinitionById[node.ref ?? node.label]?.startingValue ?? 0;
-    return `${value.toFixed(1)} skill · ${atlasNodeImplemented(node) ? 'trainable' : 'future'}`;
+    return `${value.toFixed(1)} skill · ${atlasNodeImplemented(node) ? 'trainable' : 'locked'}`;
   }
   if (node.type === 'tool' && node.ref) return itemCount(state, node.ref) > 0 ? `${itemCount(state, node.ref)} owned` : 'Not in pack or bank';
   if (node.type === 'spell' && node.ref) return state.player.spellbook.knownSpellIds.includes(node.ref) ? 'Known spell' : 'Not learned';
@@ -496,7 +496,7 @@ function atlasProgress(state: GameState, node: ProfessionNode): string {
       return `${progress.met}/${progress.total} requirements`;
     }
   }
-  return atlasNodeImplemented(node) ? 'Available in this build' : 'Future loop';
+  return atlasNodeImplemented(node) ? 'Available now' : 'Locked path';
 }
 
 function itemCount(state: GameState, itemId: string): number {

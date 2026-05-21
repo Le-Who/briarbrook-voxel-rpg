@@ -12,13 +12,17 @@ import { serviceInteriorReferencePlan } from './ServiceInteriorReferencePlan';
 describe('R5-R6 service interior reference contract', () => {
   it('defines grounded bank and smithy service targets', () => {
     expect(serviceInteriorReferencePlan.bank.referenceId).toBe('R6');
+    expect(serviceInteriorReferencePlan.bank.phase14ReferenceIds).toEqual(['REF_145_BANK']);
+    expect(serviceInteriorReferencePlan.bank.compositionZones).toEqual(expect.arrayContaining(['teller-counter', 'storage-wall', 'ledger-desk', 'customer-floor']));
     expect(serviceInteriorReferencePlan.bank.props).toEqual(expect.arrayContaining(['banker counter', 'shelves', 'chests', 'ledgers', 'rug', 'warm lamps']));
-    expect(serviceInteriorReferencePlan.bank.ui).toEqual(expect.arrayContaining(['bank storage grid', 'inventory grid', 'gold state', 'capacity state', 'drag-drop slots']));
+    expect(serviceInteriorReferencePlan.bank.ui).toEqual(expect.arrayContaining(['bank storage grid', 'inventory grid', 'gold state', 'capacity state', 'drag-drop slots', 'right-sized scrollable grids']));
     expect(serviceInteriorReferencePlan.bank.prompt).toBe('Banker — Open Bank');
 
     expect(serviceInteriorReferencePlan.smithy.referenceId).toBe('R5');
+    expect(serviceInteriorReferencePlan.smithy.phase14ReferenceIds).toEqual(['REF_145_SMITHY']);
+    expect(serviceInteriorReferencePlan.smithy.compositionZones).toEqual(expect.arrayContaining(['forge-hearth', 'brom-workspace', 'tool-wall', 'material-staging']));
     expect(serviceInteriorReferencePlan.smithy.props).toEqual(expect.arrayContaining(['forge glow', 'anvil', 'tool racks', 'ore bins', 'ingot crates', 'repair bench']));
-    expect(serviceInteriorReferencePlan.smithy.ui).toEqual(expect.arrayContaining(['recipe list', 'selected recipe detail', 'requirements', 'craft button', 'repair actions', 'queue progress']));
+    expect(serviceInteriorReferencePlan.smithy.ui).toEqual(expect.arrayContaining(['recipe list', 'selected recipe detail', 'requirements', 'craft button', 'repair actions', 'queue progress', 'scrollable recipe detail']));
     expect(serviceInteriorReferencePlan.smithy.prompt).toBe('Brom — Craft/Repair');
     expect(serviceInteriorReferencePlan.smithy.primaryRecipeId).toBe('iron_armor');
   });

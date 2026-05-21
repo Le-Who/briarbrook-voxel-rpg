@@ -189,9 +189,6 @@ export function deriveSpatialContext(state: GameState): SpatialContext {
     : objective
       ? `Next: ${objective.label}`
       : 'Explore discovered roads and entrances.';
-  const cx = area.coordinateOffset.x + Math.round(state.player.position.x);
-  const cz = area.coordinateOffset.z + Math.round(state.player.position.z);
-
   return {
     layers,
     breadcrumb,
@@ -204,7 +201,7 @@ export function deriveSpatialContext(state: GameState): SpatialContext {
     reputationLabel: crimeFeedback.reputationLabel,
     guardAttentionLabel: crimeFeedback.guardAttentionLabel,
     criminalWarning: crimeFeedback.criminalWarning,
-    coordinateLabel: `Map ${cx}:${cz}`,
+    coordinateLabel: 'Local Map',
     timeLabel: formatMapTime(state.world.time.hour, state.world.time.minute, state.world.time.phase)
   };
 }

@@ -32,7 +32,8 @@ describe('profession UI', () => {
     expect(html).toContain('Treasure Hunter');
     expect(html).toContain('Cartography');
     expect(html).toContain('Treasure Map');
-    expect(html).toContain('Not a passive tree');
+    expect(html).toContain('Relationship Map');
+    expect(html).toContain('locked paths');
     expect(html).toContain('profession-atlas-redesign');
     expect(html).toContain('data-action="atlas-search"');
     expect(html).toContain('data-atlas-zoom="fit"');
@@ -73,7 +74,7 @@ describe('profession UI', () => {
 
     expect(hiddenFutureHtml).toContain('data-atlas-future="show"');
     expect(hiddenFutureHtml).not.toContain('data-node-type="future"');
-    expect(hiddenFutureHtml).toContain('Survey Contracts hidden');
+    expect(hiddenFutureHtml).toContain('Survey Contracts locked');
   });
 
   it('shows selected atlas node details and pins them into the journal', () => {
@@ -172,6 +173,8 @@ describe('profession UI', () => {
     simulation.dispatch({ type: 'ACCEPT_PROFESSION_CONTRACT', contractId: 'ranger' });
     simulation.update(1 / 30);
     expect(state.ui.activeProfessionContractId).toBe('ranger');
+    expect(state.ui.prompt).toBe('Profession goal accepted.');
+    expect(state.ui.prompt).not.toContain('classless');
 
     simulation.dispatch({ type: 'ACCEPT_PROFESSION_CONTRACT', contractId: 'trader' });
     simulation.update(1 / 30);

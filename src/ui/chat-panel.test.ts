@@ -4,7 +4,7 @@ import type { ChatMessage } from '../game/types';
 import { ChatPanel } from './ChatPanel';
 
 describe('ChatPanel', () => {
-  it('renders as a managed first-class chat window with tabs, filters, and latest control', () => {
+  it('renders as a player-facing chat window with tabs, log, input, and no debug controls', () => {
     const state = createInitialGameState();
     state.chat = makeMessages(6, 'Local');
 
@@ -12,13 +12,15 @@ describe('ChatPanel', () => {
 
     expect(html).toContain('class="panel chat-panel');
     expect(html).toContain('data-window-id="chat"');
-    expect(html).toContain('data-window-id="chat"');
+    expect(html).toContain('data-chat-layout="player-chat"');
     expect(html).toContain('data-chat-tab="Local"');
-    expect(html).toContain('data-chat-tab="Rumors"');
-    expect(html).toContain('data-chat-channel-toggle="System"');
-    expect(html).toContain('data-action="chat-opacity"');
-    expect(html).toContain('data-action="chat-retention"');
-    expect(html).toContain('data-chat-latest="1"');
+    expect(html).toContain('data-chat-tab="Global"');
+    expect(html).toContain('Trade');
+    expect(html).toContain('data-chat-scroll="true"');
+    expect(html).toContain('data-chat-input="true"');
+    expect(html).not.toContain('data-chat-channel-toggle');
+    expect(html).not.toContain('data-action="chat-opacity"');
+    expect(html).not.toContain('data-action="chat-retention"');
   });
 
   it('collapses to a small gameplay-safe button with an important-message badge', () => {
@@ -49,7 +51,7 @@ describe('ChatPanel', () => {
     expect(html).toContain('&lt;Scout&gt;');
     expect(html).toContain('A &lt;tree&gt; fell');
     expect(html).not.toContain('WTS ore');
-    expect(html).toContain('data-chat-channel-toggle="Global"');
+    expect(html).toContain('data-chat-message-tone="normal"');
   });
 
   it('uses compact virtualization for compact chat mode', () => {

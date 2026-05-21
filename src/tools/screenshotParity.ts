@@ -7,6 +7,7 @@ import { triggerWorldEvent } from '../systems/LivingWorldSystem';
 import { transitionPlayerToArea } from '../systems/TransitionSystem';
 import type { AreaManager } from '../world/AreaManager';
 import { findScreenshotParityPreset } from './screenshotParityPresets';
+import type { ContainerEntity } from '../game/types';
 export { createScreenshotParityPresets, findScreenshotParityPreset } from './screenshotParityPresets';
 export type { ScreenshotParityPreset } from './screenshotParityPresets';
 
@@ -38,6 +39,7 @@ export function applyScreenshotParityPreset(state: GameState, areaManager: AreaM
   if (preset.selectedRecipeId) state.ui.selectedRecipeId = preset.selectedRecipeId;
   if (preset.skillView) state.ui.skillView = preset.skillView;
   if (preset.skillsViewMode) state.ui.skillsViewMode = preset.skillsViewMode;
+  if (preset.secretFocusEntityId) state.ui.selectedTarget = { kind: 'entity', entityId: preset.secretFocusEntityId };
   if (preset.selectedBuildCategory) state.ui.selectedBuildCategory = preset.selectedBuildCategory;
   if (preset.area === 'housing') {
     state.buildMode.active = true;
@@ -89,6 +91,7 @@ function applyReferenceActionState(state: GameState, presetId: string): void {
 
   if (presetId === 'r2-road-combat') applyRoadCombatReferenceState(state);
   if (presetId === 'r3-crypt-combat') applyCryptCombatReferenceState(state);
+  if (presetId === 'r3-crypt-secret') applyCryptSecretReferenceState(state);
   if (presetId === 'r4-forest-gathering') applyForestGatheringReferenceState(state);
   if (presetId === 'r5-smithy-crafting') applySmithyCraftingReferenceState(state);
   if (presetId === 'r6-bank-storage') applyBankStorageReferenceState(state);
@@ -183,6 +186,36 @@ function applyCryptCombatReferenceState(state: GameState): void {
     const entity = state.entities[id];
     if (entity?.facing) faceEntityTowardPosition(entity, state.player.position, 'target', state.clock, 1.5);
   }
+}
+
+function applyCryptSecretReferenceState(state: GameState): void {
+  delete state.entities.loot_crypt_reference_gold;
+  state.player.activeTargetId = null;
+  state.ui.activeHotbarSlot = 8;
+  state.ui.hoverTarget = { kind: 'entity', entityId: 'chest_crypt_warded' };
+  state.ui.selectedTarget = { kind: 'entity', entityId: 'chest_crypt_warded' };
+  state.ui.journalTab = 'rumors';
+  const looseWall = state.entities.secret_crypt_loose_wall_cache as ContainerEntity;
+  const reliquary = state.entities.chest_crypt_warded as ContainerEntity;
+  const falseDoor = state.entities.secret_crypt_false_door as ContainerEntity;
+  looseWall.hidden = false;
+  reliquary.hidden = false;
+  reliquary.locked = false;
+  reliquary.opened = false;
+  falseDoor.hidden = false;
+  state.floatingTexts.push({ id: 'float_r3_secret_niche', text: 'Hidden Niche', position: { x: -8.4, y: 1.6, z: 5.2 }, color: '#f5d58a', age: 0, lifetime: 3 });
+  state.floatingTexts.push({ id: 'float_r3_secret_chest', text: 'Warded Reliquary', position: { x: 4.8, y: 1.9, z: 5.5 }, color: '#f5d58a', age: 0, lifetime: 3 });
+  state.floatingTexts.push({ id: 'float_r3_secret_altar', text: 'Altar', position: { x: -1.0, y: 1.4, z: -5.8 }, color: '#9edcff', age: 0, lifetime: 3 });
+  state.visualEffects.push({
+    id: 'vfx_r3_secret_glow',
+    kind: 'rune_circle',
+    tier: 1,
+    area: 'crypt',
+    position: { x: 0, y: 0.2, z: -8 },
+    color: '#7ad7ff',
+    startedAt: state.clock,
+    duration: 3
+  });
 }
 
 function applyForestGatheringReferenceState(state: GameState): void {
@@ -360,6 +393,7 @@ function referenceHudPrompt(presetId: string): string {
     'r1-town-square': '',
     'r2-road-combat': 'Highway Bandit — Target',
     'r3-crypt-combat': 'Skeletal Warrior — Target',
+    'r3-crypt-secret': 'Warded Reliquary — Open',
     'r4-forest-gathering': 'Oak Tree — Chop',
     'r5-smithy-crafting': 'Brom — Craft/Repair',
     'r6-bank-storage': 'Banker — Open Bank',

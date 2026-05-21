@@ -263,7 +263,7 @@ function dirtySignatures(state: GameState): Record<keyof LoopDirtyFlags, string>
     journalDirty: `${state.ui.panels.journal}:${state.ui.journalTab}:${state.ui.pinnedRumorId}:${state.ui.activeProfessionContractId}:${state.ui.pinnedProfessionGoalId}:${worldEvents}:${state.world.discoveredRumorIds.join(',')}:${state.world.resolvedEventLog.join('|')}:${Object.values(state.quests).map((quest) => `${quest.id}:${quest.status}:${quest.objectives.map((objective) => objective.progress).join(',')}`).join('|')}`,
     marketDirty: `${state.ui.panels.market}:${state.ui.marketCategory}:${state.ui.marketView}:${state.ui.marketSearch}:${demandSignals}:${workOrders}:${state.world.economy.transactionLog.length}`,
     minimapDirty: `${state.ui.minimapMode}:${state.ui.mapHiddenLayers.join(',')}:${tile}:${state.ui.mapWaypoint?.areaId ?? '-'}:${state.ui.mapWaypoint?.position.x ?? '-'}:${state.ui.mapWaypoint?.position.z ?? '-'}:${state.world.discoveredAreas.join('|')}:${state.world.activeEvents.map((event) => `${event.id}:${event.discovered}:${event.endsAt > state.clock}`).join('|')}`,
-    tooltipDirty: `${state.ui.tooltipMode}:${state.ui.tooltipDelayMs}:${targetKey(state.ui.hoverTarget)}:${targetKey(state.ui.selectedTarget)}`,
+    tooltipDirty: `${state.ui.tooltipMode}:${state.ui.tooltipDelayMs}:${targetKey(state.ui.hoverTarget)}:${targetKey(state.ui.selectedTarget)}:${contextMenuKey(state.ui.contextMenu)}`,
     windowLayoutDirty: `${panels}:${JSON.stringify(state.ui.windowLayouts)}:${state.ui.uiScale}:${state.ui.fontScale}:${state.ui.hudDensity}:${state.ui.frameRateCapMode}:${state.ui.customFrameRateCap}`
   };
 }
@@ -302,6 +302,11 @@ function targetKey(target: GameState['ui']['hoverTarget']): string {
   if ('entityId' in target) return `${target.kind}:${target.entityId}`;
   if (target.kind === 'inventory') return `${target.owner}:${target.slot}`;
   return target.kind;
+}
+
+function contextMenuKey(menu: GameState['ui']['contextMenu']): string {
+  if (!menu) return 'closed';
+  return `${targetKey(menu.target)}:${Math.round(menu.x)},${Math.round(menu.y)}`;
 }
 
 function reasonForDecision(flags: { modeChanged: boolean; pending: boolean; hasDirty: boolean; runSimulation: boolean; runRender: boolean; runUi: boolean }): string {

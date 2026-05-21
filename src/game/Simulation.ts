@@ -631,7 +631,7 @@ export class Simulation {
           this.state.ui.skillView = 'atlas';
           this.state.ui.skillsViewMode = 'atlas';
           this.state.ui.professionFilter = professionContractById(action.contractId)?.professionId ?? this.state.ui.professionFilter;
-          this.state.ui.prompt = 'Profession contract accepted. Skills remain classless.';
+          this.state.ui.prompt = 'Profession goal accepted.';
         }
         break;
       case 'ABANDON_PROFESSION_CONTRACT':

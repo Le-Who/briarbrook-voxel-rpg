@@ -97,6 +97,38 @@ export function shouldShowMarketQuickButton(state: GameState): boolean {
   return state.player.completedQuestIds.includes('prepare_for_road') || state.world.discoveredAreas.includes('road') || gatheredGoods || economyTouched;
 }
 
+export function renderActionProgressForState(state: GameState): string {
+  const casting = state.spellCasting;
+  if (casting) {
+    const spell = spellDefs[casting.spellId];
+    const pct = Math.max(0, Math.min(100, 100 - (casting.remaining / casting.total) * 100));
+    return `<div class="action-progress spell-progress"><b>${spell?.displayName ?? 'Casting'}</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
+  }
+  const bandage = state.bandage;
+  if (bandage) {
+    const pct = Math.max(0, Math.min(100, 100 - (bandage.remaining / bandage.duration) * 100));
+    return `<div class="action-progress bandage-progress"><b>Bandage</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
+  }
+  if (state.gathering) return '';
+  const action = state.player.actionState;
+  if (action.kind === 'interacting' && action.duration > 0 && action.endsAt > state.clock) {
+    const pct = Math.max(0, Math.min(100, ((state.clock - action.startedAt) / action.duration) * 100));
+    const label = action.source?.startsWith('lockpick:') ? 'Lockpicking' : action.source?.startsWith('remove-trap:') ? 'Remove Trap' : action.source === 'detect-hidden' ? 'Detect Hidden' : 'Action';
+    return `<div class="action-progress"><b>${label}</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
+  }
+  return '';
+}
+
+export function renderHudPromptForState(state: GameState): string {
+  const prompt = state.ui.prompt;
+  if (state.gathering && prompt.startsWith(state.gathering.actionLabel)) return '';
+  return `<div class="prompt">${escapeHudText(prompt)}</div>`;
+}
+
+function escapeHudText(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char] ?? char);
+}
+
 export class UIManager {
   private hud: HTMLDivElement;
   private labels: HTMLDivElement;
@@ -483,7 +515,7 @@ export class UIManager {
       ${this.renderTrackedFragment('damageIndicator', () => this.damageIndicator(state))}
       ${this.renderTrackedFragment('areaFade', () => this.areaFade(state))}
       ${this.renderDevOverlayFragment(state)}
-      ${this.renderTrackedFragment('prompt', () => `<div class="prompt">${state.ui.prompt}</div>`)}`;
+      ${this.renderTrackedFragment('prompt', () => renderHudPromptForState(state))}`;
   }
 
   private renderTrackedFragment(id: string, render: () => string, dirty = true): string {
@@ -553,35 +585,22 @@ export class UIManager {
   }
 
   private actionProgress(state: GameState): string {
-    const casting = state.spellCasting;
-    if (casting) {
-      const spell = spellDefs[casting.spellId];
-      const pct = Math.max(0, Math.min(100, 100 - (casting.remaining / casting.total) * 100));
-      return `<div class="action-progress spell-progress"><b>${spell?.displayName ?? 'Casting'}</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
-    }
-    const bandage = state.bandage;
-    if (bandage) {
-      const pct = Math.max(0, Math.min(100, 100 - (bandage.remaining / bandage.duration) * 100));
-      return `<div class="action-progress bandage-progress"><b>Bandage</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
-    }
-    const gathering = state.gathering;
-    if (!gathering) {
-      const action = state.player.actionState;
-      if (action.kind === 'interacting' && action.duration > 0 && action.endsAt > state.clock) {
-        const pct = Math.max(0, Math.min(100, ((state.clock - action.startedAt) / action.duration) * 100));
-        const label = action.source?.startsWith('lockpick:') ? 'Lockpicking' : action.source?.startsWith('remove-trap:') ? 'Remove Trap' : action.source === 'detect-hidden' ? 'Detect Hidden' : 'Action';
-        return `<div class="action-progress"><b>${label}</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
-      }
-      return '';
-    }
-    const pct = Math.max(0, Math.min(100, 100 - (gathering.remaining / gathering.duration) * 100));
-    return `<div class="action-progress"><b>${gathering.actionLabel}</b><span>${Math.round(pct)}%</span><i style="width:${pct}%"></i></div>`;
+    return renderActionProgressForState(state);
   }
 
   private contextMenu(state: GameState): string {
     const menu = state.ui.contextMenu;
     if (!menu) return '';
     const target = menu.target?.kind === 'entity' ? state.entities[menu.target.entityId] : null;
+    const inventoryStack =
+      menu.target?.kind === 'inventory'
+        ? menu.target.owner === 'bank'
+          ? state.player.bank.slots[menu.target.slot]
+          : menu.target.owner === 'trade-player'
+            ? state.ui.trade?.playerSlots[menu.target.slot] ?? null
+            : state.player.inventory.slots[menu.target.slot]
+        : null;
+    const targetLabel = target?.name ?? (inventoryStack ? itemDefs[inventoryStack.itemId]?.name ?? inventoryStack.itemId : 'Ground');
     const hostile = target?.kind === 'enemy';
     const social = target?.kind === 'npc' || target?.kind === 'social';
     const container = target?.kind === 'container';
@@ -601,7 +620,7 @@ export class UIManager {
       ['mark', 'Mark on Map']
     ].filter(Boolean) as Array<[string, string]>;
     return `<section class="context-menu" role="menu" tabindex="-1" aria-label="Context actions" style="left:${menu.x}px;top:${menu.y}px">
-      ${target ? `<b>${target.name}</b>` : `<b>Ground</b>`}
+      <b>${targetLabel}</b>
       ${options.map(([command, label], index) => `<button role="menuitem" data-context-command="${command}" data-menu-index="${index}">${label}</button>`).join('')}
     </section>`;
   }

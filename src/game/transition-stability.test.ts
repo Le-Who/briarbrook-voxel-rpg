@@ -61,7 +61,7 @@ describe('transition and action state stability', () => {
     expect(Math.hypot(resolved.position.x - requestedExit.x, resolved.position.z - requestedExit.z)).toBeGreaterThanOrEqual(1);
   });
 
-  it('clears transition state and avoids reverse portal overlap when exiting an interior', () => {
+  it('clears transition state and uses an authored open landing when exiting an interior', () => {
     const state = createInitialGameState();
     state.player.currentArea = 'bank';
     state.player.position = { x: 0, y: 0, z: 5.5 };
@@ -86,9 +86,10 @@ describe('transition and action state stability', () => {
     expect(simulation.state.player.activeTargetId).toBeNull();
     expect(simulation.state.ui.hoverTarget).toBeNull();
     expect(simulation.state.player.position).not.toEqual({ x: -8, y: 0, z: -2 });
+    expect(simulation.state.player.position).toEqual({ x: -8, y: 0, z: -1 });
     expect(simulation.state.dev.stability.currentPortalId).toBe('portal_town_bank');
-    expect(simulation.state.dev.stability.lastTransition).toMatchObject({ from: 'bank', to: 'town' });
-    expect(simulation.state.dev.stability.safeSpawnFallbackCount).toBeGreaterThan(0);
+    expect(simulation.state.dev.stability.lastTransition).toMatchObject({ from: 'bank', to: 'town', usedFallback: false });
+    expect(simulation.state.dev.stability.safeSpawnFallbackCount).toBe(0);
   });
 
   it('survives repeated bank and smithy enter/exit cycles without stale action state', () => {

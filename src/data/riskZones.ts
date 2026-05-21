@@ -107,8 +107,8 @@ export const zoneRules: Record<ZoneType, ZoneRuleDefinition> = {
   },
   future_risk: {
     id: 'future_risk',
-    label: 'Future Risk Zone',
-    riskLabel: 'PvP Disabled For Slice',
+    label: 'Locked Risk Zone',
+    riskLabel: 'PvP Locked',
     canAttackPlayers: false,
     canAttackNPCs: true,
     canSteal: true,

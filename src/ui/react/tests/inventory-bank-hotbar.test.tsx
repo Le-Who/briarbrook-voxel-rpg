@@ -21,10 +21,17 @@ describe('React inventory, bank, and hotbar surfaces', () => {
 
     expect(html).toContain('data-react-panel="inventory"');
     expect(html).toContain('data-bb-layout="window"');
+    expect(html).toContain('data-react-window-draggable="true"');
+    expect(html).toContain('data-window-drag-handle="true"');
     expect(html).toContain('data-bb-scroll="true"');
+    expect(html).toContain('data-bb-fixed="header"');
+    expect(html).toContain('data-bb-fixed="toolbar"');
     expect(html).toContain('class="bb-slot-grid');
+    expect(html).toContain('data-bb-layout="slot-grid"');
     expect(html).toContain('data-inventory-footer="true"');
+    expect(html).toContain('data-bb-fixed="footer"');
     expect(html).toContain('data-item-drop-target="inventory:0"');
+    expect(html).toContain('data-context-menu-target="inventory:0"');
     expect(html).not.toContain('item-inspector');
     expect(html).not.toContain('data-inventory-layout="resizable-grid"');
   });
@@ -36,8 +43,12 @@ describe('React inventory, bank, and hotbar surfaces', () => {
     const html = renderToStaticMarkup(<InventoryBankHotbarSurfaces snapshot={createGameUISnapshot(state)} dispatchAction={() => ({ accepted: true })} />);
 
     expect(html).toContain('data-react-panel="bank"');
+    expect(html).toContain('data-react-window-draggable="true"');
+    expect(html).toContain('data-window-drag-handle="true"');
     expect(html).toContain('Deposit Resources');
     expect(html).toContain('Take All');
+    expect(html).toContain('data-bb-scroll="true"');
+    expect(html).toContain('data-bb-fixed="footer"');
     expect(html).toContain('data-item-drop-target="bank:0"');
   });
 

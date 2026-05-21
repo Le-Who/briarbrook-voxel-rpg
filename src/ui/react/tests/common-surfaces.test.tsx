@@ -13,7 +13,7 @@ describe('React common UI surfaces', () => {
     expect(uiPanelRegistry.settings).toBe('react');
   });
 
-  it('renders Build Mode as a dedicated build layout with a single warning surface', () => {
+  it('renders Build Mode as a spatial world overlay with palette, inspector, and action bar', () => {
     const state = createInitialGameState();
     state.player.currentArea = 'housing';
     state.ui.panels.build = true;
@@ -24,10 +24,29 @@ describe('React common UI surfaces', () => {
     const html = renderToStaticMarkup(<CommonSurfaces snapshot={createGameUISnapshot(state)} dispatchAction={() => ({ accepted: true })} />);
 
     expect(html).toContain('data-react-panel="build"');
-    expect(html).toContain('data-build-layout="dedicated"');
-    expect(html).toContain('data-build-zone="catalog"');
-    expect(html).toContain('data-build-zone="placement"');
-    expect(html).toContain('data-build-zone="materials"');
+    expect(html).toContain('data-build-layout="spatial"');
+    expect(html).toContain('data-build-zone="palette"');
+    expect(html).toContain('data-build-zone="world"');
+    expect(html).toContain('data-build-zone="inspector"');
+    expect(html).toContain('data-build-zone="actions"');
+    expect(html).toContain('data-build-world-overlay="true"');
+    expect(html).toContain('data-build-ghost-projection="world"');
+    expect(html).toContain('data-build-footprint=');
+    expect(html).toContain('data-build-rotation=');
+    expect(html).toContain('data-build-snap-state=');
+    expect(html).toContain('data-bb-fixed="header"');
+    expect(html).toContain('data-bb-fixed="toolbar"');
+    expect(html).toContain('data-bb-scroll="true"');
+    expect(html).toContain('data-bb-layout="detail-pane"');
+    expect(html).toContain('data-bb-fixed="footer"');
+    expect(html).toContain('Place');
+    expect(html).toContain('Rotate');
+    expect(html).toContain('Cancel');
+    expect(html).toContain('Undo');
+    expect(html).toContain('Move Last');
+    expect(html).toContain('Snap');
+    expect(html).not.toContain('bb-build-grid-preview');
+    expect(html).not.toContain('Ghost</span>');
     expect(html.match(/data-build-warning="true"/g)).toHaveLength(1);
   });
 
@@ -41,6 +60,47 @@ describe('React common UI surfaces', () => {
     expect(html).toContain('data-react-panel="chat"');
     expect(html).toContain('data-chat-collapsed="true"');
     expect(html).toContain('data-chat-unread="');
+  });
+
+  it('renders expanded Chat with fixed chrome, scrollable log, and fixed input footer', () => {
+    const state = createInitialGameState();
+    state.ui.chatMode = 'expanded';
+    state.chat.push({ id: 'react-chat-system', channel: 'System', text: 'Bank closes at dusk.', tone: 'system', createdAt: 10 });
+
+    const html = renderToStaticMarkup(<CommonSurfaces snapshot={createGameUISnapshot(state)} dispatchAction={() => ({ accepted: true })} />);
+
+    expect(html).toContain('data-react-panel="chat"');
+    expect(html).toContain('data-bb-fixed="header"');
+    expect(html).toContain('data-bb-fixed="toolbar"');
+    expect(html).toContain('data-bb-scroll="true"');
+    expect(html).toContain('data-bb-fixed="footer"');
+    expect(html).toContain('data-chat-layout="player-chat"');
+    expect(html).toContain('Local');
+    expect(html).toContain('Party');
+    expect(html).toContain('Guild');
+    expect(html).toContain('Trade');
+    expect(html).toContain('System');
+    expect(html).toContain('data-chat-message-tone="system"');
+    expect(html).not.toContain('Opacity');
+    expect(html).not.toContain('Chat message cap');
+    expect(html).not.toContain('TOGGLE_CHAT_CHANNEL');
+    expect(html).not.toContain('Combat');
+  });
+
+  it('renders compact Chat as a smaller player chat frame with the same safe controls', () => {
+    const state = createInitialGameState();
+    state.ui.chatMode = 'compact';
+    state.chat.push({ id: 'react-chat-system', channel: 'System', text: 'Bank closes at dusk.', tone: 'system', createdAt: 10 });
+
+    const html = renderToStaticMarkup(<CommonSurfaces snapshot={createGameUISnapshot(state)} dispatchAction={() => ({ accepted: true })} />);
+
+    expect(html).toContain('bb-react-chat--compact');
+    expect(html).toContain('height:210px');
+    expect(html).toContain('data-chat-layout="player-chat"');
+    expect(html).toContain('data-chat-scroll="true"');
+    expect(html).toContain('data-chat-input="true"');
+    expect(html).not.toContain('Opacity');
+    expect(html).not.toContain('Chat message cap');
   });
 
   it('renders Help and Settings with readable current setting rows and keybinding view', () => {
@@ -58,6 +118,9 @@ describe('React common UI surfaces', () => {
     expect(html).toContain('data-settings-section="camera"');
     expect(html).toContain('data-settings-section="accessibility"');
     expect(html).toContain('data-keybinding-view="true"');
+    expect(html).toContain('data-bb-fixed="header"');
+    expect(html).toContain('data-bb-scroll="true"');
+    expect(html).toContain('data-bb-fixed="footer"');
     expect(html).not.toContain('class="help-body"');
   });
 

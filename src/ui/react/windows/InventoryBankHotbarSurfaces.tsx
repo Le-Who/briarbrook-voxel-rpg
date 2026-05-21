@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react';
 import { itemDefs } from '../../../data/items';
 import { skillDefinitions } from '../../../data/skillDefinitions';
 import { spellDefs } from '../../../data/spells';
@@ -12,6 +12,7 @@ import type { GameUISnapshot, ReadonlyItemStack } from '../bridge/selectors';
 import { useReactPanelRender } from '../components/renderMetrics';
 import { ActionFooter, GameWindow, IconButton, PanelToolbar, ScrollArea, SlotGrid, Text } from '../components/primitives';
 import { reactWindowDefinitions, resolveReactWindowLayout, type ReactWindowId } from './windowManagerV2';
+import { useDraggableReactWindow } from './draggableWindow';
 
 type DispatchAction = (action: GameAction) => GameUICommandResult;
 type ItemContainerId = 'inventory' | 'bank';
@@ -65,6 +66,8 @@ export function InventoryBankHotbarSurfaces({ snapshot, dispatchAction, hideCont
 function InventoryWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   useReactPanelRender('inventory');
   const [search, setSearch] = useState('');
+  const savedLayout = snapshot.windows.layouts.find((layout) => layout.id === 'inventory')?.layout;
+  const drag = useDraggableReactWindow('inventory', dispatchAction, savedLayout);
   const selectedStack = snapshot.inventory.selectedSlot == null ? null : snapshot.inventory.slots[snapshot.inventory.selectedSlot] ?? null;
   const selectedName = selectedStack ? itemDefs[selectedStack.itemId]?.name ?? selectedStack.itemId : 'No item selected';
   const slots = filterSlots(snapshot.inventory.slots, search);
@@ -73,7 +76,9 @@ function InventoryWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapsho
     <GameWindow
       className="bb-react-inventory bb-react-floating-window"
       data-react-panel="inventory"
-      style={windowStyle('inventory')}
+      style={drag.style}
+      headerProps={drag.headerProps}
+      {...drag.windowProps}
       title="Inventory"
       subtitle={`${snapshot.inventory.used}/${snapshot.inventory.capacity} slots`}
       actions={<IconButton label="Close inventory" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'inventory', open: false })}>x</IconButton>}
@@ -108,6 +113,7 @@ function InventoryWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapsho
 function BankWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; dispatchAction: DispatchAction }): ReactElement {
   useReactPanelRender('bank');
   const [search, setSearch] = useState('');
+  const drag = useDraggableReactWindow('bank', dispatchAction);
   const selectedStack = snapshot.bank.selectedSlot == null ? null : snapshot.bank.slots[snapshot.bank.selectedSlot] ?? null;
   const slots = filterSlots(snapshot.bank.slots, search);
 
@@ -116,7 +122,9 @@ function BankWindow({ snapshot, dispatchAction }: { snapshot: GameUISnapshot; di
       className="bb-react-bank bb-react-floating-window"
       data-react-panel="bank"
       data-service-panel="bank"
-      style={windowStyle('bank')}
+      style={drag.style}
+      headerProps={drag.headerProps}
+      {...drag.windowProps}
       title="Bank Storage"
       subtitle={`${snapshot.bank.used}/${snapshot.bank.capacity} slots`}
       actions={<IconButton label="Close bank" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'bank', open: false })}>x</IconButton>}
@@ -215,6 +223,7 @@ function ItemSlotButton({ container, slot, stack, selected, snapshot, dispatchAc
       data-inv-slot={container === 'inventory' ? slot : undefined}
       data-bank-slot={container === 'bank' ? slot : undefined}
       data-item-drop-target={`${container}:${slot}`}
+      data-context-menu-target={stack ? `${container}:${slot}` : undefined}
       data-hotbar-source={source}
       data-drag-kind={stack ? 'item' : undefined}
       data-source-window-id={stack ? container : undefined}
@@ -230,12 +239,23 @@ function ItemSlotButton({ container, slot, stack, selected, snapshot, dispatchAc
       title={def?.name}
       draggable={Boolean(stack)}
       onClick={(event) => dispatchClick(event, dispatchAction, { type: container === 'inventory' ? 'SELECT_INVENTORY_SLOT' : 'SELECT_BANK_SLOT', slot: selected ? null : slot })}
+      onPointerDown={(event) => {
+        if (event.button === 2 && stack) dispatchSlotContextMenu(event, dispatchAction, container, slot);
+      }}
+      onContextMenu={(event) => stack && dispatchSlotContextMenu(event, dispatchAction, container, slot)}
     >
       {def ? <IconGlyph icon={def.icon} label={def.name} category={itemIconCategory(def)} /> : null}
       {stack && stack.quantity > 1 ? <span className="bb-react-slot-qty">{stack.quantity}</span> : null}
       {stack ? <SlotBadges view={view} /> : null}
     </button>
   );
+}
+
+function dispatchSlotContextMenu(event: MouseEvent<HTMLElement> | ReactPointerEvent<HTMLElement>, dispatchAction: DispatchAction, container: ItemContainerId, slot: number): void {
+  event.preventDefault();
+  event.stopPropagation();
+  dispatchAction({ type: container === 'inventory' ? 'SELECT_INVENTORY_SLOT' : 'SELECT_BANK_SLOT', slot });
+  dispatchAction({ type: 'OPEN_CONTEXT_MENU', target: { kind: 'inventory', owner: container, slot }, x: event.clientX, y: event.clientY });
 }
 
 function SlotBadges({ view }: { view: ItemSlotView }): ReactElement | null {

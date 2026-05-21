@@ -79,12 +79,13 @@ describe('production content tools', () => {
     ]);
   });
 
-  it('provides dev-only screenshot parity presets for the nine visual references', () => {
+  it('provides dev-only screenshot parity presets for the visual references', () => {
     const presets = createScreenshotParityPresets();
     expect(presets.map((preset) => preset.id)).toEqual([
       'r1-town-square',
       'r2-road-combat',
       'r3-crypt-combat',
+      'r3-crypt-secret',
       'r4-forest-gathering',
       'r5-smithy-crafting',
       'r6-bank-storage',
@@ -95,7 +96,11 @@ describe('production content tools', () => {
     presets.forEach((preset) => {
       expect(preset.camera.zoom).toBeGreaterThanOrEqual(11);
       expect(preset.camera.zoom).toBeLessThanOrEqual(24);
-      expect(preset.openPanels.length).toBeGreaterThan(0);
+      if (preset.id === 'r2-road-combat' || preset.id === 'r3-crypt-secret') {
+        expect(preset.openPanels).toEqual([]);
+      } else {
+        expect(preset.openPanels.length).toBeGreaterThan(0);
+      }
     });
   });
 
@@ -142,6 +147,7 @@ describe('production content tools', () => {
       'r1-town-square': '',
       'r2-road-combat': 'Highway Bandit — Target',
       'r3-crypt-combat': 'Skeletal Warrior — Target',
+      'r3-crypt-secret': 'Warded Reliquary — Open',
       'r4-forest-gathering': 'Oak Tree — Chop',
       'r5-smithy-crafting': 'Brom — Craft/Repair',
       'r6-bank-storage': 'Banker — Open Bank',

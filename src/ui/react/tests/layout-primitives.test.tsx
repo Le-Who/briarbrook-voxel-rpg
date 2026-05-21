@@ -9,6 +9,7 @@ import {
   EmptyState,
   GameWindow,
   IconButton,
+  InspectorPanel,
   PanelTabs,
   PanelToolbar,
   ScrollArea,
@@ -39,14 +40,21 @@ describe('React layout primitives', () => {
             <button type="button">B</button>
           </SlotGrid>
         </ScrollArea>
+        <InspectorPanel title="Selected item">Inspector copy</InspectorPanel>
       </GameWindow>
     );
 
     expect(markup).toContain('class="bb-game-window');
     expect(markup).toContain('class="bb-panel-header');
+    expect(markup).toContain('data-bb-fixed="header"');
     expect(markup).toContain('class="bb-scroll-area');
+    expect(markup).toContain('data-bb-scroll="true"');
     expect(markup).toContain('class="bb-slot-grid');
+    expect(markup).toContain('data-bb-layout="slot-grid"');
+    expect(markup).toContain('class="bb-inspector-panel');
+    expect(markup).toContain('data-bb-layout="inspector-panel"');
     expect(markup).toContain('class="bb-action-footer');
+    expect(markup).toContain('data-bb-fixed="footer"');
   });
 
   it('keeps tabs, split panes and detail text in structured layout containers', () => {
@@ -72,8 +80,11 @@ describe('React layout primitives', () => {
     );
 
     expect(markup).toContain('class="bb-split-pane');
+    expect(markup).toContain('data-bb-layout="split-pane"');
     expect(markup).toContain('role="tablist"');
+    expect(markup).toContain('data-bb-fixed="toolbar"');
     expect(markup).toContain('class="bb-detail-pane');
+    expect(markup).toContain('data-bb-layout="detail-pane"');
     expect(markup).toContain('class="bb-status-row');
     expect(markup).toContain('class="bb-empty-state');
   });

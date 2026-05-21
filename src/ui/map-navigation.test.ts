@@ -20,6 +20,8 @@ describe('map navigation and spatial UX', () => {
     expect(html).toContain('data-map-waypoint-area="town"');
     expect(html).toContain('Next: Talk to Mira at the fountain');
     expect(html).toContain('Safe / Guarded');
+    expect(html).toContain('Local Map');
+    expect(html).not.toMatch(/Map -?\d+:-?\d+/);
     expect(html).not.toContain('map-dot resource');
     expect(html).not.toContain('dev-travel');
   });

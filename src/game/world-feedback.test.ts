@@ -46,6 +46,25 @@ describe('world feedback policy', () => {
     expect(worldCursorKindForHover(state, { entity: copper })).toBe('mine');
   });
 
+  it('collapses active gathering progress into the resource world label', () => {
+    const state = createInitialGameState();
+    const tree = state.entities.res_tree_5 as ResourceNodeEntity;
+
+    state.gathering = {
+      entityId: tree.id,
+      actionLabel: 'Chop Oak Tree',
+      startedAt: 1,
+      duration: 5,
+      remaining: 2
+    };
+
+    const label = worldLabelForEntity(state, tree, { hoveredEntityId: null, distanceToPlayer: 1 });
+
+    expect(label?.title).toBe('Chop Oak Tree');
+    expect(label?.detail).toBe('60%');
+    expect(label?.className).toContain('action-label');
+  });
+
   it('uses explicit inspect and danger feedback for containers', () => {
     const state = createInitialGameState();
     const chest = state.entities.chest_crypt_warded as ContainerEntity;

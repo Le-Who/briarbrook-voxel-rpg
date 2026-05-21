@@ -180,7 +180,7 @@ export const professionClusters: ProfessionCluster[] = [
       n('skill_remove_trap', 'skill', 'Remove Trap', 'Disarms known traps.', 64, 72, 'Remove Trap'),
       n('tool_lockpick', 'tool', 'Lockpick', 'Consumable tool for locks.', 92, 72, 'lockpick'),
       n('action_decipher', 'action', 'Decipher Map', 'Use Cartography on a rough treasure map.', 20, 72, 'decipher-map'),
-      n('future_survey_contracts', 'future', 'Survey Contracts', 'Future repeatable route and cache commissions.', 86, 28, 'survey_contracts'),
+      n('future_survey_contracts', 'future', 'Survey Contracts', 'Locked repeatable route and cache commissions.', 86, 28, 'survey_contracts'),
       n('milestone_cache', 'milestone', 'First Cache', 'Open one safe hidden reward.', 48, 88, 'treasure_hunter_initiate')
     ],
     edges: [
@@ -214,7 +214,7 @@ export const professionClusters: ProfessionCluster[] = [
       n('output_iron_bars', 'output', 'Iron Bars', 'Refined metal used for tools, armor, and repairs.', 78, 52, 'iron_bar'),
       n('skill_blacksmithing', 'skill', 'Blacksmithing', 'Metal craft and repair skill.', 86, 68, 'Blacksmithing'),
       n('service_smith_contracts', 'service', 'Smith Contracts', 'Profession contracts turn repairs and orders into local demand.', 72, 84, 'smith_contracts'),
-      n('future_guild_contracts', 'future', 'Guild Contracts', 'Future larger-scale metal commissions and specialist orders.', 92, 24, 'guild_contracts'),
+      n('future_guild_contracts', 'future', 'Guild Contracts', 'Locked larger-scale metal commissions and specialist orders.', 92, 24, 'guild_contracts'),
       n('milestone_artisan', 'milestone', 'Artisan Mark', 'Fulfill orders with your own materials.', 50, 88, 'briarbrook_artisan')
     ],
     edges: [
@@ -324,15 +324,15 @@ export const professionClusters: ProfessionCluster[] = [
   {
     id: 'naturalist',
     title: 'Provisioner',
-    summary: 'Fishing, herbs, food, potions, animals, and future wilderness supply.',
+    summary: 'Fishing, herbs, food, potions, animals, and locked wilderness supply.',
     color: '#65a77a',
     skills: ['Fishing', 'Alchemy', 'Animal Lore', 'Animal Taming', 'Veterinary', 'Herding'],
-    suggestedGoal: 'Gather food and reagents now; animal loops come later.',
+    suggestedGoal: 'Gather food and reagents now; animal routes open later.',
     nodes: [
       n('naturalist_goal', 'goal', 'Trail Naturalist', 'Read living resources and prepare supplies.', 50, 16),
       n('skill_fishing', 'skill', 'Fishing', 'Food and water finds.', 20, 44, 'Fishing'),
       n('skill_alchemy_naturalist', 'skill', 'Alchemy', 'Herbs into potions.', 48, 54, 'Alchemy'),
-      n('skill_animal_lore', 'skill', 'Animal Lore', 'Future animal understanding.', 78, 40, 'Animal Lore'),
+      n('skill_animal_lore', 'skill', 'Animal Lore', 'Locked animal handling knowledge.', 78, 40, 'Animal Lore'),
       n('tool_scissors', 'tool', 'Scissors', 'Harvests herb patches.', 36, 76, 'scissors'),
       n('milestone_naturalist', 'milestone', 'Trail Naturalist', 'Bring food or herbs back from the wild.', 54, 88, 'trail_naturalist')
     ],
@@ -340,7 +340,7 @@ export const professionClusters: ProfessionCluster[] = [
       e('tool_scissors', 'skill_alchemy_naturalist', 'trains', 'herbs'),
       e('skill_fishing', 'naturalist_goal', 'supports', 'food'),
       e('skill_alchemy_naturalist', 'milestone_naturalist', 'unlocks', 'supplies'),
-      e('skill_animal_lore', 'naturalist_goal', 'supports', 'future')
+      e('skill_animal_lore', 'naturalist_goal', 'supports', 'later route')
     ]
   },
   {
@@ -488,7 +488,7 @@ export const professionContracts: ProfessionContract[] = [
     id: 'hedge_mage',
     title: 'Hedge Mage Contract',
     professionId: 'hedge_mage',
-    teaches: 'Gather reagents, cast utility, and identify magical risk while remaining fully classless.',
+    teaches: 'Gather reagents, cast utility, and identify magical risk without locking your path.',
     skills: ['Magery', 'Meditation', 'Evaluating Intelligence', 'Item Identification', 'Inscription', 'Alchemy'],
     objectives: [
       contractObjective('mage_gather_reagents', 'Gather or carry 6 reagents', 6, ['Alchemy', 'Magery']),
@@ -708,7 +708,7 @@ export const masteryMilestones: MasteryMilestone[] = [
     id: 'market_helper',
     professionId: 'smith_artisan',
     title: 'Market Helper',
-    description: 'Fulfill town demand without depending on debug supplies.',
+    description: 'Fulfill town demand with supplies you gather or buy.',
     requirements: [
       { type: 'workOrdersCompleted', count: 1 },
       { type: 'skill', skillId: 'Cooking', value: 10 }

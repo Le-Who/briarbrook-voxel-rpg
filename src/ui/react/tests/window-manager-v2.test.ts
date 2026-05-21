@@ -32,6 +32,16 @@ describe('React WindowManager v2 contracts', () => {
     expect(layout.y + layout.height).toBeLessThanOrEqual(viewport.height - 96);
   });
 
+  it('sizes the default chat frame for the reference message log without covering the hotbar', () => {
+    const layout = resolveReactWindowLayout('chat', null, viewport);
+
+    expect(layout.width).toBeGreaterThanOrEqual(420);
+    expect(layout.height).toBeGreaterThanOrEqual(300);
+    expect(layout.x).toBe(12);
+    expect(layout.y + layout.height).toBeGreaterThanOrEqual(viewport.height - 120);
+    expect(layout.y + layout.height).toBeLessThanOrEqual(viewport.height - 96);
+  });
+
   it('collapses unrelated panels when a planning workspace is active', () => {
     const policy = resolveWorkspacePolicy('Planning', {
       openPanels: ['inventory', 'chat', 'professionAtlas', 'journal'],
@@ -57,6 +67,13 @@ describe('React WindowManager v2 contracts', () => {
     expect(planning.professionAtlas.open).toBe(true);
     expect(planning.chat.collapsed).toBe(true);
     expect(reset.inventory.collapsed).toBe(false);
+  });
+
+  it('keeps bank storage clear of the legacy inventory default lane', () => {
+    const bank = resolveReactWindowLayout('bank', null, viewport);
+    const legacyInventory = { x: 1002, y: 220, width: 270, height: 410 };
+
+    expect(bank.x + bank.width).toBeLessThanOrEqual(legacyInventory.x - 8);
   });
 
   it('migrates older persisted layouts into versioned v2 storage', () => {

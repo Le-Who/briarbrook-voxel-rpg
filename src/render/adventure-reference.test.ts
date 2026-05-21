@@ -10,18 +10,29 @@ import { adventureReferencePlan } from './AdventureReferencePlan';
 describe('R2-R4 adventure reference contract', () => {
   it('defines distinct scene targets for road combat, forest gathering, and crypt combat', () => {
     expect(adventureReferencePlan.road.location).toBe('Old River Road');
+    expect(adventureReferencePlan.road.phase14ReferenceIds).toEqual(['REF_143_OLD_RIVER_ROAD', 'REF_140_TRAVERSABLE_ROAD_FOREST']);
+    expect(adventureReferencePlan.road.compositionZones.map((zone) => zone.id)).toEqual(expect.arrayContaining(['river-edge', 'fenced-combat-lane', 'combat-pocket', 'checkpoint-edge']));
     expect(adventureReferencePlan.road.combatLane.minReadableWidth).toBeGreaterThanOrEqual(6);
     expect(adventureReferencePlan.road.landmarks).toEqual(expect.arrayContaining(['roadside checkpoint', 'bandit warning sign', 'old bridge']));
     expect(adventureReferencePlan.road.feedback).toEqual(expect.arrayContaining(['target-frame', 'target-outline', 'slash-arc', 'damage-float']));
+    expect(adventureReferencePlan.road.combatPockets.length).toBeGreaterThanOrEqual(3);
     expect(adventureReferencePlan.road.dynamicLightBudget).toBeLessThanOrEqual(3);
 
     expect(adventureReferencePlan.forest.location).toBe('Greymont Forest');
+    expect(adventureReferencePlan.forest.phase14ReferenceIds).toEqual(['REF_143_GREYMONT_FOREST', 'REF_140_TRAVERSABLE_ROAD_FOREST']);
+    expect(adventureReferencePlan.forest.compositionZones.map((zone) => zone.id)).toEqual(expect.arrayContaining(['mine-approach', 'gathering-clearing', 'town-road-bridge', 'forest-understory']));
     expect(adventureReferencePlan.forest.resourceResponses).toEqual(['Chop', 'Protected', 'Depleted', 'Too small/shrub']);
     expect(adventureReferencePlan.forest.landmarks).toEqual(expect.arrayContaining(['mine entrance', 'ore nodes', 'hunter camp supplies']));
+    expect(adventureReferencePlan.forest.pathNetwork.length).toBeGreaterThanOrEqual(4);
     expect(adventureReferencePlan.forest.permanentResourceLabels).toBe(false);
 
     expect(adventureReferencePlan.crypt.location).toBe('Forgotten Crypt');
+    expect(adventureReferencePlan.crypt.phase14ReferenceIds).toEqual(['REF_144_CRYPT_COMBAT', 'REF_144_CRYPT_SECRET']);
+    expect(adventureReferencePlan.crypt.compositionZones.map((zone) => zone.id)).toEqual(expect.arrayContaining(['entrance-threshold', 'combat-chamber', 'secret-reliquary', 'altar-niche']));
+    expect(adventureReferencePlan.crypt.roomShapes.length).toBeGreaterThanOrEqual(3);
     expect(adventureReferencePlan.crypt.props).toEqual(expect.arrayContaining(['cracked floors', 'torch pools', 'pillars', 'bones', 'sarcophagus', 'altar']));
+    expect(adventureReferencePlan.crypt.secretScene.interactionEntities).toEqual(expect.arrayContaining(['secret_crypt_loose_wall_cache', 'chest_crypt_warded', 'secret_crypt_false_door']));
+    expect(adventureReferencePlan.crypt.lighting.torchPools.length).toBeGreaterThanOrEqual(5);
     expect(adventureReferencePlan.crypt.feedback).toEqual(expect.arrayContaining(['target-frame', 'target-outline', 'loot-nearby-label', 'modest-spell-vfx']));
     expect(adventureReferencePlan.crypt.dynamicLightBudget).toBeLessThanOrEqual(3);
   });
@@ -38,6 +49,8 @@ describe('R2-R4 adventure reference contract', () => {
     expect(road.visualEffects.some((effect) => effect.kind === 'slash_arc' && effect.area === 'road')).toBe(true);
     expect(road.floatingTexts.some((text) => text.text === '13')).toBe(true);
     expect(road.ui.activeHotbarSlot).toBe(0);
+    expect(road.ui.panels.inventory).toBe(false);
+    expect(road.ui.panels.status).toBe(false);
 
     const crypt = createInitialGameState();
     expect(applyScreenshotParityPreset(crypt, areaManager, 'r3-crypt-combat')).toBe(true);
@@ -47,6 +60,9 @@ describe('R2-R4 adventure reference contract', () => {
     expect(skeleton.health).toBeLessThan(skeleton.maxHealth);
     expect(crypt.visualEffects.some((effect) => effect.kind === 'hit_impact' && effect.area === 'crypt')).toBe(true);
     expect(Object.values(crypt.entities).some((entity) => entity.kind === 'loot' && entity.area === 'crypt')).toBe(true);
+    expect(crypt.ui.panels.inventory).toBe(true);
+    expect(crypt.ui.panels.spellbook).toBe(true);
+    expect(crypt.ui.panels.status).toBe(false);
 
     const forest = createInitialGameState();
     expect(applyScreenshotParityPreset(forest, areaManager, 'r4-forest-gathering')).toBe(true);
@@ -57,6 +73,8 @@ describe('R2-R4 adventure reference contract', () => {
     expect(Math.hypot(forest.player.position.x - tree.position.x, forest.player.position.z - tree.position.z)).toBeLessThanOrEqual(2.35);
     expect(forest.ui.activeHotbarSlot).toBe(6);
     expect(forest.ui.hoverTarget).toEqual({ kind: 'entity', entityId: 'res_tree_5' });
+    expect(forest.ui.panels.inventory).toBe(true);
+    expect(forest.ui.panels.status).toBe(false);
     expect(forest.visualEffects.some((effect) => effect.kind === 'wood_chips' && effect.area === 'forest')).toBe(true);
   });
 

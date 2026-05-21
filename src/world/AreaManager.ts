@@ -114,8 +114,50 @@ export class AreaManager {
     return new Set(this.staticBlocked.get(areaId) ?? []);
   }
 
+  getBlockerExplanation(areaId: AreaId, x: number, z: number): string {
+    const gx = Math.round(x);
+    const gz = Math.round(z);
+    if (!this.isInsideBounds(areaId, gx, gz)) return this.boundaryExplanation(areaId);
+    if (!this.staticBlocked.get(areaId)?.has(this.key(gx, gz))) return 'walkable ground';
+    return this.staticBlockerExplanation(areaId, gx, gz);
+  }
+
   private key(x: number, z: number): string {
     return `${x},${z}`;
+  }
+
+  private boundaryExplanation(areaId: AreaId): string {
+    if (areaId === 'road' || areaId === 'housing') return 'water or cliff edge boundary';
+    if (areaId === 'forest') return 'dense trees, brush, or cliff boundary';
+    if (areaId === 'bank' || areaId === 'blacksmith') return 'interior wall boundary';
+    if (areaId === 'crypt') return 'crypt wall boundary';
+    return 'wall or building boundary';
+  }
+
+  private staticBlockerExplanation(areaId: AreaId, x: number, z: number): string {
+    if (areaId === 'bank' || areaId === 'blacksmith') return 'interior wall or furniture';
+    if (areaId === 'forest') {
+      if (z === 6 && x >= -2 && x <= 3) return 'stream bank with visible bridge opening';
+      if (x >= 6 && x <= 10 && z >= -8 && z <= -5) return 'mine rock wall';
+      if (z === -15 || x === 12) return 'dense forest boundary';
+      return 'dense trees or rock outcrop';
+    }
+    if (areaId === 'road') {
+      if (z >= 8 || x === -13 || x === 13) return 'road fence, riverbank, or water edge';
+      return 'fence or roadside rubble';
+    }
+    if (areaId === 'crypt') {
+      if (x === -15 || x === 15 || z === -12 || z === 12) return 'crypt wall';
+      if (x === 0 && z === 0) return 'central pillar';
+      return 'pillar, rubble, tomb, or crypt wall';
+    }
+    if (areaId === 'housing') {
+      if (z >= 8) return 'water edge beyond the plot';
+      if (x === -7 || x === 7 || z === -6 || z === 6) return 'plot fence';
+      return 'plot boundary';
+    }
+    if (areaId === 'town') return 'building, fountain, wall, or market stall';
+    return 'visible environmental blocker';
   }
 
   private rectWalls(minX: number, maxX: number, minZ: number, maxZ: number, openings: number[][] = []): Set<string> {
@@ -170,6 +212,7 @@ export class AreaManager {
   private buildForestBlocked(): Set<string> {
     const set = new Set<string>();
     for (let x = -2; x <= 3; x += 1) set.add(this.key(x, 6));
+    for (let x = -1; x <= 1; x += 1) set.delete(this.key(x, 6));
     for (let z = -8; z <= -5; z += 1) {
       for (let x = 6; x <= 10; x += 1) set.add(this.key(x, z));
     }
@@ -211,14 +254,12 @@ export class AreaManager {
     const set = new Set<string>();
     for (let x = -13; x <= 13; x += 1) {
       if (x < -4 || x > 4) set.add(this.key(x, 8));
+      if (x < -4 || x > 4) set.add(this.key(x, 9));
       set.add(this.key(x, 11));
     }
     for (let z = -11; z <= 11; z += 1) {
       if (z > 5) set.add(this.key(-13, z));
       if (z > 5) set.add(this.key(13, z));
-    }
-    for (let x = -12; x <= -8; x += 1) {
-      for (let z = -6; z <= -3; z += 1) set.add(this.key(x, z));
     }
     return set;
   }

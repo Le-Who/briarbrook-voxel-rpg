@@ -12,15 +12,16 @@ export interface GameWindowProps extends Omit<HTMLAttributes<HTMLElement>, 'titl
   subtitle?: ReactNode;
   actions?: ReactNode;
   footer?: ReactNode;
+  headerProps?: Omit<HTMLAttributes<HTMLElement>, 'title'>;
   modal?: boolean;
   children?: ReactNode;
 }
 
-export function GameWindow({ title, subtitle, actions, footer, modal = false, children, className = '', ...props }: GameWindowProps): ReactElement {
+export function GameWindow({ title, subtitle, actions, footer, headerProps, modal = false, children, className = '', ...props }: GameWindowProps): ReactElement {
   return (
     <section className={`bb-game-window ${modal ? 'bb-game-window--modal' : ''} ${className}`.trim()} data-bb-layout="window" data-ui-window="true" {...props}>
-      <PanelHeader title={title} subtitle={subtitle} actions={actions} />
-      <div className="bb-game-window__body">{children}</div>
+      <PanelHeader title={title} subtitle={subtitle} actions={actions} {...headerProps} />
+      <div className="bb-game-window__body" data-bb-window-body="true">{children}</div>
       {footer}
     </section>
   );
@@ -28,7 +29,7 @@ export function GameWindow({ title, subtitle, actions, footer, modal = false, ch
 
 export function PanelHeader({ title, subtitle, actions, className = '', ...props }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode } & Omit<HTMLAttributes<HTMLElement>, 'title'>): ReactElement {
   return (
-    <header className={`bb-panel-header ${className}`.trim()} {...props}>
+    <header className={`bb-panel-header ${className}`.trim()} data-bb-fixed="header" {...props}>
       <div className="bb-panel-header__title">
         <Text as="h2" size="lg" tone="accent">
           {title}
@@ -52,7 +53,7 @@ export interface PanelTab {
 
 export function PanelTabs({ tabs, activeId, onSelect, className = '', ...props }: { tabs: PanelTab[]; activeId: string; onSelect: (id: string) => void } & HTMLAttributes<HTMLDivElement>): ReactElement {
   return (
-    <div className={`bb-panel-tabs ${className}`.trim()} role="tablist" {...props}>
+    <div className={`bb-panel-tabs ${className}`.trim()} role="tablist" data-bb-fixed="toolbar" {...props}>
       {tabs.map((tab) => (
         <button
           className="bb-panel-tabs__tab"
@@ -72,7 +73,7 @@ export function PanelTabs({ tabs, activeId, onSelect, className = '', ...props }
 
 export function PanelToolbar({ children, className = '', ...props }: PrimitiveProps): ReactElement {
   return (
-    <div className={`bb-panel-toolbar ${className}`.trim()} {...props}>
+    <div className={`bb-panel-toolbar ${className}`.trim()} data-bb-fixed="toolbar" {...props}>
       {children}
     </div>
   );
@@ -80,7 +81,7 @@ export function PanelToolbar({ children, className = '', ...props }: PrimitivePr
 
 export function SplitPane({ start, end, children, className = '', ...props }: { start?: ReactNode; end?: ReactNode; children?: ReactNode } & HTMLAttributes<HTMLDivElement>): ReactElement {
   return (
-    <div className={`bb-split-pane ${className}`.trim()} {...props}>
+    <div className={`bb-split-pane ${className}`.trim()} data-bb-layout="split-pane" {...props}>
       {start ? <div className="bb-split-pane__start">{start}</div> : null}
       <div className="bb-split-pane__main">{children}</div>
       {end ? <div className="bb-split-pane__end">{end}</div> : null}
@@ -102,7 +103,7 @@ export function SlotGrid({ columns = 'auto', children, className = '', ...props 
     ['--bb-slot-grid-columns' as string]: columns === 'auto' ? 'repeat(auto-fill, minmax(var(--bb-slot-size), 1fr))' : `repeat(${columns}, var(--bb-slot-size))`
   };
   return (
-    <div className={`bb-slot-grid ${className}`.trim()} style={style} {...props}>
+    <div className={`bb-slot-grid ${className}`.trim()} data-bb-layout="slot-grid" style={style} {...props}>
       {children}
     </div>
   );
@@ -127,7 +128,7 @@ export function DataList({ items, renderItem, className = '', ...props }: { item
 
 export function DetailPane({ title, children, className = '', ...props }: { title?: ReactNode; children?: ReactNode } & Omit<HTMLAttributes<HTMLElement>, 'title'>): ReactElement {
   return (
-    <aside className={`bb-detail-pane ${className}`.trim()} {...props}>
+    <aside className={`bb-detail-pane ${className}`.trim()} data-bb-layout="detail-pane" {...props}>
       {title ? (
         <Text as="h3" size="md" tone="accent">
           {title}
@@ -140,9 +141,22 @@ export function DetailPane({ title, children, className = '', ...props }: { titl
 
 export function ActionFooter({ children, className = '', ...props }: PrimitiveProps): ReactElement {
   return (
-    <footer className={`bb-action-footer ${className}`.trim()} data-ui-footer="true" {...props}>
+    <footer className={`bb-action-footer ${className}`.trim()} data-bb-fixed="footer" data-ui-footer="true" {...props}>
       {children}
     </footer>
+  );
+}
+
+export function InspectorPanel({ title, children, className = '', ...props }: { title?: ReactNode; children?: ReactNode } & Omit<HTMLAttributes<HTMLElement>, 'title'>): ReactElement {
+  return (
+    <aside className={`bb-inspector-panel ${className}`.trim()} data-bb-layout="inspector-panel" {...props}>
+      {title ? (
+        <Text as="h3" size="md" tone="accent">
+          {title}
+        </Text>
+      ) : null}
+      <div className="bb-inspector-panel__body">{children}</div>
+    </aside>
   );
 }
 

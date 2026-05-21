@@ -10,13 +10,20 @@ describe('R1 Briarbrook town square reference contract', () => {
     const plan = briarbrookTownSquareReference;
 
     expect(plan.referenceId).toBe('R1');
+    expect(plan.phase14ReferenceIds).toEqual(['REF_142_TOWN_SQUARE_HERO', 'REF_142_TOWN_MARKET_STREET']);
     expect(plan.centralLandmark.id).toBe('fountain');
+    expect(plan.compositionZones.map((zone) => zone.id)).toEqual(expect.arrayContaining(['central-plaza', 'service-street', 'market-side', 'waterfront-ferry']));
     expect(plan.serviceEntrances.map((entry) => entry.id)).toEqual(['bank', 'smithy', 'market']);
     expect(plan.exitSigns.map((entry) => entry.id)).toEqual(expect.arrayContaining(['forest', 'old-road', 'ferry']));
+    expect(plan.boardAnchors.map((entry) => entry.id)).toEqual(['rumor-board', 'market-board']);
     expect(plan.npcBudget.visibleSquareMin).toBeGreaterThanOrEqual(4);
     expect(plan.npcBudget.visibleSquareMax).toBeLessThanOrEqual(8);
-    expect(plan.dressing.flowerBeds.length).toBeGreaterThanOrEqual(6);
+    expect(plan.requiredSilhouettes).toEqual(expect.arrayContaining(['central fountain', 'market canopy', 'bank facade', 'smithy forge door', 'waterfront dock']));
+    expect(plan.dressing.flowerBeds.length).toBeGreaterThanOrEqual(10);
+    expect(plan.dressing.marketStacks.length).toBeGreaterThanOrEqual(5);
     expect(plan.dressing.lamps.length).toBeLessThanOrEqual(8);
+    expect(plan.dressing.shadeTrees.length).toBeGreaterThanOrEqual(4);
+    expect(plan.dressing.pathGuides.length).toBeGreaterThanOrEqual(6);
   });
 
   it('keeps live town labels sparse while exposing service and exit markers on the minimap', () => {

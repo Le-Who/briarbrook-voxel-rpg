@@ -17,6 +17,11 @@ type DispatchAction = (action: GameAction) => GameUICommandResult;
 type PlanningTab = 'ledger' | 'atlas' | 'mastery';
 
 const primaryLensIds = ['armsman', 'ranger', 'hedge_mage', 'treasure_hunter', 'healer', 'smith_artisan', 'builder', 'naturalist'];
+const professionLensAliases: Record<string, string> = {
+  town_smith: 'smith_artisan',
+  field_medic: 'healer',
+  provisioner: 'naturalist'
+};
 const trainableSkillIds = new Set([
   'Swordsmanship',
   'Fencing',
@@ -116,15 +121,16 @@ function ProfessionAtlasWorkspace({ snapshot, dispatchAction }: { snapshot: Game
   const tab = activePlanningTab(snapshot);
   const lenses = useMemo(() => primaryLensIds.map((id) => professionClusters.find((cluster) => cluster.id === id)).filter(Boolean) as ProfessionCluster[], []);
   const selected = selectProfession(snapshot, lenses);
+  const isAtlas = tab === 'atlas';
 
   return (
-    <section className="bb-planning-workspace bb-profession-workspace" data-react-panel="skills" data-ui-window="true" data-planning-workspace="profession-atlas">
+    <section className="bb-planning-workspace bb-profession-workspace" data-react-panel="skills" data-ui-window="true" data-planning-workspace="profession-atlas" data-atlas-layout={isAtlas ? 'reference-138' : undefined}>
       <WorkspaceHeader
-        title="Skills"
-        subtitle={tab === 'atlas' ? 'Profession Atlas' : tab === 'mastery' ? 'Mastery' : 'Skill Ledger'}
+        title={isAtlas ? 'Profession Atlas' : 'Skills'}
+        subtitle={isAtlas ? '' : tab === 'mastery' ? 'Mastery' : 'Skill Ledger'}
         actions={<IconButton label="Close skills" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'TOGGLE_PANEL', panel: 'skills', open: false })}>x</IconButton>}
       />
-      <PanelTabs
+      {!isAtlas ? <PanelTabs
         className="bb-planning-tabs"
         tabs={[
           { id: 'ledger', label: 'Skills' },
@@ -133,7 +139,7 @@ function ProfessionAtlasWorkspace({ snapshot, dispatchAction }: { snapshot: Game
         ]}
         activeId={tab}
         onSelect={(id) => dispatchAction({ type: 'SET_SKILL_VIEW', view: id as PlanningTab })}
-      />
+      /> : null}
       {tab === 'atlas' ? <AtlasWorkspaceBody snapshot={snapshot} dispatchAction={dispatchAction} lenses={lenses} selected={selected} /> : <SkillWorkspaceBody snapshot={snapshot} tab={tab} dispatchAction={dispatchAction} />}
     </section>
   );
@@ -144,13 +150,14 @@ function AtlasWorkspaceBody({ snapshot, dispatchAction, lenses, selected }: { sn
   const visibleNodes = selected.nodes.filter((node) => (snapshot.professions.showFuture || isImplementedNode(node)) && (!search || nodeSearchText(node).includes(search)));
   const selectedNode = visibleNodes.find((node) => node.id === snapshot.professions.selectedNodeId) ?? visibleNodes[0] ?? selected.nodes[0];
   const contracts = professionContracts.filter((contract) => contract.professionId === selected.id);
+  const pathwayCards = search ? visibleNodes.map((node) => ({ kind: 'node' as const, node })) : [...visibleNodes.map((node) => ({ kind: 'node' as const, node })), { kind: 'next' as const }];
 
   return (
     <SplitPane
       className="bb-planning-split bb-planning-split--atlas"
       data-atlas-renderer="pathway-cards"
       start={
-        <ScrollArea className="bb-planning-sidebar">
+        <ScrollArea className="bb-planning-sidebar" data-atlas-zone="lenses">
           <Text as="strong" tone="accent">Profession lenses</Text>
           <div className="bb-lens-list">
             {lenses.map((lens) => (
@@ -161,7 +168,7 @@ function AtlasWorkspaceBody({ snapshot, dispatchAction, lenses, selected }: { sn
             ))}
           </div>
           <Text as="strong" tone="accent">Contracts</Text>
-          <div className="bb-contract-strip">
+          <div className="bb-contract-strip" data-atlas-zone="contracts">
             {contracts.map((contract) => (
               <button className={snapshot.professions.activeContractId === contract.id ? 'is-active' : ''} type="button" key={contract.id} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'ACCEPT_PROFESSION_CONTRACT', contractId: contract.id })}>
                 <b>{contract.title}</b>
@@ -179,19 +186,37 @@ function AtlasWorkspaceBody({ snapshot, dispatchAction, lenses, selected }: { sn
         <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_PROFESSION_ATLAS_ZOOM', zoom: 0.85 })}>Fit</button>
         <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_PROFESSION_ATLAS_ZOOM', zoom: 1 })}>Reset</button>
         <button type="button" className={snapshot.professions.showFuture ? 'is-active' : ''} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_PROFESSION_ATLAS_SHOW_FUTURE', show: !snapshot.professions.showFuture })}>
-          {snapshot.professions.showFuture ? 'Hide Future' : 'Show Future'}
+          {snapshot.professions.showFuture ? 'Hide Locked' : 'Show Locked'}
         </button>
       </PanelToolbar>
-      <ScrollArea className="bb-pathway-card-scroll">
+      <div className="bb-atlas-center-head">
+        <Text as="h3" tone="accent">{selected.title}</Text>
+        <Text as="p" size="sm" tone="muted">{selected.summary}</Text>
+      </div>
+      <ScrollArea className="bb-pathway-card-scroll" data-atlas-zone="pathways" data-atlas-pathway-grid="cards" data-atlas-relationship-cues="directional" data-atlas-empty-darkness="false">
         <div className="bb-pathway-card-grid">
-          {visibleNodes.map((node) => (
-            <button className={`bb-pathway-card ${node.id === selectedNode.id ? 'is-selected' : ''} ${isImplementedNode(node) ? '' : 'is-future'}`.trim()} type="button" key={node.id} data-node-type={nodeKind(node)} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_PROFESSION_ATLAS_NODE', nodeId: node.id })}>
-              <span>{nodeKindLabel(node)}</span>
-              <b>{node.label}</b>
-              <small>{node.description}</small>
-              <Badge tone={isImplementedNode(node) ? 'success' : 'muted'}>{isImplementedNode(node) ? 'Implemented' : 'Future'}</Badge>
-            </button>
-          ))}
+          {pathwayCards.map((card, index) => {
+            if (card.kind === 'next') {
+              return (
+                <button className="bb-pathway-card bb-pathway-card--next" type="button" key="next-step" data-node-type="next" data-atlas-card="next-step" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'PIN_PROFESSION_GOAL', goalId: selectedNode?.id ?? selected.id })}>
+                  <span>Next step</span>
+                  <b>Next Goal</b>
+                  <small>{selected.suggestedGoal}</small>
+                  <Badge tone="muted">Ready</Badge>
+                </button>
+              );
+            }
+            const { node } = card;
+            return (
+              <button className={`bb-pathway-card ${node.id === selectedNode.id ? 'is-selected' : ''} ${isImplementedNode(node) ? '' : 'is-future'}`.trim()} type="button" key={node.id} data-node-type={nodeKind(node)} data-atlas-card={node.id} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_PROFESSION_ATLAS_NODE', nodeId: node.id })}>
+                <span>{nodeKindLabel(node)}</span>
+                <b>{node.label}</b>
+                <small>{node.description}</small>
+                <Badge tone={isImplementedNode(node) ? 'success' : 'muted'}>{isImplementedNode(node) ? 'Available' : 'Locked'}</Badge>
+                {index < pathwayCards.length - 1 ? <i className="bb-pathway-cue" aria-hidden="true">→</i> : null}
+              </button>
+            );
+          })}
         </div>
       </ScrollArea>
       <ActionFooter className="bb-planning-footer">
@@ -226,7 +251,7 @@ function SkillWorkspaceBody({ snapshot, tab, dispatchAction }: { snapshot: GameU
         <DetailPane title={tab === 'mastery' ? 'Mastery Planning' : 'Skill Detail'}>
           <StatusRow label="Selected lens" value={selectedLens?.title ?? 'All'} />
           <StatusRow label="Mode" value={tab === 'mastery' ? 'Milestones' : 'Ledger'} />
-          <Text as="p" size="sm" tone="muted">Use Profession Atlas for planning; this workspace keeps the ledger readable while the full skills migration remains scoped to this planning pass.</Text>
+          <Text as="p" size="sm" tone="muted">Choose a profession lens to see useful skills, tools, outputs, services, and next goals.</Text>
         </DetailPane>
       }
     >
@@ -247,28 +272,51 @@ function ProfessionDetailPane({ snapshot, profession, node, dispatchAction }: { 
   const nodeLabel = node?.label ?? profession.title;
   const nodeSkillId = node?.type === 'skill' ? node.ref : undefined;
   const nodeSpellId = node?.type === 'spell' ? node.ref : undefined;
-  const tools = profession.nodes.filter((candidate) => candidate.type === 'tool').map((candidate) => candidate.label).join(', ') || 'None';
-  const activities = profession.nodes.filter((candidate) => candidate.type === 'action' || candidate.type === 'spell').map((candidate) => candidate.label).join(', ') || 'World practice';
+  const nodeAvailable = node ? isImplementedNode(node) : true;
+  const activities = profession.nodes.filter((candidate) => candidate.type === 'action' || candidate.type === 'spell').map((candidate) => candidate.label).join(', ') || 'Practice in the world';
   const outputs = profession.nodes.filter((candidate) => candidate.type === 'output' || candidate.type === 'recipe').map((candidate) => candidate.label).join(', ') || 'Progress';
   const milestone = profession.nodes.find((candidate) => candidate.type === 'milestone')?.label ?? 'No milestone yet';
-  const implemented = profession.nodes.filter(isImplementedNode).length;
+  const unlocks = profession.nodes
+    .filter((candidate) => candidate.type === 'milestone' || candidate.type === 'service' || candidate.type === 'station')
+    .map((candidate) => candidate.label)
+    .slice(0, 3)
+    .join(', ') || 'Path to milestones and contracts';
 
   return (
-    <DetailPane title={nodeLabel} className="bb-profession-detail" data-atlas-detail="true">
-      <Text as="p" size="sm" tone="muted">{node?.description ?? profession.summary}</Text>
-      <StatusRow label="Skill mix" value={profession.skills.join(', ')} />
-      <StatusRow label="Tools" value={tools} />
-      <StatusRow label="Activities" value={activities} />
-      <StatusRow label="Outputs" value={outputs} />
-      <StatusRow label="Milestone" value={milestone} />
-      <StatusRow label="Next goal" value={profession.suggestedGoal} />
-      <StatusRow label="Status" value={`${implemented}/${profession.nodes.length} implemented or trainable`} />
-      <div className="bb-detail-actions">
-        {node ? <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'PIN_PROFESSION_GOAL', goalId: node.id })}>Pin Goal</button> : null}
-        {nodeSkillId ? <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_SKILL_SEARCH', search: nodeSkillId })}>Open Skill</button> : null}
-        {nodeSpellId ? <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SELECT_SPELL', spellId: nodeSpellId })}>Open Spell</button> : null}
-        <Badge tone={snapshot.professions.pinnedGoalId === node?.id ? 'info' : 'muted'}>{snapshot.professions.pinnedGoalId === node?.id ? 'Pinned' : 'Not pinned'}</Badge>
-      </div>
+    <DetailPane title={nodeLabel} className="bb-profession-detail" data-atlas-detail="true" data-atlas-zone="detail">
+      <ScrollArea className="bb-profession-detail-scroll" key={node?.id ?? profession.id}>
+        <section className="bb-atlas-detail-section" data-atlas-detail-section="goal">
+          <Text as="strong" tone="accent">Goal</Text>
+          <Text as="p" size="sm" tone="muted">{node?.description ?? profession.suggestedGoal}</Text>
+          <Badge tone={nodeAvailable ? 'success' : 'muted'}>{nodeAvailable ? 'Available' : 'Locked'}</Badge>
+        </section>
+        <section className="bb-atlas-detail-section" data-atlas-detail-section="unlocks">
+          <Text as="strong" tone="accent">Unlocks</Text>
+          <Text as="p" size="sm" tone="muted">{unlocks}</Text>
+        </section>
+        <section className="bb-atlas-detail-section" data-atlas-detail-section="skill-mix">
+          <Text as="strong" tone="accent">Skill mix</Text>
+          <Text as="p" size="sm" tone="muted">{profession.skills.slice(0, 5).join(', ')}</Text>
+        </section>
+        <section className="bb-atlas-detail-section" data-atlas-detail-section="activities">
+          <Text as="strong" tone="accent">Activities</Text>
+          <Text as="p" size="sm" tone="muted">{activities}</Text>
+        </section>
+        <section className="bb-atlas-detail-section" data-atlas-detail-section="outputs">
+          <Text as="strong" tone="accent">Outputs</Text>
+          <Text as="p" size="sm" tone="muted">{outputs}</Text>
+        </section>
+        <section className="bb-atlas-detail-section" data-atlas-detail-section="next-step">
+          <Text as="strong" tone="accent">Next step</Text>
+          <Text as="p" size="sm" tone="muted">{profession.suggestedGoal}</Text>
+        </section>
+        <div className="bb-detail-actions" data-atlas-detail-section="actions">
+          {node ? <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'PIN_PROFESSION_GOAL', goalId: node.id })}>Pin Goal</button> : null}
+          {nodeSkillId ? <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_SKILL_SEARCH', search: nodeSkillId })}>Open Skill</button> : null}
+          {nodeSpellId ? <button type="button" onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SELECT_SPELL', spellId: nodeSpellId })}>Open Spell</button> : null}
+          <Badge tone={snapshot.professions.pinnedGoalId === node?.id ? 'info' : 'muted'}>{snapshot.professions.pinnedGoalId === node?.id ? 'Pinned' : 'Not pinned'}</Badge>
+        </div>
+      </ScrollArea>
     </DetailPane>
   );
 }
@@ -283,6 +331,7 @@ function AdventureMapWorkspace({ snapshot, dispatchAction }: { snapshot: GameUIS
   const danger = visibleMarkers.filter((marker) => marker.layer === 'danger');
   const entrances = visibleMarkers.filter((marker) => marker.layer === 'entrances');
   const housing = visibleMarkers.filter((marker) => marker.layer === 'housing');
+  const plottedMarkers = services.length ? visibleMarkers.filter((marker) => marker.cluster !== 'services') : visibleMarkers;
 
   return (
     <section className="bb-planning-workspace bb-adventure-map-workspace" data-react-panel="map" data-ui-window="true" data-planning-workspace="adventure-map" data-map-label-mode="icons-and-clusters">
@@ -307,11 +356,11 @@ function AdventureMapWorkspace({ snapshot, dispatchAction }: { snapshot: GameUIS
           <span className="bb-map-road bb-map-road--road" />
           <span className="bb-map-road bb-map-road--housing" />
           {services.length ? (
-            <button className="bb-map-marker bb-map-marker--cluster" type="button" data-map-cluster="services" data-map-layer="services" style={{ left: '50%', top: '38%' }} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_MAP_WAYPOINT', areaId: 'town', position: { x: 0, y: 0, z: 0 }, label: 'Town services', source: 'manual' })}>
+            <button className="bb-map-marker bb-map-marker--cluster" type="button" data-map-cluster="services" data-map-layer="services" style={{ left: '50%', top: '31%' }} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_MAP_WAYPOINT', areaId: 'town', position: { x: 0, y: 0, z: 0 }, label: 'Town services', source: 'manual' })}>
               SV
             </button>
           ) : null}
-          {visibleMarkers.map((marker) => (
+          {plottedMarkers.map((marker) => (
             <button className={`bb-map-marker bb-map-marker--${marker.layer}`} type="button" key={marker.id} data-map-marker={marker.id} data-map-layer={marker.layer} style={{ left: `${marker.x}%`, top: `${marker.y}%` }} title={marker.label} onClick={(event) => dispatchClick(event, dispatchAction, { type: 'SET_MAP_WAYPOINT', areaId: marker.areaId, position: marker.waypoint ?? { x: 0, y: 0, z: 0 }, label: marker.label, source: 'manual' })}>
               {marker.code}
             </button>
@@ -351,10 +400,10 @@ function MapIntelCard({ title, markers }: { title: string; markers: MapMarker[] 
 
 function WorkspaceHeader({ title, subtitle, actions }: { title: string; subtitle: string; actions: ReactElement }): ReactElement {
   return (
-    <header className="bb-planning-header">
+    <header className="bb-planning-header" data-bb-fixed="header">
       <div>
         <Text as="h2" size="lg" tone="accent">{title}</Text>
-        <Text size="sm" tone="muted">{subtitle}</Text>
+        {subtitle ? <Text size="sm" tone="muted">{subtitle}</Text> : null}
       </div>
       {actions}
     </header>
@@ -369,7 +418,8 @@ function activePlanningTab(snapshot: GameUISnapshot): PlanningTab {
 
 function selectProfession(snapshot: GameUISnapshot, lenses: ProfessionCluster[]): ProfessionCluster {
   const filter = snapshot.professions.filter === 'all' ? snapshot.professions.clusters[0]?.id : snapshot.professions.filter;
-  return lenses.find((lens) => lens.id === filter) ?? lenses[0] ?? professionClusters[0];
+  const normalized = filter ? professionLensAliases[filter] ?? filter : filter;
+  return lenses.find((lens) => lens.id === normalized) ?? lenses[0] ?? professionClusters[0];
 }
 
 function isImplementedNode(node: ProfessionNode): boolean {
@@ -391,6 +441,7 @@ function nodeKind(node: ProfessionNode): string {
 
 function nodeKindLabel(node: ProfessionNode): string {
   const kind = nodeKind(node);
+  if (kind === 'future') return 'Locked';
   return kind === 'skill' && node.ref ? `${skillDefinitionById[node.ref]?.group ?? 'Skill'}` : kind.replaceAll('_', ' ');
 }
 

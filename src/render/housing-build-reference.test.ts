@@ -15,7 +15,10 @@ const starterFunctionalPieces = ['small_chest', 'basic_workbench', 'torch', 'bed
 describe('R7 housing build mode reference contract', () => {
   it('defines a practical build-mode target for the R7 reference', () => {
     expect(housingBuildReferencePlan.referenceId).toBe('R7');
+    expect(housingBuildReferencePlan.phase14ReferenceIds).toEqual(['REF_145_PLAYER_PLOT_BUILD', 'REF_136_BUILD_MODE_SPATIAL']);
     expect(housingBuildReferencePlan.scene).toEqual(expect.arrayContaining(['visible plot boundary', 'modest fence', 'road approach', 'water and dock', 'starter objects']));
+    expect(housingBuildReferencePlan.compositionZones).toEqual(expect.arrayContaining(['fenced-plot', 'build-grid', 'starter-garden', 'utility-staging', 'ghost-placement']));
+    expect(housingBuildReferencePlan.spatialUi).toEqual(expect.arrayContaining(['left palette', 'right inspector', 'bottom action bar', 'world ghost', 'ground footprint']));
     expect(housingBuildReferencePlan.feedback).toEqual(expect.arrayContaining(['valid ghost', 'invalid ghost', 'footprint', 'collision warning', 'material shortage warning', 'orientation arrow']));
     expect(housingBuildReferencePlan.buildTabs).toEqual(['Walls', 'Floors', 'Doors', 'Roofs', 'Decor', 'Utility/Storage']);
     expect(housingBuildReferencePlan.starterFunctionalPieces).toEqual(starterFunctionalPieces);
@@ -31,6 +34,7 @@ describe('R7 housing build mode reference contract', () => {
     expect(state.buildMode.active).toBe(true);
     expect(state.ui.panels.build).toBe(true);
     expect(state.ui.panels.inventory).toBe(true);
+    expect(state.ui.panels.status).toBe(false);
     expect(state.buildMode.selectedPieceId).toBe('small_chest');
     expect(state.buildMode.valid).toBe(true);
     expect(state.buildMode.message).toContain('Ready');
