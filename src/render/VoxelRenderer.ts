@@ -78,6 +78,7 @@ export const runtimeDynamicLightPlans: Partial<Record<AreaId, RuntimeDynamicLigh
 
 const MAX_PICK_MESHES_PER_ENTITY = 2;
 const PLAYER_HERO_MODEL_URL = new URL('../../assets/exported/models/player_hero.glb', import.meta.url).href;
+const PLAYER_HERO_MODEL_YAW_OFFSET = Math.PI;
 
 export function selectPrimaryPickTargetIndexes(volumes: number[], maxTargets = MAX_PICK_MESHES_PER_ENTITY): number[] {
   return volumes
@@ -1595,6 +1596,7 @@ export class VoxelRenderer {
       const entityId = group.userData.entityId;
       const runtimeModel = this.cloneRuntimeModel(model);
       runtimeModel.name = 'player-hero-runtime-model';
+      runtimeModel.rotation.y = PLAYER_HERO_MODEL_YAW_OFFSET;
       runtimeModel.traverse((child) => {
         child.userData.entityId = entityId;
         if (child instanceof THREE.Mesh) {
